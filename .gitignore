@@ -1,0 +1,57 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Build output
+dist/
+build/
+
+# Environment files — NEVER commit secrets
+.env
+.env.local
+.env.*.local
+.env.production
+PVshopify price viwer.env
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Logs
+*.log
+logs/
+.manus-logs/
+.playwright-mcp/
+.claude/logs/
+
+# Debug
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# OS
+Thumbs.db
+.DS_Store
+
+# Test coverage
+coverage/
+
+# TypeScript
+*.tsbuildinfo
+
+# Backup and temp files
+*.bak
+seed_logs.txt
+.ipynb_checkpoints/
+*.ipynb
+
+# Memory / local state
+memory/
+
+# Prettier config (local)
+.prettierignore
+.prettierrc

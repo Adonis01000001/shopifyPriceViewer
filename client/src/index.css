@@ -1,0 +1,278 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  --font-sans: "DM Sans", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, monospace;
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+}
+
+:root {
+  --font-sans: "DM Sans", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, monospace;
+  --radius: 0.25rem;
+
+  /* Obsidian Intel — Light mode (rose-tinted) */
+  --background: #fff5f8;
+  --foreground: #3a1f26;
+  --card: #ffffff;
+  --card-foreground: #3a1f26;
+  --popover: #ffffff;
+  --popover-foreground: #3a1f26;
+  --primary: #ba005c;
+  --primary-foreground: #ffffff;
+  --secondary: #ffd9e1;
+  --secondary-foreground: #65002f;
+  --muted: #f5e6eb;
+  --muted-foreground: #7a5560;
+  --accent: #f5e6eb;
+  --accent-foreground: #2d1a1f;
+  --destructive: #dc2626;
+  --destructive-foreground: #ffffff;
+  --border: #e8c4ce;
+  --input: #e8c4ce;
+  --ring: #ba005c;
+  --chart-1: #ba005c;
+  --chart-2: #ff4a8f;
+  --chart-3: #21a732;
+  --chart-4: #8f0045;
+  --chart-5: #dc2626;
+  --sidebar: #fff0f4;
+  --sidebar-foreground: #2d1a1f;
+  --sidebar-primary: #ba005c;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #f5e6eb;
+  --sidebar-accent-foreground: #2d1a1f;
+  --sidebar-border: #e8c4ce;
+  --sidebar-ring: #ba005c;
+
+  --color-surface: #fff5f8;
+  --color-surface-dim: #fceaf0;
+  --color-surface-bright: #ffffff;
+  --color-surface-container-lowest: #fff0f4;
+  --color-surface-container-low: #f5e6eb;
+  --color-surface-container: #ecd9de;
+  --color-surface-container-high: #e0c4ca;
+  --color-surface-container-highest: #d4afb8;
+  --color-on-surface: #2d1a1f;
+  --color-on-surface-variant: #6b4550;
+  --color-outline: #ab8790;
+  --color-outline-variant: #d4afb8;
+  --color-tertiary: #21a732;
+  --color-on-tertiary: #003206;
+  --color-tertiary-container: #63e063;
+  --color-on-tertiary-container: #003908;
+  --color-error: #dc2626;
+  --color-on-error: #ffffff;
+  --color-error-container: #fca5a5;
+  --color-on-error-container: #7f1d1d;
+}
+
+.dark {
+  /* Obsidian Intel — Dark mode (rose-tinted obsidian) */
+  --font-sans: "DM Sans", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, monospace;
+  --radius: 0.25rem;
+
+  --background: #1f0e13;
+  --foreground: #feeef3;
+  --card: #28161b;
+  --card-foreground: #feeef3;
+  --popover: #28161b;
+  --popover-foreground: #feeef3;
+  --primary: #ffb1c5;
+  --primary-foreground: #65002f;
+  --secondary: #ffb1c5;
+  --secondary-foreground: #65002f;
+  --muted: #2d1a1f;
+  --muted-foreground: #c49aa8;
+  --accent: #2d1a1f;
+  --accent-foreground: #feeef3;
+  --destructive: #ffb4ab;
+  --destructive-foreground: #690005;
+  --border: rgba(255, 177, 197, 0.08);
+  --input: #38252a;
+  --ring: #ffb1c5;
+  --chart-1: #ffb1c5;
+  --chart-2: #ff4a8f;
+  --chart-3: #63e063;
+  --chart-4: #ffd9e1;
+  --chart-5: #ffb4ab;
+  --sidebar: #19090e;
+  --sidebar-foreground: #feeef3;
+  --sidebar-primary: #ffb1c5;
+  --sidebar-primary-foreground: #65002f;
+  --sidebar-accent: #28161b;
+  --sidebar-accent-foreground: #feeef3;
+  --sidebar-border: rgba(255, 177, 197, 0.05);
+  --sidebar-ring: #ffb1c5;
+
+  --color-surface: #1f0e13;
+  --color-surface-dim: #1f0e13;
+  --color-surface-bright: #483339;
+  --color-surface-container-lowest: #19090e;
+  --color-surface-container-low: #28161b;
+  --color-surface-container: #2d1a1f;
+  --color-surface-container-high: #38252a;
+  --color-surface-container-highest: #442f34;
+  --color-on-surface: #feeef3;
+  --color-on-surface-variant: #f0c8d2;
+  --color-outline: #c49aa8;
+  --color-outline-variant: #7a505e;
+  --color-tertiary: #63e063;
+  --color-on-tertiary: #003908;
+  --color-tertiary-container: #21a732;
+  --color-on-tertiary-container: #003206;
+  --color-error: #ffb4ab;
+  --color-on-error: #690005;
+  --color-error-container: #93000a;
+  --color-on-error-container: #ffdad6;
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  html {
+    font-family: var(--font-sans);
+  }
+  body {
+    @apply bg-background text-foreground;
+    font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+  button:not(:disabled),
+  [role="button"]:not([aria-disabled="true"]),
+  [type="button"]:not(:disabled),
+  [type="submit"]:not(:disabled),
+  [type="reset"]:not(:disabled),
+  a[href],
+  select:not(:disabled),
+  input[type="checkbox"]:not(:disabled),
+  input[type="radio"]:not(:disabled) {
+    @apply cursor-pointer;
+  }
+
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: var(--color-outline-variant);
+    border-radius: 3px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: var(--color-outline);
+  }
+}
+
+@layer components {
+  .container {
+    width: 100%;
+    margin-left: auto;
+    margin-right: auto;
+    padding-left: 1rem;
+    padding-right: 1rem;
+  }
+  @media (min-width: 640px) {
+    .container { padding-left: 1.5rem; padding-right: 1.5rem; }
+  }
+  @media (min-width: 1024px) {
+    .container { padding-left: 2rem; padding-right: 2rem; max-width: 1280px; }
+  }
+
+  .flex { min-height: 0; min-width: 0; }
+
+  .glass-card,
+  .glass-panel {
+    background: var(--color-surface-container-low);
+    border: 1px solid var(--color-outline-variant);
+    border-radius: var(--radius-lg, 0.5rem);
+  }
+  html:not(.dark) .glass-card,
+  html:not(.dark) .glass-panel {
+    background: var(--card);
+    border-color: var(--border);
+  }
+
+  .data-value {
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+    letter-spacing: -0.02em;
+  }
+
+  .label-caps {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+
+  .price-flash-green { animation: flash-green 2s ease-out; }
+  .price-flash-amber { animation: flash-amber 1.5s ease-out; }
+  .price-flash-rose { animation: flash-rose 2s ease-out; }
+  @keyframes flash-green {
+    0% { background-color: rgba(99, 224, 99, 0.15); }
+    100% { background-color: transparent; }
+  }
+  @keyframes flash-amber {
+    0% { background-color: rgba(254, 214, 57, 0.2); }
+    100% { background-color: transparent; }
+  }
+  @keyframes flash-rose {
+    0% { background-color: rgba(255, 177, 197, 0.15); }
+    100% { background-color: transparent; }
+  }
+
+  .recharts-tooltip-wrapper .recharts-default-tooltip {
+    background: var(--color-surface-container) !important;
+    border: 1px solid var(--color-outline-variant) !important;
+    border-radius: var(--radius) !important;
+    font-size: 12px !important;
+  }
+  .recharts-tooltip-label {
+    color: var(--color-on-surface) !important;
+  }
+}
