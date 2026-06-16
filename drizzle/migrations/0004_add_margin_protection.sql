@@ -1,0 +1,1 @@
+ALTER TABLE recommendations ADD COLUMN IF NOT EXISTS margin_protection_applied BOOLEAN NOT NULL DEFAULT FALSE;
