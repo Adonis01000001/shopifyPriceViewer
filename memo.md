@@ -255,3 +255,186 @@ The sidebar has no Settings route. Email configuration service exists (`email.se
 ├─────┼───────────────────────────┼───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
 │ 8   │ Rewrote README            │ Matches actual stack: React/Vite, Express/tRPC, Drizzle/PostgreSQL. Removed references to Next.js/Python/SQLite       │
 └─────┴───────────────────────────┴───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+
+---
+
+## Price Intelligence Platform v2 — Implementation (2026-06-15 to 2026-06-16)
+
+### What Was Built
+
+Complete autonomous competitor price intelligence platform on top of the existing Express/tRPC/Drizzle/PostgreSQL codebase.
+
+### Files Created
+
+#### Services (4 new)
+- `server/services/competitor-discovery.service.ts` — SerpAPI + Firecrawl search, country/language-aware, URL dedup, confidence scoring
+- `server/services/ai-extraction.service.ts` — Single LLM call per page: product match + price extraction + structured JSON
+- `server/services/price-monitoring.service.ts` — Hourly monitoring: scrape, AI extract, detect changes, snapshots, timeline, alerts
+- `server/services/cron-scheduler.service.ts` — In-process cron with overlap prevention
+
+#### Router (1 new)
+- `server/routers/intelligence.router.ts` — 15 tRPC endpoints
+
+#### Infrastructure
+- `docker-compose.yml`, `Dockerfile`, `docs/ARCHITECTURE.md`, `docs/ENVIRONMENT.md`
+- `_core/migrate-new-tables.ts`, `_core/seed-electronics.ts`, `_core/test-pipeline.ts`
+
+### Schema Changes
+
+6 new tables: `price_snapshots`, `price_changes`, `ai_extractions`, `competitor_discoveries`, `cron_runs`, `scrape_logs`
+
+### 10 Electronic Products Seeded
+
+1. Apple iPhone 15 Pro 256GB Natural Titanium — $1,199
+2. Apple iPhone 14 128GB Blue — $699
+3. Samsung Galaxy S24 Ultra 256GB Titanium Black — $1,299.99
+4. Apple MacBook Air 15-inch M3 16GB 512GB Midnight — $1,699
+5. Sony WH-1000XM5 Headphones — $349.99
+6. Apple iPad Pro 12.9-inch M2 256GB — $1,199
+7. Dell XPS 15 9530 i7/16GB/512GB — $1,499.99
+8. Nintendo Switch OLED White — $349.99
+9. Bose QC Ultra Headphones — $429
+10. Apple Watch Ultra 2 GPS+Cellular 49mm — $799
+
+### Server
+
+Running at `http://localhost:3000` with cron scheduler active (hourly monitoring + daily discovery).
+
+### Key Design Decisions
+
+- Single AI call per page with JSON schema validation
+- Immutable price snapshots (append-only)
+- Confidence threshold 0.85 for match acceptance
+- SerpAPI primary / Firecrawl fallback for discovery
+- In-process cron scheduler (BullMQ upgrade path for scaling)
+- Auto-alerts for >2% price changes
+
+### Known Issues
+
+- Firecrawl free tier rate limits (429 on heavy scraping)
+- 5 pre-existing TS errors in original code (none new)
+
+---
+
+## Strategic Undercutting Engine — Implementation Report (2026-06-16)
+
+### What Was Built
+
+Complete Strategic Undercutting Engine that analyzes competitor pricing, generates intelligent pricing recommendations using the 5% undercut rule with margin protection, classifies market position, and presents results in a merchant dashboard widget.
+
+### Business Rules Implemented
+
+**Rule 1: Market Average**
+```
+avg_price = sum(valid_competitor_prices) / count(valid_competitor_prices)
+```
+Invalid prices (negative, zero, null, NaN) are silently filtered out.
+
+**Rule 2: Strategic Undercut (5% Rule)**
+```
+recommended_price = avg_competitor_price * 0.95
+```
+
+**Rule 3: Margin Protection Floor**
+```
+minimum_allowed_price = cost_price * 1.10
+if recommended_price < minimum_allowed_price:
+    recommended_price = minimum_allowed_price
+    margin_protection_applied = true
+```
+
+**Rule 4: Final Recommendation**
+```
+if (avg * 0.95) >= (cost * 1.10):
+    recommendation = avg * 0.95
+else:
+    recommendation = cost * 1.10
+    margin_protection_applied = true
+```
+
+### Market Position Classification
+
+| Status | Condition | Color | Meaning |
+|--------|-----------|-------|---------|
+| LEADING | merchant < avg * 0.97 | Green | You are currently leading the market. |
+| COMPETITIVE | within +/-3% of avg | Blue | You are competitively priced. |
+| OVERPRICED | merchant > avg * 1.03 | Red | You are likely losing sales to competitors. |
+| INSUFFICIENT_DATA | no valid competitor data | Gray | Not enough competitor pricing data. |
+
+### Files Created/Modified (12 files)
+
+| File | Status | Lines |
+|------|--------|-------|
+| `server/services/pricing-engine.service.ts` | NEW | 237 |
+| `server/services/__tests__/pricing-engine.test.ts` | NEW | 256 |
+| `server/routers/pricing-engine.router.ts` | NEW | 215 |
+| `server/routers.ts` | Modified | +4 |
+| `server/services/recommendation.service.ts` | Modified | +41/-13 |
+| `drizzle/schema.ts` | Modified | +1 (margin_protection_applied) |
+| `drizzle/migrations/0004_add_margin_protection.sql` | NEW | 1 |
+| `client/src/components/dashboard/PricingRecommendationWidget.tsx` | NEW | 383 |
+| `client/src/pages/dashboard/Overview.tsx` | Modified | +4 |
+| `client/src/pages/dashboard/Products.tsx` | Modified | +47 |
+| `docs/superpowers/specs/2026-06-16-strategic-undercutting-engine-design.md` | NEW | 82 |
+| `docs/superpowers/plans/2026-06-16-phase-1-3-roadmap.md` | NEW | 177 |
+
+### API Endpoints (5 new tRPC endpoints)
+
+| Endpoint | Type | Description |
+|----------|------|-------------|
+| `pricingEngine.analyze` | query | Full analysis: market snapshot + recommendation + position |
+| `pricingEngine.analyzeAll` | query | Analyze all tracked products with competitor data |
+| `pricingEngine.getMarketPosition` | query | Lightweight position classification only |
+| `pricingEngine.generateRecommendation` | mutation | Generate and persist a recommendation |
+| `pricingEngine.dashboardStats` | query | Aggregate stats: leading/competitive/overpriced counts |
+
+### UI Components
+
+1. **PricingDashboardSummary** — Aggregate stats on Overview page (4 color-coded cards + margin protection warning)
+2. **PricingRecommendationWidget** — Per-product analysis (Market Snapshot, Recommendation Card, Position Indicator, Margin Warning)
+3. **MarketPositionBadge** — Compact colored badge per product row on Products page
+
+### Testing
+
+33 unit tests covering: average calculation, 5% undercut recommendation, margin protection floor, market position classification (all 4 states), full integration, and edge cases.
+
+**Test Results:** 34/34 tests passing (33 pricing-engine + 1 auth logout)
+
+### Git Commits
+
+| Commit | Description |
+|--------|-------------|
+| `92943d5` | Core algorithm, tRPC router, UI components, schema changes, unit tests |
+| `41ae940` | Pricing engine service, migration SQL, design doc |
+| `43a22b2` | Comprehensive Phase 1-3 roadmap |
+
+### Edge Cases Handled
+
+| Scenario | Behavior |
+|----------|----------|
+| No competitor data | INSUFFICIENT_DATA, null recommendation |
+| Invalid prices (<=0, null, NaN) | Filtered before calculation |
+| Single competitor | Calculates normally |
+| Cost > competitor avg | Margin protection kicks in |
+| No cost price | Pure 5% undercut, no floor |
+
+### Architecture
+
+```
+pricing-engine.service.ts    -> Pure computation (no DB, no HTTP)
+  v used by
+recommendation.service.ts    -> Persists recommendations to DB
+  v exposed via
+pricing-engine.router.ts     -> tRPC endpoints (5 total)
+  v consumed by
+PricingRecommendationWidget  -> Dashboard widget
+PricingDashboardSummary      -> Aggregate stats on Overview page
+MarketPositionBadge          -> Per-product position on Products page
+```
+
+### Next Steps
+
+1. Run `pnpm db:push` to apply the margin_protection_applied migration
+2. Validate Firecrawl + AI pipeline with 10-15 products
+3. Set up BullMQ + Redis for queue-based processing
+4. Begin Phase 2 automation work
