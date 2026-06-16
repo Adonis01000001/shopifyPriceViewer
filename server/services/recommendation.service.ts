@@ -7,6 +7,9 @@ import {
   type Recommendation,
   type InsertRecommendation,
 } from "../../drizzle/schema";
+import { pricingEngine } from "./pricing-engine.service";
+
+function round(n: number): number { return Math.round(n * 100) / 100; }
 
 export const recommendationService = {
   async getByUserId(userId: string, options?: { status?: string; limit?: number }): Promise<Recommendation[]> {
@@ -97,37 +100,51 @@ export const recommendationService = {
     if (compPrices.length === 0) return undefined;
 
     const prices = compPrices.map((c) => Number(c.price));
-    const avgCompetitorPrice = prices.reduce((a, b) => a + b, 0) / prices.length;
-    const minCompetitorPrice = Math.min(...prices);
-    const currentPrice = Number(product[0].price);
+    const merchantPrice = Number(product[0].price);
+    const costPrice = product[0].costPrice != null ? Number(product[0].costPrice) : null;
 
-    // Simple recommendation: price at 2% below average competitor price
-    const recommendedPrice = Math.round(avgCompetitorPrice * 0.98 * 100) / 100;
-    const priceChange = Math.round((recommendedPrice - currentPrice) * 100) / 100;
-    const priceChangePercent = Math.round((priceChange / currentPrice) * 100 * 100) / 100;
+    // Use the Strategic Undercutting Engine for analysis
+    const analysis = pricingEngine.analyzeProduct({
+      merchantPrice,
+      costPrice,
+      competitorPrices: prices,
+    });
+
+    const recommendation = analysis.recommendation;
+    if (!recommendation) return undefined;
+
+    const currentPrice = merchantPrice;
+    const recommendedPrice = recommendation.recommendedPrice;
+    const priceChange = round(recommendedPrice - currentPrice);
+    const priceChangePercent = currentPrice > 0 ? round((priceChange / currentPrice) * 100) : 0;
 
     // Confidence based on number of competitor data points
     const confidenceScore = Math.min(0.5 + compPrices.length * 0.1, 0.95);
 
     const factors = {
       competitorCount: compPrices.length,
-      avgCompetitorPrice,
-      minCompetitorPrice,
+      avgCompetitorPrice: recommendation.avgCompetitorPrice,
+      minCompetitorPrice: Math.min(...prices),
       maxCompetitorPrice: Math.max(...prices),
-      currentPrice,
+      costPrice,
+      minimumAllowedPrice: recommendation.minimumAllowedPrice,
+      marketPosition: analysis.position.status,
+      priceDiffFromAvg: analysis.position.priceDiff,
+      priceDiffPercentFromAvg: analysis.position.priceDiffPercent,
     };
 
     return this.create({
       userId,
       productId,
-      currentPrice: product[0].price,
+      currentPrice: String(currentPrice),
       recommendedPrice: String(recommendedPrice),
       priceChange: String(priceChange),
       priceChangePercent: String(priceChangePercent),
       confidenceScore,
-      reason: `Based on ${compPrices.length} competitor(s). Average competitor price is $${avgCompetitorPrice.toFixed(2)}. Recommended price is 2% below average to stay competitive.`,
+      reason: recommendation.explanation,
       factors,
       status: "pending",
+      marginProtectionApplied: recommendation.marginProtectionApplied,
     });
   },
 

@@ -9,6 +9,8 @@ import { alertRouter } from "./routers/alert.router";
 import { recommendationRouter } from "./routers/recommendation.router";
 import { activityRouter } from "./routers/activity.router";
 import { authRouter } from "./routers/auth.router";
+import { intelligenceRouter } from "./routers/intelligence.router";
+import { pricingEngineRouter } from "./routers/pricing-engine.router";
 import { protectedProcedure } from "./_core/trpc";
 import { z } from "zod";
 import { shopifyStores } from "../drizzle/schema";
@@ -27,6 +29,8 @@ export const appRouter = router({
   alerts: alertRouter,
   recommendations: recommendationRouter,
   activity: activityRouter,
+  intelligence: intelligenceRouter,
+  pricingEngine: pricingEngineRouter,
 
   // ── Shopify store management (tRPC) ──────────────────────────────────────
   shopify: router({

@@ -4,8 +4,10 @@ import {
   products,
   productEmbeddings,
   shopifyStores,
+  competitorProducts,
   type Product,
   type InsertProduct,
+  type CompetitorProduct,
 } from "../../drizzle/schema";
 
 export const productService = {
@@ -76,6 +78,14 @@ export const productService = {
 
   async toggleTracking(userId: string, productId: string, isTracked: boolean): Promise<Product | undefined> {
     return this.update(userId, productId, { isTracked });
+  },
+
+  async getCompetitorPrices(productId: string): Promise<CompetitorProduct[]> {
+    const database = await requireDb();
+    return database
+      .select()
+      .from(competitorProducts)
+      .where(and(eq(competitorProducts.productId, productId), eq(competitorProducts.isActive, true)));
   },
 
   async getStats(userId: string) {

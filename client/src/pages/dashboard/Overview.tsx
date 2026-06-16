@@ -11,6 +11,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useMemo } from "react";
+import { PricingDashboardSummary } from "@/components/dashboard/PricingRecommendationWidget";
 
 const statusConfig: Record<string, { label: string; className: string }> = {
   optimal: { label: "Optimal", className: "bg-primary/[0.1] text-primary border border-primary/20" },
@@ -177,6 +178,9 @@ export default function Overview() {
           <div className="flex items-center gap-1 text-primary"><CheckCircle className="h-3 w-3" /><span className="text-xs font-mono">All stable</span></div>
         </div>
       </div>
+
+      {/* Pricing Position Summary */}
+      <PricingDashboardSummary />
 
       {/* Main Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">

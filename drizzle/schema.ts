@@ -423,6 +423,7 @@ export const recommendations = pgTable(
     implementedAt: timestamp("implemented_at", { withTimezone: true }),
     dismissedAt: timestamp("dismissed_at", { withTimezone: true }),
     potentialSavings: decimal("potential_savings", { precision: 12, scale: 2 }),
+    marginProtectionApplied: boolean("margin_protection_applied").default(false).notNull(),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
   },
@@ -521,3 +522,226 @@ export const activityLogs = pgTable(
 
 export type ActivityLog = typeof activityLogs.$inferSelect;
 export type InsertActivityLog = typeof activityLogs.$inferInsert;
+
+// =============================================================================
+// Price Snapshots (immutable price records for monitoring)
+// =============================================================================
+
+export const priceSnapshots = pgTable(
+  "price_snapshots",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    competitorProductId: uuid("competitor_product_id")
+      .notNull()
+      .references(() => competitorProducts.id, { onDelete: "cascade" }),
+    price: decimal("price", { precision: 10, scale: 2 }).notNull(),
+    currency: varchar("currency", { length: 3 }).default("USD"),
+    salePrice: decimal("sale_price", { precision: 10, scale: 2 }),
+    originalPrice: decimal("original_price", { precision: 10, scale: 2 }),
+    availability: varchar("availability", { length: 32 }).default("in_stock"),
+    scrapedAt: timestamp("scraped_at", { withTimezone: true }).defaultNow().notNull(),
+    scrapeMethod: varchar("scrape_method", { length: 32 }).default("firecrawl"),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => ({
+    cpIdIdx: index("price_snapshots_cp_id_idx").on(t.competitorProductId),
+    scrapedAtIdx: index("price_snapshots_scraped_at_idx").on(t.scrapedAt),
+    cpScrapedIdx: index("price_snapshots_cp_scraped_idx").on(t.competitorProductId, t.scrapedAt),
+  })
+);
+
+export type PriceSnapshot = typeof priceSnapshots.$inferSelect;
+export type InsertPriceSnapshot = typeof priceSnapshots.$inferInsert;
+
+// =============================================================================
+// Price Changes (detected change events)
+// =============================================================================
+
+export const priceChanges = pgTable(
+  "price_changes",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    competitorProductId: uuid("competitor_product_id")
+      .notNull()
+      .references(() => competitorProducts.id, { onDelete: "cascade" }),
+    productId: uuid("product_id")
+      .notNull()
+      .references(() => products.id, { onDelete: "cascade" }),
+    changeType: varchar("change_type", { length: 32 }).notNull(),
+    previousPrice: decimal("previous_price", { precision: 10, scale: 2 }),
+    newPrice: decimal("new_price", { precision: 10, scale: 2 }),
+    previousAvailability: varchar("previous_availability", { length: 32 }),
+    newAvailability: varchar("new_availability", { length: 32 }),
+    priceDiff: decimal("price_diff", { precision: 10, scale: 2 }),
+    priceDiffPercent: decimal("price_diff_percent", { precision: 5, scale: 2 }),
+    currency: varchar("currency", { length: 3 }).default("USD"),
+    detectedAt: timestamp("detected_at", { withTimezone: true }).defaultNow().notNull(),
+    isNotified: boolean("is_notified").default(false).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => ({
+    cpIdIdx: index("price_changes_cp_id_idx").on(t.competitorProductId),
+    productIdIdx: index("price_changes_product_id_idx").on(t.productId),
+    detectedAtIdx: index("price_changes_detected_at_idx").on(t.detectedAt),
+    changeTypeIdx: index("price_changes_change_type_idx").on(t.changeType),
+    productDetectedIdx: index("price_changes_product_detected_idx").on(t.productId, t.detectedAt),
+  })
+);
+
+export type PriceChange = typeof priceChanges.$inferSelect;
+export type InsertPriceChange = typeof priceChanges.$inferInsert;
+
+// =============================================================================
+// AI Extractions (raw AI validation + extraction results)
+// =============================================================================
+
+export const aiExtractions = pgTable(
+  "ai_extractions",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    productId: uuid("product_id")
+      .notNull()
+      .references(() => products.id, { onDelete: "cascade" }),
+    competitorId: uuid("competitor_id")
+      .notNull()
+      .references(() => competitors.id, { onDelete: "cascade" }),
+    sourceUrl: text("source_url").notNull(),
+    isMatch: boolean("is_match").notNull(),
+    confidence: doublePrecision("confidence").notNull(),
+    matchConfidence: doublePrecision("match_confidence"),
+    skuMatchConfidence: doublePrecision("sku_match_confidence"),
+    titleSimilarity: doublePrecision("title_similarity"),
+    variantSimilarity: doublePrecision("variant_similarity"),
+    extractedPrice: decimal("extracted_price", { precision: 10, scale: 2 }),
+    extractedCurrency: varchar("extracted_currency", { length: 3 }),
+    extractedSalePrice: decimal("extracted_sale_price", { precision: 10, scale: 2 }),
+    extractedOriginalPrice: decimal("extracted_original_price", { precision: 10, scale: 2 }),
+    extractedTitle: varchar("extracted_title", { length: 500 }),
+    extractedDescription: text("extracted_description"),
+    extractedFeatures: jsonb("extracted_features"),
+    reasoning: text("reasoning"),
+    modelUsed: varchar("model_used", { length: 128 }),
+    tokensUsed: integer("tokens_used"),
+    rawResponse: jsonb("raw_response"),
+    extractedAt: timestamp("extracted_at", { withTimezone: true }).defaultNow().notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => ({
+    productIdIdx: index("ai_extractions_product_id_idx").on(t.productId),
+    competitorIdIdx: index("ai_extractions_competitor_id_idx").on(t.competitorId),
+    confidenceIdx: index("ai_extractions_confidence_idx").on(t.confidence),
+    isMatchIdx: index("ai_extractions_is_match_idx").on(t.isMatch),
+    extractedAtIdx: index("ai_extractions_extracted_at_idx").on(t.extractedAt),
+    productConfidenceIdx: index("ai_extractions_product_confidence_idx").on(t.productId, t.confidence),
+  })
+);
+
+export type AiExtraction = typeof aiExtractions.$inferSelect;
+export type InsertAiExtraction = typeof aiExtractions.$inferInsert;
+
+// =============================================================================
+// Competitor Discoveries (search results from automated discovery)
+// =============================================================================
+
+export const competitorDiscoveries = pgTable(
+  "competitor_discoveries",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    productId: uuid("product_id")
+      .notNull()
+      .references(() => products.id, { onDelete: "cascade" }),
+    searchQuery: text("search_query").notNull(),
+    searchEngine: varchar("search_engine", { length: 32 }).default("google"),
+    country: varchar("country", { length: 2 }).default("US"),
+    language: varchar("language", { length: 5 }).default("en"),
+    candidateUrl: text("candidate_url").notNull(),
+    candidateDomain: varchar("candidate_domain", { length: 255 }).notNull(),
+    candidateTitle: varchar("candidate_title", { length: 500 }),
+    searchPosition: integer("search_position"),
+    confidence: doublePrecision("confidence").default(0).notNull(),
+    status: varchar("status", { length: 32 }).default("pending"),
+    discoveredAt: timestamp("discovered_at", { withTimezone: true }).defaultNow().notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => ({
+    userIdIdx: index("competitor_discoveries_user_id_idx").on(t.userId),
+    productIdIdx: index("competitor_discoveries_product_id_idx").on(t.productId),
+    statusIdx: index("competitor_discoveries_status_idx").on(t.status),
+    domainIdx: index("competitor_discoveries_domain_idx").on(t.candidateDomain),
+    confidenceIdx: index("competitor_discoveries_confidence_idx").on(t.confidence),
+    productStatusIdx: index("competitor_discoveries_product_status_idx").on(t.productId, t.status),
+  })
+);
+
+export type CompetitorDiscovery = typeof competitorDiscoveries.$inferSelect;
+export type InsertCompetitorDiscovery = typeof competitorDiscoveries.$inferInsert;
+
+// =============================================================================
+// Cron Runs (monitoring job tracking)
+// =============================================================================
+
+export const cronRuns = pgTable(
+  "cron_runs",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    jobType: varchar("job_type", { length: 64 }).notNull(),
+    status: varchar("status", { length: 32 }).default("running"),
+    startedAt: timestamp("started_at", { withTimezone: true }).defaultNow().notNull(),
+    completedAt: timestamp("completed_at", { withTimezone: true }),
+    productsProcessed: integer("products_processed").default(0),
+    productsUpdated: integer("products_updated").default(0),
+    changesDetected: integer("changes_detected").default(0),
+    errorsCount: integer("errors_count").default(0),
+    errorDetails: jsonb("error_details"),
+    metadata: jsonb("metadata"),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => ({
+    jobTypeIdx: index("cron_runs_job_type_idx").on(t.jobType),
+    statusIdx: index("cron_runs_status_idx").on(t.status),
+    startedAtIdx: index("cron_runs_started_at_idx").on(t.startedAt),
+    jobStartedIdx: index("cron_runs_job_started_idx").on(t.jobType, t.startedAt),
+  })
+);
+
+export type CronRun = typeof cronRuns.$inferSelect;
+export type InsertCronRun = typeof cronRuns.$inferInsert;
+
+// =============================================================================
+// Scrape Logs (detailed per-URL scrape attempts)
+// =============================================================================
+
+export const scrapeLogs = pgTable(
+  "scrape_logs",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    competitorId: uuid("competitor_id")
+      .references(() => competitors.id, { onDelete: "set null" }),
+    competitorProductId: uuid("competitor_product_id")
+      .references(() => competitorProducts.id, { onDelete: "set null" }),
+    cronRunId: uuid("cron_run_id")
+      .references(() => cronRuns.id, { onDelete: "set null" }),
+    url: text("url").notNull(),
+    status: varchar("status", { length: 32 }).notNull(),
+    method: varchar("method", { length: 32 }),
+    httpStatus: integer("http_status"),
+    responseTimeMs: integer("response_time_ms"),
+    errorMessage: text("error_message"),
+    htmlSize: integer("html_size"),
+    retryCount: integer("retry_count").default(0),
+    scrapedAt: timestamp("scraped_at", { withTimezone: true }).defaultNow().notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => ({
+    competitorIdIdx: index("scrape_logs_competitor_id_idx").on(t.competitorId),
+    cronRunIdIdx: index("scrape_logs_cron_run_id_idx").on(t.cronRunId),
+    statusIdx: index("scrape_logs_status_idx").on(t.status),
+    scrapedAtIdx: index("scrape_logs_scraped_at_idx").on(t.scrapedAt),
+  })
+);
+
+export type ScrapeLog = typeof scrapeLogs.$inferSelect;
+export type InsertScrapeLog = typeof scrapeLogs.$inferInsert;

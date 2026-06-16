@@ -18,6 +18,49 @@ import { useMemo, useState, useCallback } from "react";
 import Papa from "papaparse";
 import { toast } from "sonner";
 
+// ─── Market Position Badge ───────────────────────────────────────────────────
+
+type MarketPositionStatus = "LEADING" | "COMPETITIVE" | "OVERPRICED" | "INSUFFICIENT_DATA";
+
+const POSITION_STYLES: Record<MarketPositionStatus, { bg: string; text: string; border: string }> = {
+  LEADING: { bg: "bg-[#21a732]/10", text: "text-[#21a732]", border: "border-[#21a732]/30" },
+  COMPETITIVE: { bg: "bg-blue-500/10", text: "text-blue-400", border: "border-blue-500/30" },
+  OVERPRICED: { bg: "bg-[#93000a]/15", text: "text-[#ffb4ab]", border: "border-[#93000a]/30" },
+  INSUFFICIENT_DATA: { bg: "bg-gray-500/10", text: "text-gray-400", border: "border-gray-500/30" },
+};
+
+const POSITION_LABELS: Record<MarketPositionStatus, string> = {
+  LEADING: "LEAD",
+  COMPETITIVE: "COMP",
+  OVERPRICED: "OVER",
+  INSUFFICIENT_DATA: "N/A",
+};
+
+function MarketPositionBadge({ productId }: { productId: string }) {
+  const { data, isLoading } = trpc.pricingEngine.getMarketPosition.useQuery(
+    { productId },
+    { enabled: !!productId },
+  );
+
+  if (isLoading) {
+    return <span className="inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-bold label-caps bg-surface-container-highest text-muted-foreground">...</span>;
+  }
+
+  if (!data?.position) {
+    return <span className="inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-bold label-caps bg-gray-500/10 text-gray-400 border border-gray-500/30">N/A</span>;
+  }
+
+  const status = data.position.status as MarketPositionStatus;
+  const style = POSITION_STYLES[status] ?? POSITION_STYLES.INSUFFICIENT_DATA;
+  const label = POSITION_LABELS[status] ?? "N/A";
+
+  return (
+    <span className={cn("inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-bold label-caps border", style.bg, style.text, style.border)}>
+      {label}
+    </span>
+  );
+}
+
 const statusConfig: Record<string, { label: string; className: string }> = {
   optimal: { label: "Optimal", className: "bg-primary/[0.1] text-primary border border-primary/20" },
   underpriced: { label: "Underpriced", className: "bg-blue-500/10 text-blue-400 border border-blue-500/20" },
@@ -122,6 +165,7 @@ export default function Products() {
                 <TableHead className="text-right label-caps text-muted-foreground font-normal">Market Low</TableHead>
                 <TableHead className="text-center label-caps text-muted-foreground font-normal">Delta</TableHead>
                 <TableHead className="text-center label-caps text-muted-foreground font-normal">Status</TableHead>
+                <TableHead className="text-center label-caps text-muted-foreground font-normal">Position</TableHead>
                 <TableHead className="pr-5 label-caps text-muted-foreground font-normal text-right">Actions</TableHead>
               </TableRow>
             </TableHeader>
@@ -143,6 +187,7 @@ export default function Products() {
                     <td className="py-3 font-mono text-[13px] text-muted-foreground text-right">—</td>
                     <td className="py-3 text-center"><span className="font-mono text-[12px] text-muted-foreground">—</span></td>
                     <td className="py-3 text-center"><span className={cn("inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-bold label-caps", status.className)}>{status.label.toUpperCase()}</span></td>
+                    <td className="py-3 text-center"><MarketPositionBadge productId={product.id} /></td>
                     <td className="pr-5 py-3 text-right">
                       <div className="flex items-center justify-end gap-2 text-muted-foreground">
                         <button className="hover:text-primary transition-colors text-sm" title="Auto-adjust">⚡</button>
@@ -156,7 +201,7 @@ export default function Products() {
                   </tr>
                 );
               }) : (
-                <tr><td colSpan={7} className="py-16 text-center text-muted-foreground">No products found</td></tr>
+                <tr><td colSpan={8} className="py-16 text-center text-muted-foreground">No products found</td></tr>
               )}
             </TableBody>
           </Table>
