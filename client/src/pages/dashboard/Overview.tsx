@@ -6,12 +6,13 @@ import {
 } from "recharts";
 import { trpc } from "@/lib/trpc";
 import {
-  AlertTriangle, CheckCircle, DollarSign, LineChart,
-  Globe, Package, RefreshCw, TrendingDown, TrendingUp, Users,
+  AlertTriangle, Bell, CheckCircle, DollarSign, LineChart,
+  Package, RefreshCw, TrendingDown, TrendingUp, Users, X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useMemo } from "react";
 import { PricingDashboardSummary } from "@/components/dashboard/PricingRecommendationWidget";
+import { toast } from "sonner";
 
 const statusConfig: Record<string, { label: string; className: string }> = {
   optimal: { label: "Optimal", className: "bg-primary/[0.1] text-primary border border-primary/20" },
@@ -36,11 +37,40 @@ function timeAgo(date: Date | string): string {
 }
 
 export default function Overview() {
+  const utils = trpc.useUtils();
   const { data: products } = trpc.products.list.useQuery();
   const { data: productStats } = trpc.products.stats.useQuery();
   const { data: competitorStats } = trpc.competitors.stats.useQuery();
   const { data: alertStats } = trpc.alerts.stats.useQuery();
   const { data: competitors } = trpc.competitors.list.useQuery({ limit: 10 });
+  const { data: user } = trpc.auth.me.useQuery();
+  const isAdmin = user?.role === "admin";
+  // Admins see all pending recommendations; regular users see only their own
+  const adminQuery = trpc.recommendations.listAll.useQuery({ status: "pending", limit: 200 }, { enabled: isAdmin });
+  const userQuery = trpc.recommendations.list.useQuery({ status: "pending", limit: 6 }, { enabled: !isAdmin });
+  const recommendations = isAdmin ? (adminQuery.data ?? []) : (userQuery.data ?? []);
+  const { data: notifications } = trpc.alerts.list.useQuery({ unreadOnly: true, limit: 6 });
+  const implementRecommendation = trpc.recommendations.implement.useMutation({
+    onSuccess: () => {
+      utils.recommendations.list.invalidate();
+      utils.recommendations.stats.invalidate();
+      utils.products.list.invalidate();
+      toast.success("Pricing insight approved");
+    },
+  });
+  const dismissRecommendation = trpc.recommendations.dismiss.useMutation({
+    onSuccess: () => {
+      utils.recommendations.list.invalidate();
+      utils.recommendations.stats.invalidate();
+      toast.success("Pricing insight dismissed");
+    },
+  });
+  const markAlertRead = trpc.alerts.markRead.useMutation({
+    onSuccess: () => {
+      utils.alerts.list.invalidate();
+      utils.alerts.stats.invalidate();
+    },
+  });
 
   // Fetch feed data for each competitor
   const competitorList = competitors ?? [];
@@ -110,9 +140,9 @@ export default function Overview() {
   }, [feedQueries, competitorList]);
 
   const allProducts = products ?? [];
-  const attentionProducts = useMemo(() => {
-    return allProducts.filter(p => p.status === "alert" || p.status === "overpriced").slice(0, 5);
-  }, [allProducts]);
+  const productById = useMemo(() => new Map(allProducts.map(product => [product.id, product])), [allProducts]);
+  const pricingInsights = recommendations ?? [];
+  const notificationItems = notifications ?? [];
 
   const categoryData = useMemo(() => {
     if (!allProducts.length) return [];
@@ -203,43 +233,61 @@ export default function Overview() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-white/[0.03]">
-                  {attentionProducts.length > 0
-                    ? attentionProducts.slice(0, 5).map(product => (
-                        <tr key={product.id} className="hover:bg-white/[0.02] transition-colors">
+                  {pricingInsights.length > 0
+                    ? pricingInsights.map(insight => {
+                        const product = productById.get(insight.productId);
+                        const currentPrice = Number(insight.currentPrice);
+                        const recommendedPrice = Number(insight.recommendedPrice);
+                        const priceChange = Number(insight.priceChange);
+                        const confidence = Math.round(Number(insight.confidenceScore) * 100);
+                        return (
+                        <tr key={insight.id} className="hover:bg-white/[0.02] transition-colors">
                           <td className="px-5 py-3">
                             <div className="flex items-center gap-3">
                               <div className="w-9 h-9 rounded bg-surface-container-highest border border-outline-variant flex items-center justify-center text-xs font-bold text-muted-foreground">
-                                {product.title.charAt(0)}
+                                {(product?.title ?? "P").charAt(0)}
                               </div>
                               <div>
-                                <p className="text-[13px] font-medium">{product.title}</p>
-                                <p className="text-[10px] label-caps text-muted-foreground">{product.sku || "NO SKU"}</p>
+                                <p className="text-[13px] font-medium">{product?.title ?? "Tracked product"}</p>
+                                <p className="text-[10px] label-caps text-muted-foreground">{product?.sku || `${confidence}% confidence`}</p>
                               </div>
                             </div>
                           </td>
-                          <td className="px-5 py-3 font-mono text-[13px] font-medium">${Number(product.price).toFixed(2)}</td>
+                          <td className="px-5 py-3 font-mono text-[13px] font-medium">${currentPrice.toFixed(2)}</td>
                           <td className="px-5 py-3">
                             <span className="font-mono text-[13px] font-medium text-primary">
-                              ${(Number(product.price) * 0.95).toFixed(2)}
+                              ${recommendedPrice.toFixed(2)}
                             </span>
                           </td>
-                          <td className="px-5 py-3 font-mono text-[13px] font-medium text-primary">{"-"}</td>
+                          <td className={cn("px-5 py-3 font-mono text-[13px] font-medium", priceChange < 0 ? "text-[#ffb4ab]" : "text-primary")}>
+                            {priceChange >= 0 ? "+" : ""}${priceChange.toFixed(2)}
+                          </td>
                           <td className="px-5 py-3">
                             <div className="flex justify-end gap-2">
-                              <button className="p-1.5 hover:bg-[#93000a]/20 text-muted-foreground hover:text-[#ffb4ab] rounded text-sm">
+                              <button
+                                className="p-1.5 hover:bg-[#93000a]/20 text-muted-foreground hover:text-[#ffb4ab] rounded text-sm disabled:opacity-50"
+                                onClick={() => dismissRecommendation.mutate({ id: insight.id })}
+                                disabled={dismissRecommendation.isPending || implementRecommendation.isPending}
+                              >
+                                <X className="h-3.5 w-3.5" />
                                 {"×"}
                               </button>
-                              <button className="px-3 py-1 bg-primary text-primary-foreground text-[10px] font-bold label-caps rounded hover:brightness-110">
+                              <button
+                                className="px-3 py-1 bg-primary text-primary-foreground text-[10px] font-bold label-caps rounded hover:brightness-110 disabled:opacity-50"
+                                onClick={() => implementRecommendation.mutate({ id: insight.id })}
+                                disabled={dismissRecommendation.isPending || implementRecommendation.isPending}
+                              >
                                 APPROVE
                               </button>
                             </div>
                           </td>
                         </tr>
-                      ))
+                      );
+                    })
                     : (
                       <tr>
                         <td colSpan={5} className="py-10 text-center text-muted-foreground text-sm">
-                          No products need attention right now. All prices are optimal.
+                          No pending pricing insights yet. Scout competitor prices or generate recommendations to fill this table.
                         </td>
                       </tr>
                       )}
@@ -304,6 +352,63 @@ export default function Overview() {
             </div>
           </div>
         </div>
+      </div>
+
+      {/* Notifications */}
+      <div className="glass-panel rounded-lg overflow-hidden">
+        <div className="px-5 py-4 border-b border-white/[0.04] bg-surface-container/50 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <Bell className="h-4 w-4 text-[#ffb4ab]" />
+            <h3 className="text-[15px] font-semibold">Notifications</h3>
+          </div>
+          {notificationItems.length > 0 && (
+            <span className="label-caps text-[10px] bg-[#93000a]/15 text-[#ffb4ab] px-2 py-0.5 rounded border border-[#93000a]/20">
+              {notificationItems.length} unread
+            </span>
+          )}
+        </div>
+        {notificationItems.length > 0 ? (
+          <div className="divide-y divide-white/[0.03]">
+            {notificationItems.map(alert => (
+              <div key={alert.id} className="px-5 py-3 flex items-start gap-3 hover:bg-white/[0.02] transition-colors">
+                <div className={cn(
+                  "mt-0.5 h-8 w-8 rounded-lg flex items-center justify-center shrink-0",
+                  alert.severity === "critical" || alert.severity === "high" ? "bg-[#93000a]/15" : "bg-primary/[0.12]",
+                )}>
+                  <AlertTriangle className={cn("h-4 w-4", alert.severity === "critical" || alert.severity === "high" ? "text-[#ffb4ab]" : "text-primary")} />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2">
+                    <p className="text-[13px] font-medium truncate">{alert.title}</p>
+                    <Badge className={cn(
+                      "label-caps text-[9px] border",
+                      alert.severity === "critical" ? "bg-[#93000a]/20 text-[#ffb4ab] border-[#93000a]/30" :
+                      alert.severity === "high" ? "bg-[#93000a]/15 text-[#ffb4ab]/80 border-[#ffb4ab]/20" :
+                      alert.severity === "medium" ? "bg-[#63e063]/10 text-[#21a732] border-[#63e063]/20" :
+                      "bg-blue-500/10 text-blue-400 border-blue-500/20",
+                    )}>
+                      {alert.severity}
+                    </Badge>
+                  </div>
+                  <p className="text-[11px] text-muted-foreground line-clamp-2 mt-1">{alert.message}</p>
+                  <p className="text-[10px] text-muted-foreground/60 mt-1">{timeAgo(alert.createdAt)}</p>
+                </div>
+                <button
+                  className="p-1.5 rounded text-muted-foreground hover:text-primary hover:bg-primary/[0.08] disabled:opacity-50"
+                  onClick={() => markAlertRead.mutate({ id: alert.id })}
+                  disabled={markAlertRead.isPending}
+                  title="Mark as read"
+                >
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="px-5 py-8 text-center text-sm text-muted-foreground">
+            No unread notifications right now.
+          </div>
+        )}
       </div>
 
       {/* Bottom Row */}

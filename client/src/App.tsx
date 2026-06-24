@@ -10,6 +10,8 @@ import Products from "./pages/dashboard/Products";
 import Alerts from "./pages/dashboard/Alerts";
 import Competitors from "./pages/dashboard/Competitors";
 import Analytics from "./pages/dashboard/Analytics";
+import PriceScout from "./pages/dashboard/PriceScout";
+import Admin from "./pages/dashboard/Admin";
 import Auth from "./pages/Auth";
 import { trpc } from "@/lib/trpc";
 
@@ -64,9 +66,11 @@ function App() {
                   <Switch>
                     <Route path="/" component={Overview} />
                     <Route path="/products" component={Products} />
+                    <Route path="/scout" component={PriceScout} />
                     <Route path="/alerts" component={Alerts} />
                     <Route path="/competitors" component={Competitors} />
                     <Route path="/analytics" component={Analytics} />
+                    <Route path="/admin" component={Admin} />
                     <Route component={NotFound} />
                   </Switch>
                 </DashboardLayout>

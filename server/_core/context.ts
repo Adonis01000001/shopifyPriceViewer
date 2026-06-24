@@ -33,7 +33,7 @@ function createDevUser(): User {
     openId: "dev-local",
     email: "dev@example.com",
     name: "Local Developer",
-    role: "user",
+    role: "admin",
     avatarUrl: null,
     loginMethod: "local",
     passwordHash: null,
@@ -60,7 +60,7 @@ export async function createContext(
     if (ENV.isProduction && ENV.bypassAuth) {
       logger.error("bypassAuth was set to true in production — ignoring. Remove VITE_BYPASS_AUTH from production env.");
     } else if (ENV.bypassAuth) {
-      user = await getFirstUser() ?? createDevUser();
+      user = createDevUser();
     }
   }
 

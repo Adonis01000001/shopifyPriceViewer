@@ -4,6 +4,7 @@ import {
   recommendations,
   products,
   competitorProducts,
+  users,
   type Recommendation,
   type InsertRecommendation,
 } from "../../drizzle/schema";
@@ -12,6 +13,18 @@ import { pricingEngine } from "./pricing-engine.service";
 function round(n: number): number { return Math.round(n * 100) / 100; }
 
 export const recommendationService = {
+  async getAll(options?: { status?: string; limit?: number }): Promise<Recommendation[]> {
+    const database = await requireDb();
+    const conditions = [];
+    if (options?.status) conditions.push(eq(recommendations.status, options.status as any));
+    return database
+      .select()
+      .from(recommendations)
+      .where(conditions.length > 0 ? and(...conditions) : undefined)
+      .orderBy(desc(recommendations.createdAt))
+      .limit(options?.limit ?? 200);
+  },
+
   async getByUserId(userId: string, options?: { status?: string; limit?: number }): Promise<Recommendation[]> {
     const database = await requireDb();
     const conditions = [eq(recommendations.userId, userId)];
@@ -97,40 +110,61 @@ export const recommendationService = {
       .from(competitorProducts)
       .where(and(eq(competitorProducts.productId, productId), eq(competitorProducts.isActive, true)));
 
-    if (compPrices.length === 0) return undefined;
-
-    const prices = compPrices.map((c) => Number(c.price));
     const merchantPrice = Number(product[0].price);
     const costPrice = product[0].costPrice != null ? Number(product[0].costPrice) : null;
 
-    // Use the Strategic Undercutting Engine for analysis
-    const analysis = pricingEngine.analyzeProduct({
-      merchantPrice,
-      costPrice,
-      competitorPrices: prices,
-    });
+    let prices: number[] = [];
+    let recommendation: import("../pricing-engine.service").PricingRecommendation | null = null;
+    let confidenceScore = 0.6; // default confidence when no competitor data
 
-    const recommendation = analysis.recommendation;
-    if (!recommendation) return undefined;
+    if (compPrices.length > 0) {
+      prices = compPrices.map((c) => Number(c.price));
+      // Use the Strategic Undercutting Engine for analysis
+      const analysis = pricingEngine.analyzeProduct({
+        merchantPrice,
+        costPrice,
+        competitorPrices: prices,
+      });
+      recommendation = analysis.recommendation;
+      confidenceScore = Math.min(0.5 + compPrices.length * 0.1, 0.95);
+    }
+
+    // Fallback: if no competitor data or engine returned no recommendation,
+    // generate a default recommendation based on cost price or a modest increase
+    if (!recommendation) {
+      const floorPrice = costPrice ? costPrice * 1.1 : merchantPrice * 0.9;
+      const recommendedPrice = costPrice
+        ? Math.max(costPrice * 1.1, merchantPrice * 1.02)
+        : merchantPrice * 1.05;
+      const finalPrice = Math.max(recommendedPrice, floorPrice);
+
+      recommendation = {
+        recommendedPrice: round(finalPrice),
+        avgCompetitorPrice: null,
+        minimumAllowedPrice: round(floorPrice),
+        marginProtectionApplied: costPrice != null,
+        explanation: costPrice
+          ? `No competitor data available. Suggested price ensures ${(pricingEngine.MARGIN_FACTOR * 100 - 100).toFixed(0)}% margin above cost ($${costPrice.toFixed(2)}).`
+          : "No competitor data available. Suggested 5% price increase to test market positioning.",
+      };
+      confidenceScore = 0.45;
+    }
 
     const currentPrice = merchantPrice;
     const recommendedPrice = recommendation.recommendedPrice;
     const priceChange = round(recommendedPrice - currentPrice);
     const priceChangePercent = currentPrice > 0 ? round((priceChange / currentPrice) * 100) : 0;
 
-    // Confidence based on number of competitor data points
-    const confidenceScore = Math.min(0.5 + compPrices.length * 0.1, 0.95);
-
     const factors = {
-      competitorCount: compPrices.length,
+      competitorCount: prices.length,
       avgCompetitorPrice: recommendation.avgCompetitorPrice,
-      minCompetitorPrice: Math.min(...prices),
-      maxCompetitorPrice: Math.max(...prices),
+      minCompetitorPrice: prices.length > 0 ? Math.min(...prices) : null,
+      maxCompetitorPrice: prices.length > 0 ? Math.max(...prices) : null,
       costPrice,
       minimumAllowedPrice: recommendation.minimumAllowedPrice,
-      marketPosition: analysis.position.status,
-      priceDiffFromAvg: analysis.position.priceDiff,
-      priceDiffPercentFromAvg: analysis.position.priceDiffPercent,
+      marketPosition: prices.length > 0 ? pricingEngine.analyzeProduct({ merchantPrice, costPrice, competitorPrices: prices }).position.status : "INSUFFICIENT_DATA",
+      priceDiffFromAvg: null,
+      priceDiffPercentFromAvg: null,
     };
 
     return this.create({
@@ -146,6 +180,39 @@ export const recommendationService = {
       status: "pending",
       marginProtectionApplied: recommendation.marginProtectionApplied,
     });
+  },
+
+  async generateForAllUsers(): Promise<{ usersProcessed: number; recommendationsGenerated: number; errors: number }> {
+    const database = await requireDb();
+    const allUsers = await database.select({ id: users.id }).from(users);
+
+    let usersProcessed = 0;
+    let recommendationsGenerated = 0;
+    let errors = 0;
+
+    for (const user of allUsers) {
+      try {
+        const userProducts = await database
+          .select()
+          .from(products)
+          .where(and(eq(products.userId, user.id), eq(products.isActive, true)));
+
+        usersProcessed++;
+
+        for (const product of userProducts) {
+          try {
+            const rec = await this.generateForProduct(user.id, product.id);
+            if (rec) recommendationsGenerated++;
+          } catch {
+            errors++;
+          }
+        }
+      } catch {
+        errors++;
+      }
+    }
+
+    return { usersProcessed, recommendationsGenerated, errors };
   },
 
   async getStats(userId: string) {

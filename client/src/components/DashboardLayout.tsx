@@ -22,7 +22,7 @@ import { useIsMobile } from "@/hooks/useMobile";
 import {
   BarChart3, Bell, LayoutDashboard, LogOut, Moon, Package,
   PanelLeft, RefreshCw, Search, Sun, Users, Download, Store, X, Loader2,
-  AlertTriangle, TrendingDown, TrendingUp, ArrowUpDown, Zap, CheckCircle, Check,
+  AlertTriangle, TrendingDown, TrendingUp, ArrowUpDown, Zap, CheckCircle, Check, Globe, Shield,
 } from "lucide-react";
 import { CSSProperties, useEffect, useRef, useState, useCallback } from "react";
 import { useLocation } from "wouter";
@@ -34,11 +34,13 @@ import Papa from "papaparse";
 import { toast } from "sonner";
 
 const menuItems = [
-  { icon: LayoutDashboard, label: "Overview", path: "/" },
-  { icon: Package, label: "Products", path: "/products" },
-  { icon: Users, label: "Competitors", path: "/competitors" },
-  { icon: BarChart3, label: "Analytics", path: "/analytics" },
-  { icon: Bell, label: "Alerts", path: "/alerts" },
+  { icon: LayoutDashboard, label: "Overview", path: "/", adminOnly: false },
+  { icon: Package, label: "Products", path: "/products", adminOnly: false },
+  { icon: Globe, label: "Price Scout", path: "/scout", adminOnly: false },
+  { icon: Users, label: "Competitors", path: "/competitors", adminOnly: false },
+  { icon: BarChart3, label: "Analytics", path: "/analytics", adminOnly: false },
+  { icon: Bell, label: "Alerts", path: "/alerts", adminOnly: false },
+  { icon: Shield, label: "Admin", path: "/admin", adminOnly: true },
 ];
 
 const SIDEBAR_WIDTH_KEY = "sidebar-width";
@@ -294,24 +296,26 @@ function DashboardLayoutContent({
           {/* Nav */}
           <SidebarContent className="gap-0 px-3 py-4">
             <SidebarMenu>
-              {menuItems.map((item) => {
-                const isActive = location === item.path;
-                return (
-                  <SidebarMenuItem key={item.path}>
-                    <SidebarMenuButton isActive={isActive}
-                      onClick={() => setLocation(item.path)} tooltip={item.label}
-                      className={`h-10 transition-all rounded ${
-                        isActive
-                          ? "text-primary font-bold border-r-2 border-primary bg-primary/[0.08]"
-                          : "text-muted-foreground hover:bg-white/[0.04] font-normal"
-                      }`}>
-                      <item.icon className="h-4 w-4" />
-                      <span className="text-[13px]">{item.label}</span>
-                      {isActive && <div className="ml-auto h-1.5 w-1.5 rounded-full bg-primary" />}
-                    </SidebarMenuButton>
-                  </SidebarMenuItem>
-                );
-              })}
+              {menuItems
+                .filter((item) => !item.adminOnly || user?.role === "admin")
+                .map((item) => {
+                  const isActive = location === item.path;
+                  return (
+                    <SidebarMenuItem key={item.path}>
+                      <SidebarMenuButton isActive={isActive}
+                        onClick={() => setLocation(item.path)} tooltip={item.label}
+                        className={`h-10 transition-all rounded ${
+                          isActive
+                            ? "text-primary font-bold border-r-2 border-primary bg-primary/[0.08]"
+                            : "text-muted-foreground hover:bg-white/[0.04] font-normal"
+                        }`}>
+                        <item.icon className="h-4 w-4" />
+                        <span className="text-[13px]">{item.label}</span>
+                        {isActive && <div className="ml-auto h-1.5 w-1.5 rounded-full bg-primary" />}
+                      </SidebarMenuButton>
+                    </SidebarMenuItem>
+                  );
+                })}
             </SidebarMenu>
           </SidebarContent>
 

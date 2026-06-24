@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
-import { protectedProcedure, router } from "../_core/trpc";
+import { protectedProcedure, adminProcedure, router } from "../_core/trpc";
 import { recommendationService } from "../services/recommendation.service";
 
 export const recommendationRouter = router({
@@ -54,4 +54,17 @@ export const recommendationRouter = router({
   stats: protectedProcedure.query(async ({ ctx }) => {
     return recommendationService.getStats(ctx.user!.id);
   }),
+
+  generateAll: adminProcedure.mutation(async () => {
+    return recommendationService.generateForAllUsers();
+  }),
+
+  listAll: adminProcedure
+    .input(z.object({
+      status: z.enum(["pending", "implemented", "dismissed"]).optional(),
+      limit: z.number().min(1).max(500).default(200),
+    }).optional())
+    .query(async ({ input }) => {
+      return recommendationService.getAll(input);
+    }),
 });
