@@ -14,7 +14,6 @@ function getQueryParam(req: Request, key: string): string | undefined {
 }
 
 export function registerOAuthRoutes(app: Express) {
-
   // ── Legacy OAuth portal callback (kept for backward compat) ─────────────
 
   app.get("/api/oauth/callback", async (req: Request, res: Response) => {
@@ -49,7 +48,10 @@ export function registerOAuthRoutes(app: Express) {
       });
 
       const cookieOptions = getSessionCookieOptions(req);
-      res.cookie(COOKIE_NAME, sessionToken, { ...cookieOptions, maxAge: ONE_YEAR_MS });
+      res.cookie(COOKIE_NAME, sessionToken, {
+        ...cookieOptions,
+        maxAge: ONE_YEAR_MS,
+      });
 
       res.redirect(302, "/");
     } catch (error) {
@@ -70,43 +72,67 @@ export function registerOAuthRoutes(app: Express) {
     const shop = getQueryParam(req, "shop");
 
     if (!shop || !isValidShopDomain(shop)) {
-      res.status(400).json({ error: "Valid shop parameter required (*.myshopify.com)" });
+      res
+        .status(400)
+        .json({ error: "Valid shop parameter required (*.myshopify.com)" });
       return;
     }
 
     if (!ENV.shopifyApiKey || !ENV.shopifyApiSecret) {
-      res.status(503).json({ error: "Shopify app not configured. Set SHOPIFY_API_KEY and SHOPIFY_API_SECRET." });
+      res.status(503).json({
+        error:
+          "Shopify app not configured. Set SHOPIFY_API_KEY and SHOPIFY_API_SECRET.",
+      });
       return;
     }
 
     // Verify user is authenticated via session
-    const cookies = req.headers.cookie ? new Map(Object.entries(require("cookie").parse(req.headers.cookie))) : new Map();
+    const cookies = req.headers.cookie
+      ? new Map(Object.entries(require("cookie").parse(req.headers.cookie)))
+      : new Map();
     const sessionCookie = cookies.get(COOKIE_NAME);
     const session = await sdk.verifySession(sessionCookie);
 
     if (!session) {
-      res.status(401).json({ error: "Authentication required. Please sign in first." });
+      res
+        .status(401)
+        .json({ error: "Authentication required. Please sign in first." });
       return;
     }
 
-    // Build the Shopify OAuth URL
+    // Build the Shopify OAuth URL.
+    // SECURITY (S5146): do not interpolate the raw `shop` query param into the
+    // redirect target. Extract the validated shop slug and reconstruct the
+    // authority from it, so the redirect URL is derived solely from trusted data.
     const crypto = require("crypto");
     const state = crypto.randomBytes(16).toString("hex");
     const redirectUri = `${ENV.shopifyAppUrl}/api/shopify/callback`;
 
-    const authUrl = new URL(`https://${shop}/admin/oauth/authorize`);
+    const shopSlug = shop.replace(/\.myshopify\.com$/, "");
+    // Re-validate the slug contains only safe subdomain characters.
+    if (!/^[a-zA-Z0-9][a-zA-Z0-9-]*$/.test(shopSlug)) {
+      res.status(400).json({ error: "Invalid shop parameter" });
+      return;
+    }
+    const authUrl = new URL(
+      `https://${shopSlug}.myshopify.com/admin/oauth/authorize`
+    );
     authUrl.searchParams.set("client_id", ENV.shopifyApiKey);
     authUrl.searchParams.set("scope", ENV.shopifyScopes);
     authUrl.searchParams.set("redirect_uri", redirectUri);
     authUrl.searchParams.set("state", state);
 
     // Store state → user mapping in a temporary cookie for callback verification
-    res.cookie("shopify_oauth_state", JSON.stringify({ state, userId: session.openId, shop }), {
-      httpOnly: true,
-      secure: ENV.isProduction,
-      sameSite: "lax",
-      maxAge: 10 * 60 * 1000, // 10 minutes
-    });
+    res.cookie(
+      "shopify_oauth_state",
+      JSON.stringify({ state, userId: session.openId, shop }),
+      {
+        httpOnly: true,
+        secure: ENV.isProduction,
+        sameSite: "lax",
+        maxAge: 10 * 60 * 1000, // 10 minutes
+      }
+    );
 
     res.redirect(302, authUrl.toString());
   });
@@ -135,7 +161,9 @@ export function registerOAuthRoutes(app: Express) {
     // Verify state cookie to prevent CSRF
     const stateCookie = req.cookies?.shopify_oauth_state;
     if (!stateCookie) {
-      res.status(400).json({ error: "OAuth state expired or missing. Please try again." });
+      res
+        .status(400)
+        .json({ error: "OAuth state expired or missing. Please try again." });
       return;
     }
 
@@ -160,8 +188,13 @@ export function registerOAuthRoutes(app: Express) {
 
       if (!tokenRes.ok) {
         const errText = await tokenRes.text().catch(() => "");
-        logger.error({ status: tokenRes.status, err: errText }, "Shopify token exchange failed");
-        res.status(400).json({ error: "Failed to exchange code for access token" });
+        logger.error(
+          { status: tokenRes.status, err: errText },
+          "Shopify token exchange failed"
+        );
+        res
+          .status(400)
+          .json({ error: "Failed to exchange code for access token" });
         return;
       }
 
@@ -230,7 +263,9 @@ export function registerOAuthRoutes(app: Express) {
       return;
     }
 
-    const cookies = req.headers.cookie ? new Map(Object.entries(require("cookie").parse(req.headers.cookie))) : new Map();
+    const cookies = req.headers.cookie
+      ? new Map(Object.entries(require("cookie").parse(req.headers.cookie)))
+      : new Map();
     const sessionCookie = cookies.get(COOKIE_NAME);
     const session = await sdk.verifySession(sessionCookie);
 
@@ -244,7 +279,12 @@ export function registerOAuthRoutes(app: Express) {
       await database
         .update(shopifyStores)
         .set({ isActive: false, accessToken: null, updatedAt: new Date() })
-        .where(and(eq(shopifyStores.userId, session.openId), eq(shopifyStores.shopDomain, shopDomain)));
+        .where(
+          and(
+            eq(shopifyStores.userId, session.openId),
+            eq(shopifyStores.shopDomain, shopDomain)
+          )
+        );
     }
 
     res.json({ success: true, message: `Store ${shopDomain} disconnected` });
