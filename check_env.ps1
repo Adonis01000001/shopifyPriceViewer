@@ -1,0 +1,6 @@
+Write-Host "DATABASE_URL: $env:DATABASE_URL"
+Write-Host "PGHOST: $env:PGHOST"
+write-Host "PGUSER: $env:PGUSER"
+Write-Host "PGPASSWORD: $env:PGPASSWORD"
+Write-Host "PGDATABASE: $env:PGDATABASE"
+Write-Host "NODE_ENV: $env:NODE_ENV"

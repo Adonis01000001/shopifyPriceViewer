@@ -144,7 +144,7 @@ export const productService = {
       .insert(products)
       .values(items)
       .onConflictDoUpdate({
-        target: products.shopifyProductId,
+        target: [products.userId, products.shopifyProductId],
         set: {
           title: sql`excluded.title`,
           price: sql`excluded.price`,

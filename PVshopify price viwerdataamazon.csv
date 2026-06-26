@@ -1,0 +1,2 @@
+product_id,product_name,category,discounted_price,actual_price,discount_percentage,rating,about_product,img_link
+B07JW9H41L,Test Product,Electronics,299,499,50%,4.2,Test description,https://example.com/img.jpg

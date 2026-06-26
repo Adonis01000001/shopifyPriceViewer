@@ -39,8 +39,27 @@ export const ENV = {
   forgeApiKey: process.env.BUILT_IN_FORGE_API_KEY ?? "",
   bypassAuth: process.env.VITE_BYPASS_AUTH === "true",
 
+  // Firecrawl — web scraping API (primary scraper, falls back to Playwright)
+  firecrawlApiKey: process.env.FIRECRAWL_API_KEY ?? "",
+  firecrawlBaseUrl: process.env.FIRECRAWL_BASE_URL ?? "https://api.firecrawl.dev",
+
   // Encryption key salt for PBKDF2 — generate with: node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
   encryptionKeySalt: process.env.ENCRYPTION_KEY_SALT ?? "",
+
+  // SerpAPI — competitor discovery search
+  serpApiKey: process.env.SERP_API_KEY ?? "",
+
+  // Exa — neural web search for product pricing
+  exaApiKey: process.env.EXA_API_KEY ?? "",
+
+  // OpenAI — AI validation + extraction
+  openaiApiKey: process.env.OPENAI_API_KEY ?? "",
+  openaiModel: process.env.OPENAI_MODEL ?? "gpt-4o-mini",
+
+  // Price Monitoring
+  monitoringIntervalHours: parseInt(process.env.MONITORING_INTERVAL_HOURS ?? "1", 10),
+  matchConfidenceThreshold: parseFloat(process.env.MATCH_CONFIDENCE_THRESHOLD ?? "0.85"),
+  maxConcurrentScrapes: parseInt(process.env.MAX_CONCURRENT_SCRAPES ?? "5", 10),
 };
 
 export const ENCRYPTION_KEY_SALT = ENV.encryptionKeySalt;

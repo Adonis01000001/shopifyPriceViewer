@@ -745,3 +745,38 @@ export const scrapeLogs = pgTable(
 
 export type ScrapeLog = typeof scrapeLogs.$inferSelect;
 export type InsertScrapeLog = typeof scrapeLogs.$inferInsert;
+
+// =============================================================================
+// SerpAPI Scouts (search results + reviews from SerpAPI batch searches)
+// =============================================================================
+
+export const serpApiScouts = pgTable(
+  "serp_api_scouts",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    productId: uuid("product_id")
+      .notNull()
+      .references(() => products.id, { onDelete: "cascade" }),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    query: text("query").notNull(),
+    title: text("title"),
+    snippet: text("snippet"),
+    url: text("url").notNull(),
+    price: text("price"),
+    currency: varchar("currency", { length: 10 }).default("USD"),
+    source: varchar("source", { length: 64 }),
+    position: integer("position"),
+    scrapedAt: timestamp("scraped_at", { withTimezone: true }).defaultNow().notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => ({
+    productIdIdx: index("serp_api_scouts_product_id_idx").on(t.productId),
+    userIdIdx: index("serp_api_scouts_user_id_idx").on(t.userId),
+    createdAtIdx: index("serp_api_scouts_created_at_idx").on(t.createdAt),
+  })
+);
+
+export type SerpApiScout = typeof serpApiScouts.$inferSelect;
+export type InsertSerpApiScout = typeof serpApiScouts.$inferInsert;

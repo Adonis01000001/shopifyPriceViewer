@@ -13,6 +13,7 @@ function getPool(): Pool | null {
       max: 10,
       idleTimeoutMillis: 30000,
       connectionTimeoutMillis: 5000,
+      ssl: false,
     });
     _pool.on("error", (err) => {
       logger.error({ err }, "Unexpected database pool error");

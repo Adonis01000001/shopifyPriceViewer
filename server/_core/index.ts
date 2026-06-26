@@ -15,6 +15,7 @@ import { ENV } from "./env";
 import { appRouter } from "../routers";
 import { createContext } from "./context";
 import { serveStatic, setupVite } from "./vite";
+import { cronScheduler } from "../services/cron-scheduler.service";
 
 function isPortAvailable(port: number): Promise<boolean> {
   return new Promise(resolve => {
@@ -103,6 +104,9 @@ async function startServer() {
   server.listen(port, () => {
     logger.info({ port, env: ENV.isProduction ? "production" : "development" }, "Server started");
   });
+
+  // Start cron scheduler for price monitoring & competitor discovery
+  cronScheduler.start();
 }
 
 startServer().catch((err) => {

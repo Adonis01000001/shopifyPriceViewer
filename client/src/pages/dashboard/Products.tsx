@@ -9,7 +9,8 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import { trpc } from "@/lib/trpc";
-import { Download, MoreHorizontal, Search } from "lucide-react";
+import { Download, MoreHorizontal, Search, Plus } from "lucide-react";
+import AddProductDialog from "./AddProductDialog";
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
@@ -151,6 +152,7 @@ export default function Products() {
         <Button variant="outline" size="sm" className="h-9 border-outline-variant" onClick={handleExport}>
           <Download className="mr-1.5 h-3.5 w-3.5" />Export
         </Button>
+        <AddProductDialog onSuccess={() => refetch()} />
       </div>
 
       {/* Table */}

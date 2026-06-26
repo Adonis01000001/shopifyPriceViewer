@@ -144,91 +144,8 @@ async function seed() {
     }
     logger.info(`✅ Created ${competitors.length} competitors`);
 
-    // 4. Seed product data (Kaggle-like e-commerce dataset)
-    logger.info("📦 Seeding product data (Kaggle simulation)...");
-    const products = [
-      {
-        title: "Mechanical Keyboard RGB",
-        category: "Electronics",
-        price: "129.99",
-        sku: "KB-001",
-        vendor: "KeyMaster",
-      },
-      {
-        title: "Wireless Gaming Mouse",
-        category: "Electronics",
-        price: "79.99",
-        sku: "MS-002",
-        vendor: "LogiTech",
-      },
-      {
-        title: "4K Monitor 27 inch",
-        category: "Electronics",
-        price: "349.99",
-        sku: "MN-003",
-        vendor: "UltraVision",
-      },
-      {
-        title: "Noise Cancelling Headphones",
-        category: "Electronics",
-        price: "249.99",
-        sku: "HP-004",
-        vendor: "SoundCore",
-      },
-      {
-        title: "Ergonomic Office Chair",
-        category: "Furniture",
-        price: "199.00",
-        sku: "CH-005",
-        vendor: "SitWell",
-      }
-    ];
-
-    for (const p of products) {
-      const [product] = await db.insert(schema.products).values({
-        userId,
-        storeId: store.id,
-        title: p.title,
-        category: p.category,
-        price: p.price,
-        sku: p.sku,
-        vendor: p.vendor,
-        status: "optimal",
-        isTracked: true,
-      }).returning();
-
-      // Add price history for each product
-      await db.insert(schema.priceHistory).values({
-        productId: product.id,
-        price: p.price,
-        source: "shopify",
-      });
-
-      // Add competitor matches and prices
-      for (const comp of competitors) {
-        // Random price difference (-10% to +10%)
-        const diff = (Math.random() * 0.2 - 0.1);
-        const compPrice = (parseFloat(p.price) * (1 + diff)).toFixed(2);
-
-        const [compProduct] = await db.insert(schema.competitorProducts).values({
-          competitorId: comp.id,
-          productId: product.id,
-          price: compPrice,
-          competitorProductTitle: `${p.title} - ${comp.name} Edition`,
-          matchScore: 0.85 + Math.random() * 0.1,
-          isVerified: true,
-        }).returning();
-
-        // Add history for competitor price
-        await db.insert(schema.priceHistory).values({
-          productId: product.id,
-          competitorProductId: compProduct.id,
-          price: compPrice,
-          source: "competitor",
-        });
-      }
-    }
-    logger.info(`✅ Seeded ${products.length} products with competitor matches`);
+    // 4. Product data — products are seeded from the Amazon CSV in step 5.
+    // No hardcoded products: the CSV filter keeps only Electronics, capped at 10.
 
     // 5. Load Amazon sales CSV dataset
     logger.info("📂 Loading Amazon sales CSV dataset...");
@@ -253,10 +170,19 @@ async function seed() {
     let amazonCount = 0;
     const BATCH = 100;
     const batch: (typeof schema.products.$inferInsert)[] = [];
+    const MAX_AMAZON_PRODUCTS = 10; // Cap seeded Amazon products to limit monitoring load
+    const ELECTRONICS_CATEGORY = "Electronics";
 
     for (let i = 1; i < csvLines.length; i++) {
+      if (amazonCount >= MAX_AMAZON_PRODUCTS) break;
+
       const fields = parseCSVLine(csvLines[i]);
       if (fields.length < 5) continue;
+
+      // Only seed Electronics category products
+      const rawCategory = (fields[colCategory] || "").trim();
+      const topLevelCategory = rawCategory.split("|")[0]?.trim() || "";
+      if (topLevelCategory !== ELECTRONICS_CATEGORY) continue;
 
       const rawDiscounted = parsePrice(fields[colDiscounted] || "");
       const rawActual = parsePrice(fields[colActual] || "");
@@ -265,7 +191,7 @@ async function seed() {
       const discountPct = parseDiscount(fields[colDiscount] || "0");
       const rating = parseFloat(fields[colRating] || "0") || 0;
       const title = (fields[colName] || `Amazon Product ${fields[colProductId] || i}`).slice(0, 500);
-      const category = simplifyCategory(fields[colCategory] || "Other");
+      const category = simplifyCategory(rawCategory);
       const status = assignStatus(rating, parseFloat(discountPct));
 
       batch.push({
@@ -284,21 +210,24 @@ async function seed() {
         isActive: true,
       });
 
-      if (batch.length >= BATCH) {
-        const inserted = await db.insert(schema.products).values(batch).returning();
+      if (batch.length >= BATCH && amazonCount < MAX_AMAZON_PRODUCTS) {
+        const remaining = MAX_AMAZON_PRODUCTS - amazonCount;
+        const toInsert = batch.slice(0, remaining);
+        const inserted = await db.insert(schema.products).values(toInsert).returning();
         amazonCount += inserted.length;
         batch.length = 0;
-        process.stdout.write(`\r   Inserted ${amazonCount} / ${csvLines.length - 1} Amazon products...`);
+        process.stdout.write(`\r   Inserted ${amazonCount} / ${MAX_AMAZON_PRODUCTS} Amazon products...`);
       }
     }
 
     // Flush final batch
-    if (batch.length > 0) {
-      const inserted = await db.insert(schema.products).values(batch).returning();
+    if (batch.length > 0 && amazonCount < MAX_AMAZON_PRODUCTS) {
+      const remaining = MAX_AMAZON_PRODUCTS - amazonCount;
+      const inserted = await db.insert(schema.products).values(batch.slice(0, remaining)).returning();
       amazonCount += inserted.length;
     }
 
-    logger.info(`\n✅ Seeded ${amazonCount} Amazon products from CSV`);
+    logger.info(`\n✅ Seeded ${amazonCount} Amazon products from CSV (Electronics only, capped at ${MAX_AMAZON_PRODUCTS})`);
 
     // 6. Create notification preferences for the user
     logger.info("🔔 Creating notification preferences...");
@@ -464,7 +393,10 @@ async function seed() {
 
     logger.info("✨ Seeding completed successfully!");
   } catch (error) {
-    logger.error("❌ Seeding failed:", error);
+    logger.error({ err: error }, "❌ Seeding failed");
+    if (error instanceof Error) {
+      logger.error({ message: error.message, stack: error.stack }, "Error details");
+    }
   } finally {
     await pool.end();
   }
