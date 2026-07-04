@@ -15,7 +15,9 @@ export const authLimiter = rateLimit({
   max: 10,
   standardHeaders: true,
   legacyHeaders: false,
-  message: { error: "Too many login attempts. Please try again in 15 minutes." },
+  message: {
+    error: "Too many login attempts. Please try again in 15 minutes.",
+  },
 });
 
 // Shopify OAuth rate limit: 5 per hour per IP
@@ -24,7 +26,9 @@ export const shopifyLimiter = rateLimit({
   max: 5,
   standardHeaders: true,
   legacyHeaders: false,
-  message: { error: "Too many Shopify connection attempts. Please try again later." },
+  message: {
+    error: "Too many Shopify connection attempts. Please try again later.",
+  },
 });
 
 // Scrape rate limit: 5 scrapes per 15 minutes per IP

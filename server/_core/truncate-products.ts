@@ -16,14 +16,16 @@ async function truncate() {
   logger.info("Truncating product-related tables...");
   const client = await pool.connect();
   try {
-    await client.query('BEGIN');
+    await client.query("BEGIN");
     await client.query(
-      'TRUNCATE TABLE competitor_products, price_snapshots, price_changes, scrape_logs, products, cron_runs, activity_logs, alerts, recommendations RESTART IDENTITY CASCADE;'
+      "TRUNCATE TABLE competitor_products, price_snapshots, price_changes, scrape_logs, products, cron_runs, activity_logs, alerts, recommendations RESTART IDENTITY CASCADE;"
     );
-    await client.query('COMMIT');
-    logger.info("✅ All product data cleared. Re-run pnpm db:seed to seed fresh data.");
+    await client.query("COMMIT");
+    logger.info(
+      "✅ All product data cleared. Re-run pnpm db:seed to seed fresh data."
+    );
   } catch (err) {
-    await client.query('ROLLBACK');
+    await client.query("ROLLBACK");
     throw err;
   } finally {
     client.release();
@@ -31,7 +33,7 @@ async function truncate() {
   await pool.end();
 }
 
-truncate().catch((err) => {
+truncate().catch(err => {
   logger.error({ err }, "Truncate failed");
   process.exit(1);
 });

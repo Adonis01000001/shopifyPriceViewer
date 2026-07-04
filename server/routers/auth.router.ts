@@ -14,7 +14,7 @@ const SALT_ROUNDS = 12;
 
 export const authRouter = router({
   /** Return the currently authenticated user (null if not logged in). */
-  me: publicProcedure.query((opts) => opts.ctx.user),
+  me: publicProcedure.query(opts => opts.ctx.user),
 
   /** Register a new user with email + password. */
   register: publicProcedure

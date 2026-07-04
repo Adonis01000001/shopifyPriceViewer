@@ -6,58 +6,58 @@
 
 ## 1. Executive Summary
 
-| Phase | Goal | Timeline | Deliverables |
-|-------|------|----------|--------------|
-| Phase 1 | Validate scraping + AI pipeline | Weeks 1-4 | Accuracy metrics, validation workflow, data quality dashboard |
-| Phase 2 | Full automation + production | Weeks 5-10 | CSV pipeline, monitoring, real merchant by September |
-| Phase 3 | Multi-platform SaaS expansion | Weeks 11-16 | Shopify app, WooCommerce/Amazon/eBay adapters, billing |
+| Phase   | Goal                            | Timeline    | Deliverables                                                  |
+| ------- | ------------------------------- | ----------- | ------------------------------------------------------------- |
+| Phase 1 | Validate scraping + AI pipeline | Weeks 1-4   | Accuracy metrics, validation workflow, data quality dashboard |
+| Phase 2 | Full automation + production    | Weeks 5-10  | CSV pipeline, monitoring, real merchant by September          |
+| Phase 3 | Multi-platform SaaS expansion   | Weeks 11-16 | Shopify app, WooCommerce/Amazon/eBay adapters, billing        |
 
 Current State: Working Express/tRPC/Drizzle/PostgreSQL app with 10 seeded electronics products, competitor discovery, AI extraction, price monitoring, cron scheduler, and Strategic Undercutting Engine (33 tests passing).
 
 ## 2. System Architecture
 
 React/Vite Frontend → tRPC → Express Server → Drizzle ORM → PostgreSQL
-                              ↓
-                         Firecrawl (scraper)
-                         OpenRouter (Owl Alpha primary)
-                         Cron Scheduler → BullMQ (future)
-                         Redis (future)
+↓
+Firecrawl (scraper)
+OpenRouter (Owl Alpha primary)
+Cron Scheduler → BullMQ (future)
+Redis (future)
 
 ## 3. Database Schema (Key Tables)
 
-| Table | Purpose | Key Columns |
-|-------|---------|-------------|
-| users | Authentication | id, email, password_hash, role |
-| refresh_tokens | Session management | id, user_id, token_hash, expires_at |
-| shopify_stores | Shopify connections | id, user_id, shop_domain, access_token |
-| products | Merchant products | id, user_id, title, price, cost_price, status |
-| competitors | Competitor stores | id, user_id, name, domain, status |
-| competitor_products | Matched products | id, competitor_id, product_id, price, match_score |
-| price_snapshots | Time-series | id, competitor_product_id, price, scraped_at |
-| price_changes | Events | id, change_type, previous_price, new_price, detected_at |
-| alerts | Notifications | id, user_id, product_id, alert_type, severity |
-| recommendations | Suggestions | id, recommended_price, margin_protection_applied |
-| ai_extractions | AI results | id, product_id, competitor_id, confidence, is_match |
-| competitor_discoveries | Search results | id, product_id, candidate_domain, confidence |
-| cron_runs | Job tracking | id, job_type, status, started_at |
-| scrape_logs | Per-URL logs | id, url, status, response_time_ms |
-| activity_logs | Timeline | id, user_id, action, entity_type, created_at |
+| Table                  | Purpose             | Key Columns                                             |
+| ---------------------- | ------------------- | ------------------------------------------------------- |
+| users                  | Authentication      | id, email, password_hash, role                          |
+| refresh_tokens         | Session management  | id, user_id, token_hash, expires_at                     |
+| shopify_stores         | Shopify connections | id, user_id, shop_domain, access_token                  |
+| products               | Merchant products   | id, user_id, title, price, cost_price, status           |
+| competitors            | Competitor stores   | id, user_id, name, domain, status                       |
+| competitor_products    | Matched products    | id, competitor_id, product_id, price, match_score       |
+| price_snapshots        | Time-series         | id, competitor_product_id, price, scraped_at            |
+| price_changes          | Events              | id, change_type, previous_price, new_price, detected_at |
+| alerts                 | Notifications       | id, user_id, product_id, alert_type, severity           |
+| recommendations        | Suggestions         | id, recommended_price, margin_protection_applied        |
+| ai_extractions         | AI results          | id, product_id, competitor_id, confidence, is_match     |
+| competitor_discoveries | Search results      | id, product_id, candidate_domain, confidence            |
+| cron_runs              | Job tracking        | id, job_type, status, started_at                        |
+| scrape_logs            | Per-URL logs        | id, url, status, response_time_ms                       |
+| activity_logs          | Timeline            | id, user_id, action, entity_type, created_at            |
 
 ## 4. Domain Models (TypeScript)
 
 interface AnalyzeProductInput {
-  merchantPrice: number; costPrice: number | null; competitorPrices: number[];
+merchantPrice: number; costPrice: number | null; competitorPrices: number[];
 }
 interface ProductAnalysis {
-  marketSnapshot: MarketSnapshot;
-  recommendation: PricingRecommendation | null;
-  position: MarketPosition;
+marketSnapshot: MarketSnapshot;
+recommendation: PricingRecommendation | null;
+position: MarketPosition;
 }
 interface PlatformAdapter {
-  readonly platform: string;
-  syncProducts(storeId: string): Promise<Product[]>;
-  updatePrice(productId: string, price: number): Promise<void>;
-  validateConnection(storeId: string): Promise<boolean>;
+readonly platform: string;
+syncProducts(storeId: string): Promise<Product[]>;
+updatePrice(productId: string, price: number): Promise<void>;
+validateConnection(storeId: string): Promise<boolean>;
 }
 
 ## 5. API Specifications (60+ tRPC Endpoints)
@@ -140,12 +140,12 @@ GitHub Actions: lint, type-check, test, build. Auto-deploy staging. Manual produ
 
 ## 19. Risk Analysis
 
-| Risk | Mitigation |
-|------|------------|
+| Risk                  | Mitigation                               |
+| --------------------- | ---------------------------------------- |
 | Firecrawl rate limits | Playwright fallback, exponential backoff |
-| AI accuracy < 85% | Confidence thresholds, manual review |
-| Scaling bottlenecks | BullMQ migration, horizontal scaling |
-| Security breach | Encryption, rate limiting, audit logging |
+| AI accuracy < 85%     | Confidence thresholds, manual review     |
+| Scaling bottlenecks   | BullMQ migration, horizontal scaling     |
+| Security breach       | Encryption, rate limiting, audit logging |
 
 ## 20. September Milestone
 
@@ -165,13 +165,14 @@ P3: [ ] WooCommerce, [ ] Amazon, [ ] Stripe
 ## 23-25. Code Examples, Schema, Deployment
 
 See existing codebase for complete implementations:
+
 - Pricing engine: server/services/pricing-engine.service.ts
 - AI extraction: server/services/ai-extraction.service.ts
 - Price monitoring: server/services/price-monitoring.service.ts
 - Intelligence router: server/routers/intelligence.router.ts
 - Pricing engine router: server/routers/pricing-engine.router.ts
 - Dashboard widget: client/src/components/dashboard/PricingRecommendationWidget.tsx
-- Tests: server/services/__tests__/pricing-engine.test.ts
+- Tests: server/services/**tests**/pricing-engine.test.ts
 - Design doc: docs/superpowers/specs/2026-06-16-strategic-undercutting-engine-design.md
 
 End of Roadmap.

@@ -1,6 +1,10 @@
 import { Firecrawl } from "firecrawl";
 import { requireDb } from "../_core/db-assert";
-import { products, serpApiScouts, type InsertSerpApiScout } from "../../drizzle/schema";
+import {
+  products,
+  serpApiScouts,
+  type InsertSerpApiScout,
+} from "../../drizzle/schema";
 import { desc, eq, and } from "drizzle-orm";
 import { logger } from "../_core/logger";
 import { ENV } from "../_core/env";
@@ -51,9 +55,15 @@ function extractDomain(url: string): string {
 
 function parsePrice(raw: string): { value: string; currency: string } | null {
   if (!raw) return null;
-  const match = raw.match(/(\$|€|£|USD|EUR|GBP)?\s*([0-9]{1,3}(?:[,.][0-9]{3})*(?:[,.][0-9]{2})|[0-9]+(?:[,.][0-9]{2})?)/);
+  const match = raw.match(
+    /(\$|€|£|USD|EUR|GBP)?\s*([0-9]{1,3}(?:[,.][0-9]{3})*(?:[,.][0-9]{2})|[0-9]+(?:[,.][0-9]{2})?)/
+  );
   if (!match) return null;
-  const currencyMap: Record<string, string> = { "$": "USD", "€": "EUR", "£": "GBP" };
+  const currencyMap: Record<string, string> = {
+    $: "USD",
+    "€": "EUR",
+    "£": "GBP",
+  };
   const currency = currencyMap[match[1] ?? ""] || "USD";
   let value = match[2].replace(/,/g, "");
   if (/^\d{1,3}\.\d{3}$/.test(value)) {
@@ -66,16 +76,36 @@ function parsePrice(raw: string): { value: string; currency: string } | null {
 
 // ─── Search via Firecrawl ────────────────────────────────────────────────────
 
-async function searchFirecrawl(query: string, limit: number): Promise<Array<{ url: string; title: string }>> {
+async function searchFirecrawl(
+  query: string,
+  limit: number
+): Promise<Array<{ url: string; title: string }>> {
   if (!ENV.firecrawlApiKey) return [];
   try {
-    const app = new Firecrawl({ apiKey: ENV.firecrawlApiKey, apiUrl: ENV.firecrawlBaseUrl });
-    const result = await app.search(query, { limit, scrapeOptions: { formats: ["markdown"], onlyMainContent: true } });
-    const data = (result as unknown as { data?: Array<{ url?: string; title?: string; metadata?: { url?: string } }> }).data;
+    const app = new Firecrawl({
+      apiKey: ENV.firecrawlApiKey,
+      apiUrl: ENV.firecrawlBaseUrl,
+    });
+    const result = await app.search(query, {
+      limit,
+      scrapeOptions: { formats: ["markdown"], onlyMainContent: true },
+    });
+    const data = (
+      result as unknown as {
+        data?: Array<{
+          url?: string;
+          title?: string;
+          metadata?: { url?: string };
+        }>;
+      }
+    ).data;
     if (!data) return [];
     return data
       .filter(item => (item.url ?? item.metadata?.url ?? "").startsWith("http"))
-      .map(item => ({ url: item.url ?? item.metadata?.url ?? "", title: item.title ?? "" }));
+      .map(item => ({
+        url: item.url ?? item.metadata?.url ?? "",
+        title: item.title ?? "",
+      }));
   } catch (err) {
     logger.warn({ query, err }, "Scout: Firecrawl search failed");
     return [];
@@ -84,7 +114,10 @@ async function searchFirecrawl(query: string, limit: number): Promise<Array<{ ur
 
 // ─── Search via SerpAPI ──────────────────────────────────────────────────────
 
-async function searchSerpApi(query: string, limit: number): Promise<Array<{ url: string; title: string; snippet?: string }>> {
+async function searchSerpApi(
+  query: string,
+  limit: number
+): Promise<Array<{ url: string; title: string; snippet?: string }>> {
   if (!ENV.serpApiKey) return [];
   try {
     const params = new URLSearchParams({
@@ -95,12 +128,18 @@ async function searchSerpApi(query: string, limit: number): Promise<Array<{ url:
       gl: "us",
       hl: "en",
     });
-    const res = await fetch(`https://serpapi.com/search?${params}`, { signal: AbortSignal.timeout(30000) });
+    const res = await fetch(`https://serpapi.com/search?${params}`, {
+      signal: AbortSignal.timeout(30000),
+    });
     if (!res.ok) return [];
     const data = await res.json();
     return (data.organic_results ?? [])
       .filter((r: any) => r.link)
-      .map((r: any) => ({ url: r.link, title: r.title ?? "", snippet: r.snippet ?? "" }));
+      .map((r: any) => ({
+        url: r.link,
+        title: r.title ?? "",
+        snippet: r.snippet ?? "",
+      }));
   } catch (err) {
     logger.warn({ query, err }, "Scout: SerpAPI search failed");
     return [];
@@ -109,11 +148,18 @@ async function searchSerpApi(query: string, limit: number): Promise<Array<{ url:
 
 // ─── Search via Exa ─────────────────────────────────────────────────────────
 
-async function searchExa(query: string, limit: number): Promise<Array<{ url: string; title: string; snippet?: string }>> {
+async function searchExa(
+  query: string,
+  limit: number
+): Promise<Array<{ url: string; title: string; snippet?: string }>> {
   if (!ENV.exaApiKey) return [];
   try {
     const results = await exaSearchService.searchProducts(query, limit);
-    return results.map(r => ({ url: r.url, title: r.title, snippet: r.snippet }));
+    return results.map(r => ({
+      url: r.url,
+      title: r.title,
+      snippet: r.snippet,
+    }));
   } catch (err) {
     logger.warn({ query, err }, "Scout: Exa search failed");
     return [];
@@ -122,11 +168,17 @@ async function searchExa(query: string, limit: number): Promise<Array<{ url: str
 
 // ─── Scrape a single URL for product price ───────────────────────────────────
 
-async function scrapeUrlForPrice(url: string, productTitle: string): Promise<ScoutPrice | null> {
+async function scrapeUrlForPrice(
+  url: string,
+  productTitle: string
+): Promise<ScoutPrice | null> {
   // Try Firecrawl first
   if (ENV.firecrawlApiKey) {
     try {
-      const app = new Firecrawl({ apiKey: ENV.firecrawlApiKey, apiUrl: ENV.firecrawlBaseUrl });
+      const app = new Firecrawl({
+        apiKey: ENV.firecrawlApiKey,
+        apiUrl: ENV.firecrawlBaseUrl,
+      });
       const result = await app.scrape(url, {
         formats: ["markdown"],
         onlyMainContent: true,
@@ -157,7 +209,10 @@ async function scrapeUrlForPrice(url: string, productTitle: string): Promise<Sco
   // Fallback: fetch and parse basic HTML
   try {
     const res = await fetch(url, {
-      headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" },
+      headers: {
+        "User-Agent":
+          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+      },
       signal: AbortSignal.timeout(15000),
     });
     if (!res.ok) return null;
@@ -183,13 +238,19 @@ async function scrapeUrlForPrice(url: string, productTitle: string): Promise<Sco
   return null;
 }
 
-function extractPriceFromText(text: string): { value: string; currency: string } | null {
+function extractPriceFromText(
+  text: string
+): { value: string; currency: string } | null {
   const patterns = [
     /[\$€£]\s*([0-9]{1,3}(?:,?[0-9]{3})*(?:\.[0-9]{2})?)/g,
     /(?:USD|EUR|GBP)\s*([0-9]{1,3}(?:,?[0-9]{3})*(?:\.[0-9]{2})?)/gi,
     /(?:price|Price|PRICE)[\s:]*[\$€£]?\s*([0-9]{1,3}(?:,?[0-9]{3})*(?:\.[0-9]{2})?)/g,
   ];
-  const currencyMap: Record<string, string> = { "$": "USD", "€": "EUR", "£": "GBP" };
+  const currencyMap: Record<string, string> = {
+    $: "USD",
+    "€": "EUR",
+    "£": "GBP",
+  };
   for (const pattern of patterns) {
     let match: RegExpExecArray | null;
     while ((match = pattern.exec(text)) !== null) {
@@ -217,7 +278,13 @@ function extractTitleFromMarkdown(md: string): string {
 function toScoutRows(input: {
   productId: string;
   userId: string;
-  searchResults: Array<{ url: string; title: string; snippet?: string; query?: string; position?: number }>;
+  searchResults: Array<{
+    url: string;
+    title: string;
+    snippet?: string;
+    query?: string;
+    position?: number;
+  }>;
   prices: ScoutPrice[];
   defaultQuery: string;
 }): InsertSerpApiScout[] {
@@ -225,7 +292,7 @@ function toScoutRows(input: {
 
   for (let i = 0; i < input.searchResults.length; i++) {
     const result = input.searchResults[i];
-    const price = input.prices.find((p) => p.sourceUrl === result.url);
+    const price = input.prices.find(p => p.sourceUrl === result.url);
     rowsByUrl.set(result.url, {
       productId: input.productId,
       userId: input.userId,
@@ -259,10 +326,20 @@ function toScoutRows(input: {
   return Array.from(rowsByUrl.values());
 }
 
-async function replaceScoutRows(database: any, userId: string, productId: string, rows: InsertSerpApiScout[]): Promise<void> {
-  await database.delete(serpApiScouts).where(
-    and(eq(serpApiScouts.productId, productId), eq(serpApiScouts.userId, userId)),
-  );
+async function replaceScoutRows(
+  database: any,
+  userId: string,
+  productId: string,
+  rows: InsertSerpApiScout[]
+): Promise<void> {
+  await database
+    .delete(serpApiScouts)
+    .where(
+      and(
+        eq(serpApiScouts.productId, productId),
+        eq(serpApiScouts.userId, userId)
+      )
+    );
 
   if (rows.length > 0) {
     await database.insert(serpApiScouts).values(rows);
@@ -272,7 +349,11 @@ async function replaceScoutRows(database: any, userId: string, productId: string
 // ─── Main Scout Service ──────────────────────────────────────────────────────
 
 export const scoutService = {
-  async scoutProduct(userId: string, productId: string, maxResults: number = 10): Promise<ScoutResult> {
+  async scoutProduct(
+    userId: string,
+    productId: string,
+    maxResults: number = 10
+  ): Promise<ScoutResult> {
     const database: any = await requireDb();
 
     const product = await database.query.products.findFirst({
@@ -280,9 +361,14 @@ export const scoutService = {
     });
     if (!product) {
       return {
-        productId, productTitle: "", productPrice: "0",
-        prices: [], totalFound: 0, searchEngine: "none",
-        status: "failed", errorMessage: "Product not found",
+        productId,
+        productTitle: "",
+        productPrice: "0",
+        prices: [],
+        totalFound: 0,
+        searchEngine: "none",
+        status: "failed",
+        errorMessage: "Product not found",
       };
     }
 
@@ -307,9 +393,15 @@ export const scoutService = {
 
     if (searchResults.length === 0) {
       return {
-        productId, productTitle: product.title, productPrice: product.price?.toString() ?? "0",
-        prices: [], totalFound: 0, searchEngine,
-        status: "failed", errorMessage: "No search results found. Check Firecrawl/SerpAPI configuration.",
+        productId,
+        productTitle: product.title,
+        productPrice: product.price?.toString() ?? "0",
+        prices: [],
+        totalFound: 0,
+        searchEngine,
+        status: "failed",
+        errorMessage:
+          "No search results found. Check Firecrawl/SerpAPI configuration.",
       };
     }
 
@@ -317,7 +409,11 @@ export const scoutService = {
     const prices: ScoutPrice[] = [];
     const urlsToScrape = searchResults.slice(0, maxResults + 5);
 
-    for (let i = 0; i < urlsToScrape.length && prices.length < maxResults; i++) {
+    for (
+      let i = 0;
+      i < urlsToScrape.length && prices.length < maxResults;
+      i++
+    ) {
       const { url, title } = urlsToScrape[i];
       try {
         const price = await scrapeUrlForPrice(url, product.title);
@@ -344,14 +440,25 @@ export const scoutService = {
       logger.warn({ productId, err }, "Scout: failed to persist scout results");
     }
 
-    const status = prices.length > 0 ? (prices.length >= maxResults ? "success" : "partial") : "failed";
-    const errorMessage = prices.length === 0
-      ? "Found search results but could not extract prices from any of them."
-      : null;
+    const status =
+      prices.length > 0
+        ? prices.length >= maxResults
+          ? "success"
+          : "partial"
+        : "failed";
+    const errorMessage =
+      prices.length === 0
+        ? "Found search results but could not extract prices from any of them."
+        : null;
 
     logger.info(
-      { productId, query: searchQuery, found: prices.length, engine: searchEngine },
-      "Scout: product scouting completed",
+      {
+        productId,
+        query: searchQuery,
+        found: prices.length,
+        engine: searchEngine,
+      },
+      "Scout: product scouting completed"
     );
 
     return {
@@ -366,7 +473,10 @@ export const scoutService = {
     };
   },
 
-  async scoutAllProducts(userId: string, maxResults: number = 10): Promise<ScoutResult[]> {
+  async scoutAllProducts(
+    userId: string,
+    maxResults: number = 10
+  ): Promise<ScoutResult[]> {
     const database = await requireDb();
     const userProducts = await database
       .select()
@@ -380,7 +490,10 @@ export const scoutService = {
         const result = await this.scoutProduct(userId, product.id, maxResults);
         results.push(result);
       } catch (err) {
-        logger.warn({ productId: product.id, err }, "Scout: failed to scout product");
+        logger.warn(
+          { productId: product.id, err },
+          "Scout: failed to scout product"
+        );
         results.push({
           productId: product.id,
           productTitle: product.title,
@@ -398,7 +511,11 @@ export const scoutService = {
 
   // ─── SerpAPI Batch Scout (5 queries per product) ──────────────────────────
 
-  async scoutProductWithSerpApi(userId: string, productId: string, maxResults: number = 10): Promise<SerpApiScoutResult> {
+  async scoutProductWithSerpApi(
+    userId: string,
+    productId: string,
+    maxResults: number = 10
+  ): Promise<SerpApiScoutResult> {
     const database: any = await requireDb();
 
     const product = await database.query.products.findFirst({
@@ -406,19 +523,31 @@ export const scoutService = {
     });
     if (!product) {
       return {
-        productId, productTitle: "", productPrice: "0",
-        prices: [], reviews: [], searchQueries: [],
-        totalFound: 0, searchEngine: "none",
-        status: "failed", errorMessage: "Product not found",
+        productId,
+        productTitle: "",
+        productPrice: "0",
+        prices: [],
+        reviews: [],
+        searchQueries: [],
+        totalFound: 0,
+        searchEngine: "none",
+        status: "failed",
+        errorMessage: "Product not found",
       };
     }
 
     if (!ENV.serpApiKey) {
       return {
-        productId, productTitle: product.title, productPrice: product.price?.toString() ?? "0",
-        prices: [], reviews: [], searchQueries: [],
-        totalFound: 0, searchEngine: "none",
-        status: "failed", errorMessage: "SERP_API_KEY is not configured in .env",
+        productId,
+        productTitle: product.title,
+        productPrice: product.price?.toString() ?? "0",
+        prices: [],
+        reviews: [],
+        searchQueries: [],
+        totalFound: 0,
+        searchEngine: "none",
+        status: "failed",
+        errorMessage: "SERP_API_KEY is not configured in .env",
       };
     }
 
@@ -433,7 +562,13 @@ export const scoutService = {
 
     // Step 1: Run all 5 searches, deduplicate URLs
     const seenUrls = new Set<string>();
-    const allSearchResults: Array<{ url: string; title: string; snippet?: string; query: string; position: number }> = [];
+    const allSearchResults: Array<{
+      url: string;
+      title: string;
+      snippet?: string;
+      query: string;
+      position: number;
+    }> = [];
 
     for (const query of searchQueries) {
       try {
@@ -444,7 +579,13 @@ export const scoutService = {
           seenUrls.add(r.url);
 
           // Get snippet from SerpAPI organic_results
-          allSearchResults.push({ url: r.url, title: r.title, snippet: r.snippet ?? "", query, position: i + 1 });
+          allSearchResults.push({
+            url: r.url,
+            title: r.title,
+            snippet: r.snippet ?? "",
+            query,
+            position: i + 1,
+          });
         }
       } catch (err) {
         logger.warn({ query, err }, "Scout: SerpAPI query failed");
@@ -453,10 +594,17 @@ export const scoutService = {
 
     if (allSearchResults.length === 0) {
       return {
-        productId, productTitle: product.title, productPrice: product.price?.toString() ?? "0",
-        prices: [], reviews: [], searchQueries,
-        totalFound: 0, searchEngine: "serpapi",
-        status: "failed", errorMessage: "No search results from SerpAPI. Check your API key and credits.",
+        productId,
+        productTitle: product.title,
+        productPrice: product.price?.toString() ?? "0",
+        prices: [],
+        reviews: [],
+        searchQueries,
+        totalFound: 0,
+        searchEngine: "serpapi",
+        status: "failed",
+        errorMessage:
+          "No search results from SerpAPI. Check your API key and credits.",
       };
     }
 
@@ -465,7 +613,11 @@ export const scoutService = {
     const reviews: Array<{ title: string; snippet: string; url: string }> = [];
     const urlsToScrape = allSearchResults.slice(0, maxResults + 5);
 
-    for (let i = 0; i < urlsToScrape.length && prices.length < maxResults; i++) {
+    for (
+      let i = 0;
+      i < urlsToScrape.length && prices.length < maxResults;
+      i++
+    ) {
       const { url, title, snippet } = urlsToScrape[i];
       try {
         const price = await scrapeUrlForPrice(url, product.title);
@@ -494,17 +646,32 @@ export const scoutService = {
       });
       await replaceScoutRows(database, userId, productId, rows);
     } catch (err) {
-      logger.warn({ productId, err }, "Scout: failed to persist serp_api_scouts");
+      logger.warn(
+        { productId, err },
+        "Scout: failed to persist serp_api_scouts"
+      );
     }
 
-    const status = prices.length > 0 ? (prices.length >= maxResults ? "success" : "partial") : "failed";
-    const errorMessage = prices.length === 0
-      ? "Found search results but could not extract prices from any of them."
-      : null;
+    const status =
+      prices.length > 0
+        ? prices.length >= maxResults
+          ? "success"
+          : "partial"
+        : "failed";
+    const errorMessage =
+      prices.length === 0
+        ? "Found search results but could not extract prices from any of them."
+        : null;
 
     logger.info(
-      { productId, queries: searchQueries.length, urlsFound: allSearchResults.length, pricesFound: prices.length, reviewsFound: reviews.length },
-      "Scout: SerpAPI batch scouting completed",
+      {
+        productId,
+        queries: searchQueries.length,
+        urlsFound: allSearchResults.length,
+        pricesFound: prices.length,
+        reviewsFound: reviews.length,
+      },
+      "Scout: SerpAPI batch scouting completed"
     );
 
     return {
@@ -521,7 +688,10 @@ export const scoutService = {
     };
   },
 
-  async scoutAllWithSerpApi(userId: string, maxResults: number = 10): Promise<SerpApiScoutResult[]> {
+  async scoutAllWithSerpApi(
+    userId: string,
+    maxResults: number = 10
+  ): Promise<SerpApiScoutResult[]> {
     const database = await requireDb();
     const userProducts = await database
       .select()
@@ -532,16 +702,26 @@ export const scoutService = {
     const results: SerpApiScoutResult[] = [];
     for (const product of userProducts) {
       try {
-        const result = await this.scoutProductWithSerpApi(userId, product.id, maxResults);
+        const result = await this.scoutProductWithSerpApi(
+          userId,
+          product.id,
+          maxResults
+        );
         results.push(result);
       } catch (err) {
-        logger.warn({ productId: product.id, err }, "Scout: failed to scout product with SerpAPI");
+        logger.warn(
+          { productId: product.id, err },
+          "Scout: failed to scout product with SerpAPI"
+        );
         results.push({
           productId: product.id,
           productTitle: product.title,
           productPrice: product.price?.toString() ?? "0",
-          prices: [], reviews: [], searchQueries: [],
-          totalFound: 0, searchEngine: "none",
+          prices: [],
+          reviews: [],
+          searchQueries: [],
+          totalFound: 0,
+          searchEngine: "none",
           status: "failed",
           errorMessage: String(err),
         });
@@ -552,7 +732,11 @@ export const scoutService = {
 
   // ─── Exa Structured Scout (direct product extraction) ─────────────────────
 
-  async scoutProductWithExa(userId: string, productId: string, maxResults: number = 10): Promise<SerpApiScoutResult> {
+  async scoutProductWithExa(
+    userId: string,
+    productId: string,
+    maxResults: number = 10
+  ): Promise<SerpApiScoutResult> {
     const database: any = await requireDb();
 
     const product = await database.query.products.findFirst({
@@ -560,19 +744,31 @@ export const scoutService = {
     });
     if (!product) {
       return {
-        productId, productTitle: "", productPrice: "0",
-        prices: [], reviews: [], searchQueries: [],
-        totalFound: 0, searchEngine: "none",
-        status: "failed", errorMessage: "Product not found",
+        productId,
+        productTitle: "",
+        productPrice: "0",
+        prices: [],
+        reviews: [],
+        searchQueries: [],
+        totalFound: 0,
+        searchEngine: "none",
+        status: "failed",
+        errorMessage: "Product not found",
       };
     }
 
     if (!ENV.exaApiKey) {
       return {
-        productId, productTitle: product.title, productPrice: product.price?.toString() ?? "0",
-        prices: [], reviews: [], searchQueries: [],
-        totalFound: 0, searchEngine: "none",
-        status: "failed", errorMessage: "EXA_API_KEY is not configured in .env",
+        productId,
+        productTitle: product.title,
+        productPrice: product.price?.toString() ?? "0",
+        prices: [],
+        reviews: [],
+        searchQueries: [],
+        totalFound: 0,
+        searchEngine: "none",
+        status: "failed",
+        errorMessage: "EXA_API_KEY is not configured in .env",
       };
     }
 
@@ -585,7 +781,10 @@ export const scoutService = {
     ];
 
     // Step 1: Try structured search first (search + extract in one call)
-    let exaResult = await exaSearchService.structuredSearchProducts(baseQuery, maxResults);
+    let exaResult = await exaSearchService.structuredSearchProducts(
+      baseQuery,
+      maxResults
+    );
 
     // Step 2: If structured search returned few results, try raw search + scrape
     const prices: ScoutPrice[] = [];
@@ -637,14 +836,21 @@ export const scoutService = {
               }
               // Collect review snippets from highlights
               if (r.snippet && r.snippet.length > 20) {
-                reviews.push({ title: r.title, snippet: r.snippet, url: r.url });
+                reviews.push({
+                  title: r.title,
+                  snippet: r.snippet,
+                  url: r.url,
+                });
               }
             } catch (err) {
               logger.debug({ url: r.url, err }, "Scout: Exa URL scrape failed");
             }
           }
         } catch (err) {
-          logger.warn({ query, err }, "Scout: Exa raw search supplement failed");
+          logger.warn(
+            { query, err },
+            "Scout: Exa raw search supplement failed"
+          );
         }
         if (prices.length >= maxResults) break;
       }
@@ -663,17 +869,31 @@ export const scoutService = {
       });
       await replaceScoutRows(database, userId, productId, rows);
     } catch (err) {
-      logger.warn({ productId, err }, "Scout: failed to persist Exa scout results");
+      logger.warn(
+        { productId, err },
+        "Scout: failed to persist Exa scout results"
+      );
     }
 
-    const status = prices.length > 0 ? (prices.length >= maxResults ? "success" : "partial") : "failed";
-    const errorMessage = prices.length === 0
-      ? "Exa search could not find pricing for this product."
-      : null;
+    const status =
+      prices.length > 0
+        ? prices.length >= maxResults
+          ? "success"
+          : "partial"
+        : "failed";
+    const errorMessage =
+      prices.length === 0
+        ? "Exa search could not find pricing for this product."
+        : null;
 
     logger.info(
-      { productId, query: baseQuery, found: prices.length, structuredCount: exaResult.products.length },
-      "Scout: Exa scouting completed",
+      {
+        productId,
+        query: baseQuery,
+        found: prices.length,
+        structuredCount: exaResult.products.length,
+      },
+      "Scout: Exa scouting completed"
     );
 
     return {
@@ -690,7 +910,10 @@ export const scoutService = {
     };
   },
 
-  async scoutAllWithExa(userId: string, maxResults: number = 10): Promise<SerpApiScoutResult[]> {
+  async scoutAllWithExa(
+    userId: string,
+    maxResults: number = 10
+  ): Promise<SerpApiScoutResult[]> {
     const database = await requireDb();
     const userProducts = await database
       .select()
@@ -701,16 +924,26 @@ export const scoutService = {
     const results: SerpApiScoutResult[] = [];
     for (const product of userProducts) {
       try {
-        const result = await this.scoutProductWithExa(userId, product.id, maxResults);
+        const result = await this.scoutProductWithExa(
+          userId,
+          product.id,
+          maxResults
+        );
         results.push(result);
       } catch (err) {
-        logger.warn({ productId: product.id, err }, "Scout: failed to scout product with Exa");
+        logger.warn(
+          { productId: product.id, err },
+          "Scout: failed to scout product with Exa"
+        );
         results.push({
           productId: product.id,
           productTitle: product.title,
           productPrice: product.price?.toString() ?? "0",
-          prices: [], reviews: [], searchQueries: [],
-          totalFound: 0, searchEngine: "none",
+          prices: [],
+          reviews: [],
+          searchQueries: [],
+          totalFound: 0,
+          searchEngine: "none",
           status: "failed",
           errorMessage: String(err),
         });
@@ -719,7 +952,22 @@ export const scoutService = {
     return results;
   },
 
-  async getScoutHistory(userId: string, productId: string): Promise<Array<{ query: string; title: string | null; snippet: string | null; url: string; price: string | null; currency: string | null; source: string | null; position: number | null; scrapedAt: Date }>> {
+  async getScoutHistory(
+    userId: string,
+    productId: string
+  ): Promise<
+    Array<{
+      query: string;
+      title: string | null;
+      snippet: string | null;
+      url: string;
+      price: string | null;
+      currency: string | null;
+      source: string | null;
+      position: number | null;
+      scrapedAt: Date;
+    }>
+  > {
     const database: any = await requireDb();
     const rows = await database
       .select({
@@ -734,7 +982,12 @@ export const scoutService = {
         scrapedAt: serpApiScouts.scrapedAt,
       })
       .from(serpApiScouts)
-      .where(and(eq(serpApiScouts.userId, userId), eq(serpApiScouts.productId, productId)))
+      .where(
+        and(
+          eq(serpApiScouts.userId, userId),
+          eq(serpApiScouts.productId, productId)
+        )
+      )
       .orderBy(desc(serpApiScouts.scrapedAt));
     return rows;
   },
@@ -809,12 +1062,14 @@ export const scoutService = {
       grouped.set(row.productId, current);
     }
 
-    return Array.from(grouped.values()).map((result: ScoutHistoryResult): ScoutHistoryResult => ({
-      ...result,
-      prices: result.prices.sort((a, b) => a.position - b.position),
-      reviews: result.reviews.slice(0, 10),
-      totalFound: result.prices.length,
-      status: result.prices.length > 0 ? "success" : "partial" as const,
-    }));
+    return Array.from(grouped.values()).map(
+      (result: ScoutHistoryResult): ScoutHistoryResult => ({
+        ...result,
+        prices: result.prices.sort((a, b) => a.position - b.position),
+        reviews: result.reviews.slice(0, 10),
+        totalFound: result.prices.length,
+        status: result.prices.length > 0 ? "success" : ("partial" as const),
+      })
+    );
   },
 };

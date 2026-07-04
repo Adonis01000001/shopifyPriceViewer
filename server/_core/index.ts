@@ -41,20 +41,24 @@ async function startServer() {
   const server = createServer(app);
 
   // Security headers (H-002)
-  app.use(helmet({
-    contentSecurityPolicy: ENV.isProduction ? undefined : false,
-    crossOriginEmbedderPolicy: ENV.isProduction,
-  }));
+  app.use(
+    helmet({
+      contentSecurityPolicy: ENV.isProduction ? undefined : false,
+      crossOriginEmbedderPolicy: ENV.isProduction,
+    })
+  );
 
   // CORS — restrict to known origins in production (H-009)
-  app.use(cors({
-    origin: ENV.isProduction
-      ? (process.env.ALLOWED_ORIGINS?.split(",") ?? [])
-      : true,
-    credentials: true,
-    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-    allowedHeaders: ["Content-Type", "Authorization", "x-csrf-token"],
-  }));
+  app.use(
+    cors({
+      origin: ENV.isProduction
+        ? (process.env.ALLOWED_ORIGINS?.split(",") ?? [])
+        : true,
+      credentials: true,
+      methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+      allowedHeaders: ["Content-Type", "Authorization", "x-csrf-token"],
+    })
+  );
 
   // Rate limiting (H-001)
   app.use("/api/", apiLimiter);
@@ -98,17 +102,23 @@ async function startServer() {
   const port = await findAvailablePort(preferredPort);
 
   if (port !== preferredPort) {
-    logger.warn({ port, preferredPort }, "Preferred port was busy, using alternate");
+    logger.warn(
+      { port, preferredPort },
+      "Preferred port was busy, using alternate"
+    );
   }
 
   server.listen(port, () => {
-    logger.info({ port, env: ENV.isProduction ? "production" : "development" }, "Server started");
+    logger.info(
+      { port, env: ENV.isProduction ? "production" : "development" },
+      "Server started"
+    );
   });
 
   // Start cron scheduler for price monitoring & competitor discovery
   cronScheduler.start();
 }
 
-startServer().catch((err) => {
+startServer().catch(err => {
   logger.fatal({ err }, "Server failed to start");
 });

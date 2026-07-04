@@ -11,7 +11,7 @@ import Alerts from "./pages/dashboard/Alerts";
 import Competitors from "./pages/dashboard/Competitors";
 import Analytics from "./pages/dashboard/Analytics";
 import PriceScout from "./pages/dashboard/PriceScout";
-import Admin from "./pages/dashboard/Admin";
+
 import Auth from "./pages/Auth";
 import { trpc } from "@/lib/trpc";
 
@@ -28,7 +28,8 @@ function AuthGuard({ children }: { children: React.ReactNode }) {
           alignItems: "center",
           justifyContent: "center",
           height: "100vh",
-          background: "linear-gradient(135deg, #0f0b2e 0%, #1a1145 40%, #0d1b3e 100%)",
+          background:
+            "linear-gradient(135deg, #0f0b2e 0%, #1a1145 40%, #0d1b3e 100%)",
         }}
       >
         <div
@@ -70,7 +71,6 @@ function App() {
                     <Route path="/alerts" component={Alerts} />
                     <Route path="/competitors" component={Competitors} />
                     <Route path="/analytics" component={Analytics} />
-                    <Route path="/admin" component={Admin} />
                     <Route component={NotFound} />
                   </Switch>
                 </DashboardLayout>

@@ -2,7 +2,9 @@ import crypto from "crypto";
 import { ENV } from "../env";
 
 /** Verify Shopify OAuth HMAC from query parameters. */
-export function verifyShopifyHmac(queryParams: Record<string, string>): boolean {
+export function verifyShopifyHmac(
+  queryParams: Record<string, string>
+): boolean {
   const hmac = queryParams.hmac;
   if (!hmac) return false;
 
@@ -29,5 +31,9 @@ export function verifyWebhookHmac(data: Buffer, hmacHeader: string): boolean {
 
 /** Validate that a string is a proper Shopify myshopify.com domain. */
 export function isValidShopDomain(shop: string): boolean {
-  return typeof shop === "string" && shop.endsWith(".myshopify.com") && shop.length > ".myshopify.com".length;
+  return (
+    typeof shop === "string" &&
+    shop.endsWith(".myshopify.com") &&
+    shop.length > ".myshopify.com".length
+  );
 }

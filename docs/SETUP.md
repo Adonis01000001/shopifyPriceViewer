@@ -15,6 +15,7 @@
 Download and install Microsoft SQL Server 2019 or later from [Microsoft SQL Server](https://www.microsoft.com/en-us/sql-server/sql-server-downloads).
 
 Create a database:
+
 ```sql
 CREATE DATABASE shopify_price_intelligence;
 ```
@@ -41,6 +42,7 @@ pip install -r requirements.txt
 ```
 
 Create `.env` file in backend directory:
+
 ```env
 DATABASE_URL=mssql+pyodbc://sa:YourPassword@localhost:1433/shopify_price_intelligence?driver=ODBC+Driver+17+for+SQL+Server
 REDIS_URL=redis://localhost:6379/0
@@ -51,11 +53,13 @@ SECRET_KEY=your-secret-key-change-in-production
 ```
 
 Run migrations:
+
 ```bash
 alembic upgrade head
 ```
 
 Start backend server:
+
 ```bash
 python run.py
 ```
@@ -70,12 +74,14 @@ npm install
 ```
 
 Create `.env.local` file:
+
 ```env
 NEXT_PUBLIC_API_URL=http://localhost:8000
 NEXT_PUBLIC_APP_NAME=Shopify Price Intelligence
 ```
 
 Start frontend development server:
+
 ```bash
 npm run dev
 ```
@@ -85,6 +91,7 @@ Frontend will be available at `http://localhost:3000`
 ### 6. Celery Worker (Optional)
 
 In a new terminal:
+
 ```bash
 cd backend
 venv\Scripts\activate
@@ -100,17 +107,20 @@ celery -A app.tasks worker --loglevel=info
 ## Database Migrations
 
 ### Create a new migration
+
 ```bash
 cd backend
 alembic revision --autogenerate -m "Description of changes"
 ```
 
 ### Apply migrations
+
 ```bash
 alembic upgrade head
 ```
 
 ### Rollback migrations
+
 ```bash
 alembic downgrade -1
 ```
@@ -119,23 +129,23 @@ alembic downgrade -1
 
 ### Backend (.env)
 
-| Variable | Description | Example |
-|----------|-------------|---------|
-| DATABASE_URL | SQL Server connection string | mssql+pyodbc://sa:password@localhost:1433/db |
-| REDIS_URL | Redis connection string | redis://localhost:6379/0 |
-| SHOPIFY_API_KEY | Shopify app API key | your_key |
-| SHOPIFY_API_SECRET | Shopify app API secret | your_secret |
-| OPENAI_API_KEY | OpenAI API key | sk-... |
-| SECRET_KEY | JWT secret key | your-secret |
-| API_HOST | API host | 0.0.0.0 |
-| API_PORT | API port | 8000 |
-| ENVIRONMENT | Environment | development |
+| Variable           | Description                  | Example                                      |
+| ------------------ | ---------------------------- | -------------------------------------------- |
+| DATABASE_URL       | SQL Server connection string | mssql+pyodbc://sa:password@localhost:1433/db |
+| REDIS_URL          | Redis connection string      | redis://localhost:6379/0                     |
+| SHOPIFY_API_KEY    | Shopify app API key          | your_key                                     |
+| SHOPIFY_API_SECRET | Shopify app API secret       | your_secret                                  |
+| OPENAI_API_KEY     | OpenAI API key               | sk-...                                       |
+| SECRET_KEY         | JWT secret key               | your-secret                                  |
+| API_HOST           | API host                     | 0.0.0.0                                      |
+| API_PORT           | API port                     | 8000                                         |
+| ENVIRONMENT        | Environment                  | development                                  |
 
 ### Frontend (.env.local)
 
-| Variable | Description | Example |
-|----------|-------------|---------|
-| NEXT_PUBLIC_API_URL | Backend API URL | http://localhost:8000 |
+| Variable             | Description      | Example                    |
+| -------------------- | ---------------- | -------------------------- |
+| NEXT_PUBLIC_API_URL  | Backend API URL  | http://localhost:8000      |
 | NEXT_PUBLIC_APP_NAME | Application name | Shopify Price Intelligence |
 
 ## Troubleshooting
@@ -188,6 +198,7 @@ See `docs/DEPLOYMENT.md` for production deployment instructions.
 ## Testing
 
 ### Backend Tests
+
 ```bash
 cd backend
 pytest tests/
@@ -195,6 +206,7 @@ pytest --cov=app tests/  # With coverage
 ```
 
 ### Frontend Tests
+
 ```bash
 cd frontend
 npm test
@@ -204,6 +216,7 @@ npm run test:coverage  # With coverage
 ## Common Commands
 
 ### Backend
+
 ```bash
 # Start development server
 python run.py
@@ -228,6 +241,7 @@ flake8 app/
 ```
 
 ### Frontend
+
 ```bash
 # Start development server
 npm run dev

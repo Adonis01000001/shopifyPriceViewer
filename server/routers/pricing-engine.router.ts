@@ -20,7 +20,12 @@ export const pricingEngineRouter = router({
       const product = await database
         .select()
         .from(products)
-        .where(and(eq(products.id, input.productId), eq(products.userId, ctx.user!.id)))
+        .where(
+          and(
+            eq(products.id, input.productId),
+            eq(products.userId, ctx.user!.id)
+          )
+        )
         .limit(1);
 
       if (product.length === 0) return null;
@@ -28,14 +33,17 @@ export const pricingEngineRouter = router({
       const compPrices = await database
         .select({ price: competitorProducts.price })
         .from(competitorProducts)
-        .where(and(
-          eq(competitorProducts.productId, input.productId),
-          eq(competitorProducts.isActive, true),
-        ));
+        .where(
+          and(
+            eq(competitorProducts.productId, input.productId),
+            eq(competitorProducts.isActive, true)
+          )
+        );
 
-      const prices = compPrices.map((c) => Number(c.price));
+      const prices = compPrices.map((c: { price: string }) => Number(c.price));
       const merchantPrice = Number(product[0].price);
-      const costPrice = product[0].costPrice != null ? Number(product[0].costPrice) : null;
+      const costPrice =
+        product[0].costPrice != null ? Number(product[0].costPrice) : null;
 
       const analysis = pricingEngine.analyzeProduct({
         merchantPrice,
@@ -55,8 +63,10 @@ export const pricingEngineRouter = router({
    * Returns an array of product analyses.
    */
   analyzeAll: protectedProcedure.query(async ({ ctx }) => {
-    const allProducts = await productService.getByUserId(ctx.user!.id, { limit: 1000 });
-    const tracked = allProducts.filter((p) => p.isTracked && p.isActive);
+    const allProducts = await productService.getByUserId(ctx.user!.id, {
+      limit: 1000,
+    });
+    const tracked = allProducts.filter(p => p.isTracked && p.isActive);
 
     const results: {
       productId: string;
@@ -87,9 +97,10 @@ export const pricingEngineRouter = router({
 
     for (const product of tracked) {
       const compPrices = await productService.getCompetitorPrices(product.id);
-      const prices = compPrices.map((c) => Number(c.price));
+      const prices = compPrices.map(c => Number(c.price));
       const merchantPrice = Number(product.price);
-      const costPrice = product.costPrice != null ? Number(product.costPrice) : null;
+      const costPrice =
+        product.costPrice != null ? Number(product.costPrice) : null;
 
       const analysis = pricingEngine.analyzeProduct({
         merchantPrice,
@@ -118,7 +129,12 @@ export const pricingEngineRouter = router({
       const product = await database
         .select()
         .from(products)
-        .where(and(eq(products.id, input.productId), eq(products.userId, ctx.user!.id)))
+        .where(
+          and(
+            eq(products.id, input.productId),
+            eq(products.userId, ctx.user!.id)
+          )
+        )
         .limit(1);
 
       if (product.length === 0) return null;
@@ -126,16 +142,21 @@ export const pricingEngineRouter = router({
       const compPrices = await database
         .select({ price: competitorProducts.price })
         .from(competitorProducts)
-        .where(and(
-          eq(competitorProducts.productId, input.productId),
-          eq(competitorProducts.isActive, true),
-        ));
+        .where(
+          and(
+            eq(competitorProducts.productId, input.productId),
+            eq(competitorProducts.isActive, true)
+          )
+        );
 
-      const prices = compPrices.map((c) => Number(c.price));
+      const prices = compPrices.map((c: { price: string }) => Number(c.price));
       const merchantPrice = Number(product[0].price);
 
       const avgPrice = pricingEngine.calculateAverageCompetitorPrice(prices);
-      const position = pricingEngine.classifyMarketPosition(merchantPrice, avgPrice);
+      const position = pricingEngine.classifyMarketPosition(
+        merchantPrice,
+        avgPrice
+      );
 
       return {
         productId: product[0].id,
@@ -154,10 +175,14 @@ export const pricingEngineRouter = router({
     .mutation(async ({ ctx, input }) => {
       const recommendation = await recommendationService.generateForProduct(
         ctx.user!.id,
-        input.productId,
+        input.productId
       );
       if (!recommendation) {
-        return { success: false, message: "Unable to generate recommendation. Ensure the product exists and has competitor pricing data." };
+        return {
+          success: false,
+          message:
+            "Unable to generate recommendation. Ensure the product exists and has competitor pricing data.",
+        };
       }
       return { success: true, recommendation };
     }),
@@ -166,8 +191,10 @@ export const pricingEngineRouter = router({
    * Dashboard aggregate stats: counts of products by market position.
    */
   dashboardStats: protectedProcedure.query(async ({ ctx }) => {
-    const allProducts = await productService.getByUserId(ctx.user!.id, { limit: 1000 });
-    const tracked = allProducts.filter((p) => p.isTracked && p.isActive);
+    const allProducts = await productService.getByUserId(ctx.user!.id, {
+      limit: 1000,
+    });
+    const tracked = allProducts.filter(p => p.isTracked && p.isActive);
 
     const stats = {
       leading: 0,
@@ -180,9 +207,10 @@ export const pricingEngineRouter = router({
 
     for (const product of tracked) {
       const compPrices = await productService.getCompetitorPrices(product.id);
-      const prices = compPrices.map((c) => Number(c.price));
+      const prices = compPrices.map(c => Number(c.price));
       const merchantPrice = Number(product.price);
-      const costPrice = product.costPrice != null ? Number(product.costPrice) : null;
+      const costPrice =
+        product.costPrice != null ? Number(product.costPrice) : null;
 
       const analysis = pricingEngine.analyzeProduct({
         merchantPrice,

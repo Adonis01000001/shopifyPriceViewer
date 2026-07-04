@@ -45,14 +45,22 @@ const EXCHANGE_TOKEN_PATH = `/webdev.v1.WebDevAuthPublicService/ExchangeToken`;
 const GET_USER_INFO_PATH = `/webdev.v1.WebDevAuthPublicService/GetUserInfo`;
 const GET_USER_INFO_WITH_JWT_PATH = `/webdev.v1.WebDevAuthPublicService/GetUserInfoWithJwt`;
 
-function deriveLoginMethod(platforms: unknown, fallback: string | null | undefined): string | null {
+function deriveLoginMethod(
+  platforms: unknown,
+  fallback: string | null | undefined
+): string | null {
   if (fallback && fallback.length > 0) return fallback;
   if (!Array.isArray(platforms) || platforms.length === 0) return null;
-  const set = new Set<string>(platforms.filter((p): p is string => typeof p === "string"));
+  const set = new Set<string>(
+    platforms.filter((p): p is string => typeof p === "string")
+  );
   if (set.has("REGISTERED_PLATFORM_EMAIL")) return "email";
   if (set.has("REGISTERED_PLATFORM_GOOGLE")) return "google";
   if (set.has("REGISTERED_PLATFORM_APPLE")) return "apple";
-  if (set.has("REGISTERED_PLATFORM_MICROSOFT") || set.has("REGISTERED_PLATFORM_AZURE"))
+  if (
+    set.has("REGISTERED_PLATFORM_MICROSOFT") ||
+    set.has("REGISTERED_PLATFORM_AZURE")
+  )
     return "microsoft";
   if (set.has("REGISTERED_PLATFORM_GITHUB")) return "github";
   const first = Array.from(set)[0];
@@ -73,21 +81,32 @@ class OAuthService {
     return atob(state);
   }
 
-  async getTokenByCode(code: string, state: string): Promise<ExchangeTokenResponse> {
+  async getTokenByCode(
+    code: string,
+    state: string
+  ): Promise<ExchangeTokenResponse> {
     const payload: ExchangeTokenRequest = {
       clientId: ENV.appId,
       grantType: "authorization_code",
       code,
       redirectUri: this.decodeState(state),
     };
-    const { data } = await this.client.post<ExchangeTokenResponse>(EXCHANGE_TOKEN_PATH, payload);
+    const { data } = await this.client.post<ExchangeTokenResponse>(
+      EXCHANGE_TOKEN_PATH,
+      payload
+    );
     return data;
   }
 
-  async getUserInfoByToken(token: ExchangeTokenResponse): Promise<GetUserInfoResponse> {
-    const { data } = await this.client.post<GetUserInfoResponse>(GET_USER_INFO_PATH, {
-      accessToken: token.accessToken,
-    });
+  async getUserInfoByToken(
+    token: ExchangeTokenResponse
+  ): Promise<GetUserInfoResponse> {
+    const { data } = await this.client.post<GetUserInfoResponse>(
+      GET_USER_INFO_PATH,
+      {
+        accessToken: token.accessToken,
+      }
+    );
     return data;
   }
 }
@@ -107,7 +126,9 @@ export type AuthenticatedUser = User & {
   isCron?: boolean;
 };
 
-function buildCronUser(userInfo: GetUserInfoWithJwtResponse): AuthenticatedUser {
+function buildCronUser(
+  userInfo: GetUserInfoWithJwtResponse
+): AuthenticatedUser {
   const now = new Date();
   return {
     id: "00000000-0000-0000-0000-000000000000" as any,
@@ -136,7 +157,10 @@ class SDKServer {
   }
 
   // Legacy OAuth
-  async exchangeCodeForToken(code: string, state: string): Promise<ExchangeTokenResponse> {
+  async exchangeCodeForToken(
+    code: string,
+    state: string
+  ): Promise<ExchangeTokenResponse> {
     return this.oauthService.getTokenByCode(code, state);
   }
 
@@ -148,28 +172,47 @@ class SDKServer {
       (data as any)?.platforms,
       (data as any)?.platform ?? data.platform ?? null
     );
-    return { ...(data as any), platform: loginMethod, loginMethod } as GetUserInfoResponse;
+    return {
+      ...(data as any),
+      platform: loginMethod,
+      loginMethod,
+    } as GetUserInfoResponse;
   }
 
   // Session / JWT — delegates to auth/jwt.ts
-  async createSessionToken(openId: string, options: { expiresInMs?: number; name?: string } = {}): Promise<string> {
+  async createSessionToken(
+    openId: string,
+    options: { expiresInMs?: number; name?: string } = {}
+  ): Promise<string> {
     return createSessionToken(openId, options);
   }
 
-  async verifySession(cookieValue: string | undefined | null): Promise<SessionPayload | null> {
+  async verifySession(
+    cookieValue: string | undefined | null
+  ): Promise<SessionPayload | null> {
     return verifySession(cookieValue);
   }
 
-  async getUserInfoWithJwt(jwtToken: string): Promise<GetUserInfoWithJwtResponse> {
-    const payload: GetUserInfoWithJwtRequest = { jwtToken, projectId: ENV.appId };
+  async getUserInfoWithJwt(
+    jwtToken: string
+  ): Promise<GetUserInfoWithJwtResponse> {
+    const payload: GetUserInfoWithJwtRequest = {
+      jwtToken,
+      projectId: ENV.appId,
+    };
     const { data } = await this.client.post<GetUserInfoWithJwtResponse>(
-      GET_USER_INFO_WITH_JWT_PATH, payload
+      GET_USER_INFO_WITH_JWT_PATH,
+      payload
     );
     const loginMethod = deriveLoginMethod(
       (data as any)?.platforms,
       (data as any)?.platform ?? data.platform ?? null
     );
-    return { ...(data as any), platform: loginMethod, loginMethod } as GetUserInfoWithJwtResponse;
+    return {
+      ...(data as any),
+      platform: loginMethod,
+      loginMethod,
+    } as GetUserInfoWithJwtResponse;
   }
 
   // User DB operations — delegates to auth/jwt.ts

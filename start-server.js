@@ -1,3 +1,16 @@
-const { spawn } = require("child_process"); const path = require("path"); const root = "D:PVshopify price viwer"; const p = spawn("C:Program Files
-odejs
-ode.exe", ["./node_modules/.bin/tsx", "watch", "server/_core/index.ts"], { cwd: root, env: { ...process.env, NODE_ENV: "development" }, stdio: ["ignore", "ignore", "ignore"], detached: true }); p.unref(); console.log("server started in background");
+const { spawn } = require("child_process");
+const path = require("path");
+const root = path.resolve(__dirname);
+const nodeExe = "C:\\Program Files\\nodejs\\node.exe";
+const p = spawn(
+  nodeExe,
+  ["./node_modules/.bin/tsx", "watch", "server/_core/index.ts"],
+  {
+    cwd: root,
+    env: { ...process.env, NODE_ENV: "development" },
+    stdio: "ignore",
+    detached: true,
+  }
+);
+p.unref();
+console.log("Server started in background");

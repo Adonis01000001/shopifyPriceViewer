@@ -36,6 +36,13 @@
       "when": 1781640000000,
       "tag": "0005_serp_api_scouts",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1782847970102,
+      "tag": "0005_polite_butterfly",
+      "breakpoints": true
     }
   ]
 }

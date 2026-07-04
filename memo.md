@@ -20,13 +20,13 @@ This is a Shopify Price Intelligence SaaS with a **React/Vite frontend + Express
 
 The project has **two complete backends** doing the same thing:
 
-| Aspect | `backend/` (Python/FastAPI) | `server/` (Express/tRPC) |
-|--------|-----------------------------|--------------------------|
-| ORM | SQLAlchemy | Drizzle ORM |
-| Auth | None | Full JWT + bcrypt |
-| Services | None | Full services layer |
+| Aspect   | `backend/` (Python/FastAPI) | `server/` (Express/tRPC)       |
+| -------- | --------------------------- | ------------------------------ |
+| ORM      | SQLAlchemy                  | Drizzle ORM                    |
+| Auth     | None                        | Full JWT + bcrypt              |
+| Services | None                        | Full services layer            |
 | Frontend | `frontend/` (empty Next.js) | `client/` (working React/Vite) |
-| Status | Bare scaffold | Fully working |
+| Status   | Bare scaffold               | Fully working                  |
 
 **Recommendation:** Delete `backend/` and `frontend/` entirely. Dead code with no tests will confuse every future developer. Git preserves history if needed later.
 
@@ -39,6 +39,7 @@ The project has **two complete backends** doing the same thing:
 ### 3. Refresh Tokens Are In-Memory Only
 
 `server/_core/auth/refresh-token.ts` line 8:
+
 ```typescript
 const refreshTokens = new Map<string, { userId: string; expiresAt: Date }>();
 ```
@@ -127,6 +128,7 @@ README describes SQLite, Next.js, Zendtand, SQL Server — none of which match t
 ### 17. Add Real Testing Strategy
 
 Currently 1 test (`server/auth.logout.test.ts`). Add:
+
 - Unit tests for all service methods
 - E2E tests for auth flow, product CRUD, Shopify sync
 - API contract tests for all tRPC routes
@@ -167,58 +169,58 @@ The sidebar has no Settings route. Email configuration service exists (`email.se
 
 ## Priority Action Plan
 
-| Priority | Action | Effort |
-|----------|--------|--------|
-| 🔴 P0 | Delete `backend/` and `frontend/` dead code | 30 min |
-| 🔴 P0 | Add CSRF middleware to Express stack | 5 min |
-| 🔴 P0 | Move refresh tokens to database | 2 hrs |
-| 🔴 P0 | Audit `.env` and `PVshopify price viwer.env` for secrets | 30 min |
-| 🟠 P1 | Remove hardcoded fake data from Overview + Products | 1 hr |
-| 🟠 P1 | Standardize DB error handling across all services | 2 hrs |
-| 🟠 P1 | Add pagination to list endpoints | 3 hrs |
-| 🟠 P1 | Rewrite README to match actual stack | 1 hr |
-| 🟡 P2 | Extract Shopify logic from routers.ts to a service | 2 hrs |
-| 🟡 P2 | Add structured logging | 3 hrs |
-| 🟡 P2 | Remove unused shadcn components | 1 hr |
-| 🟡 P2 | Add real test coverage | 1-2 days |
-| 🟢 P3 | Implement real-time updates | 1 day |
-| 🟢 P3 | Build out Settings page + email config UI | 1 day |
-| 🟢 P3 | Replace "AI POWERED" label with honest description | 5 min |
+| Priority | Action                                                   | Effort   |
+| -------- | -------------------------------------------------------- | -------- |
+| 🔴 P0    | Delete `backend/` and `frontend/` dead code              | 30 min   |
+| 🔴 P0    | Add CSRF middleware to Express stack                     | 5 min    |
+| 🔴 P0    | Move refresh tokens to database                          | 2 hrs    |
+| 🔴 P0    | Audit `.env` and `PVshopify price viwer.env` for secrets | 30 min   |
+| 🟠 P1    | Remove hardcoded fake data from Overview + Products      | 1 hr     |
+| 🟠 P1    | Standardize DB error handling across all services        | 2 hrs    |
+| 🟠 P1    | Add pagination to list endpoints                         | 3 hrs    |
+| 🟠 P1    | Rewrite README to match actual stack                     | 1 hr     |
+| 🟡 P2    | Extract Shopify logic from routers.ts to a service       | 2 hrs    |
+| 🟡 P2    | Add structured logging                                   | 3 hrs    |
+| 🟡 P2    | Remove unused shadcn components                          | 1 hr     |
+| 🟡 P2    | Add real test coverage                                   | 1-2 days |
+| 🟢 P3    | Implement real-time updates                              | 1 day    |
+| 🟢 P3    | Build out Settings page + email config UI                | 1 day    |
+| 🟢 P3    | Replace "AI POWERED" label with honest description       | 5 min    |
 
 ---
 
 ## Fixes Applied (2026-06-08 to 2026-06-09)
 
-| # | Issue | Status | Files Changed |
-|---|-------|--------|---------------|
-| 1 | Delete `backend/` and `frontend/` dead code | ✅ Done | Removed `backend/`, `frontend/` directories |
-| 2 | Add CSRF middleware to Express stack | ✅ Done | `server/_core/index.ts` — added `app.use(doubleCsrfProtection)` |
-| 3 | Move refresh tokens to database | ✅ Done | `drizzle/schema.ts` — added `refresh_tokens` table; `server/_core/auth/refresh-token.ts` — rewritten to use DB with SHA-256 hashed tokens |
-| 4 | Audit `.env` files for secrets | ✅ Done | Renamed `PVshopify price viwer.env` → `.env.bak`; updated `.gitignore` to cover all env variants |
-| 5 | Remove hardcoded fake data | ✅ Done | `client/src/pages/dashboard/Overview.tsx` — removed fake product rows and competitor feed; `client/src/pages/dashboard/Products.tsx` — removed hardcoded delta/market-low values |
-| 6 | Standardize DB error handling | ✅ Done | `server/services/recommendation.service.ts` — replaced `db.getDb()` + silent fail with `requireDb()` |
-| 7 | Add pagination to list endpoints | ✅ Done | `server/services/product.service.ts`, `alert.service.ts`, `competitor.service.ts` — added limit/offset/count; routers updated with paginated inputs |
-| 8 | Rewrite README to match actual stack | ✅ Done | `README.md` — complete rewrite |
-| 9 | Add cookie-parser middleware | ✅ Done | `server/_core/index.ts` — added `cookieParser()` before CSRF (was causing runtime crash) |
-| 10 | Fix CSRF config type error | ✅ Done | `server/_core/csrf.ts` — added `getSessionIdentifier` required by csrf-csrf v4 |
-| 11 | Add structured logging with pino | ✅ Done | `server/_core/logger.ts` — pino + pino-pretty; replaced 30+ console.* calls across 12 files |
+| #   | Issue                                       | Status  | Files Changed                                                                                                                                                                    |
+| --- | ------------------------------------------- | ------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | Delete `backend/` and `frontend/` dead code | ✅ Done | Removed `backend/`, `frontend/` directories                                                                                                                                      |
+| 2   | Add CSRF middleware to Express stack        | ✅ Done | `server/_core/index.ts` — added `app.use(doubleCsrfProtection)`                                                                                                                  |
+| 3   | Move refresh tokens to database             | ✅ Done | `drizzle/schema.ts` — added `refresh_tokens` table; `server/_core/auth/refresh-token.ts` — rewritten to use DB with SHA-256 hashed tokens                                        |
+| 4   | Audit `.env` files for secrets              | ✅ Done | Renamed `PVshopify price viwer.env` → `.env.bak`; updated `.gitignore` to cover all env variants                                                                                 |
+| 5   | Remove hardcoded fake data                  | ✅ Done | `client/src/pages/dashboard/Overview.tsx` — removed fake product rows and competitor feed; `client/src/pages/dashboard/Products.tsx` — removed hardcoded delta/market-low values |
+| 6   | Standardize DB error handling               | ✅ Done | `server/services/recommendation.service.ts` — replaced `db.getDb()` + silent fail with `requireDb()`                                                                             |
+| 7   | Add pagination to list endpoints            | ✅ Done | `server/services/product.service.ts`, `alert.service.ts`, `competitor.service.ts` — added limit/offset/count; routers updated with paginated inputs                              |
+| 8   | Rewrite README to match actual stack        | ✅ Done | `README.md` — complete rewrite                                                                                                                                                   |
+| 9   | Add cookie-parser middleware                | ✅ Done | `server/_core/index.ts` — added `cookieParser()` before CSRF (was causing runtime crash)                                                                                         |
+| 10  | Fix CSRF config type error                  | ✅ Done | `server/_core/csrf.ts` — added `getSessionIdentifier` required by csrf-csrf v4                                                                                                   |
+| 11  | Add structured logging with pino            | ✅ Done | `server/_core/logger.ts` — pino + pino-pretty; replaced 30+ console.\* calls across 12 files                                                                                     |
 
 ### Remaining Issues (Not Yet Fixed)
 
-| # | Issue | Priority | Effort |
-|---|-------|----------|--------|
-| 9 | CSRF config missing `getSessionIdentifier` | ✅ Done | `server/_core/csrf.ts` — added `getSessionIdentifier` |
-| 10 | Extract Shopify logic from routers.ts to service | 🟡 P2 | 2 hrs |
-| 11 | Add structured logging | ✅ Done | `server/_core/logger.ts` — new pino logger; replaced all 30+ console.* calls across 12 files |
-| 12 | Remove unused shadcn components | 🟡 P2 | 1 hr |
-| 13 | Add real test coverage | 🟡 P2 | 1-2 days |
-| 14 | Implement real-time updates | 🟢 P3 | 1 day |
-| 15 | Build out Settings page + email config UI | 🟢 P3 | 1 day |
-| 16 | Replace "AI POWERED" label with honest description | 🟢 P3 | 5 min |
-| 17 | No input sanitization on tRPC routes | 🟠 P1 | 2 hrs |
-| 18 | No error boundaries on tRPC queries | 🟠 P1 | 2 hrs |
-| 19 | Hardcoded user ID types in context.ts/sdk.ts | 🟡 P2 | 1 hr |
-| 20 | OAuth state stored in cookie (session fixation) | 🟡 P2 | 2 hrs |
+| #   | Issue                                              | Priority | Effort                                                                                        |
+| --- | -------------------------------------------------- | -------- | --------------------------------------------------------------------------------------------- |
+| 9   | CSRF config missing `getSessionIdentifier`         | ✅ Done  | `server/_core/csrf.ts` — added `getSessionIdentifier`                                         |
+| 10  | Extract Shopify logic from routers.ts to service   | 🟡 P2    | 2 hrs                                                                                         |
+| 11  | Add structured logging                             | ✅ Done  | `server/_core/logger.ts` — new pino logger; replaced all 30+ console.\* calls across 12 files |
+| 12  | Remove unused shadcn components                    | 🟡 P2    | 1 hr                                                                                          |
+| 13  | Add real test coverage                             | 🟡 P2    | 1-2 days                                                                                      |
+| 14  | Implement real-time updates                        | 🟢 P3    | 1 day                                                                                         |
+| 15  | Build out Settings page + email config UI          | 🟢 P3    | 1 day                                                                                         |
+| 16  | Replace "AI POWERED" label with honest description | 🟢 P3    | 5 min                                                                                         |
+| 17  | No input sanitization on tRPC routes               | 🟠 P1    | 2 hrs                                                                                         |
+| 18  | No error boundaries on tRPC queries                | 🟠 P1    | 2 hrs                                                                                         |
+| 19  | Hardcoded user ID types in context.ts/sdk.ts       | 🟡 P2    | 1 hr                                                                                          |
+| 20  | OAuth state stored in cookie (session fixation)    | 🟡 P2    | 2 hrs                                                                                         |
 
 ## Key Insights
 
@@ -228,32 +230,30 @@ The sidebar has no Settings route. Email configuration service exists (`email.se
 
 3. **Fake data in production UI is a trust killer.** Hardcoded competitor movements, fake product deltas, and "AI POWERED" labels on simple math will erode user trust the moment they notice. Either make it real or make it clearly a demo/placeholder.
 
-
-
 ✅ All 8 Priority Fixes Completed
 
 ┌─────┬───────────────────────────┬───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
-│  #  │            Fix            │                                                     What Changed                                                      │
+│ # │ Fix │ What Changed │
 ├─────┼───────────────────────────┼───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
-│ 1   │ Deleted dead code         │ Removed backend/ (Python/FastAPI) and frontend/ (Next.js) directories entirely                                        │
+│ 1 │ Deleted dead code │ Removed backend/ (Python/FastAPI) and frontend/ (Next.js) directories entirely │
 ├─────┼───────────────────────────┼───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
-│ 2   │ Added CSRF middleware     │ server/_core/index.ts — registered doubleCsrfProtection on Express stack (was imported but never used)                │
+│ 2 │ Added CSRF middleware │ server/\_core/index.ts — registered doubleCsrfProtection on Express stack (was imported but never used) │
 ├─────┼───────────────────────────┼───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
-│ 3   │ DB-backed refresh tokens  │ New refresh_tokens table in schema. Service rewritten: SHA-256 hashed tokens, single-use rotation, bulk revoke, purge │
-│     │                           │  expired                                                                                                              │
+│ 3 │ DB-backed refresh tokens │ New refresh_tokens table in schema. Service rewritten: SHA-256 hashed tokens, single-use rotation, bulk revoke, purge │
+│ │ │ expired │
 ├─────┼───────────────────────────┼───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
-│ 4   │ Env secrets audit         │ Renamed PVshopify price viwer.env → .env.bak. Updated .gitignore to cover all env variants                            │
+│ 4 │ Env secrets audit │ Renamed PVshopify price viwer.env → .env.bak. Updated .gitignore to cover all env variants │
 ├─────┼───────────────────────────┼───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
-│ 5   │ Removed fake data         │ Overview: removed 3 hardcoded fake products + static competitor feed. Products page: removed hardcoded delta -5.1 and │
-│     │                           │  fake market low price * 0.92                                                                                         │
+│ 5 │ Removed fake data │ Overview: removed 3 hardcoded fake products + static competitor feed. Products page: removed hardcoded delta -5.1 and │
+│ │ │ fake market low price \* 0.92 │
 ├─────┼───────────────────────────┼───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
-│ 6   │ Standardized DB error     │ recommendation.service.ts — all methods now use requireDb() instead of silent-fail db.getDb()                         │
-│     │ handling                  │                                                                                                                       │
+│ 6 │ Standardized DB error │ recommendation.service.ts — all methods now use requireDb() instead of silent-fail db.getDb() │
+│ │ handling │ │
 ├─────┼───────────────────────────┼───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
-│ 7   │ Pagination on list        │ Products, alerts, competitors — all now support limit/offset params with count endpoints. Max 200 per page, default   │
-│     │ endpoints                 │ 50                                                                                                                    │
+│ 7 │ Pagination on list │ Products, alerts, competitors — all now support limit/offset params with count endpoints. Max 200 per page, default │
+│ │ endpoints │ 50 │
 ├─────┼───────────────────────────┼───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
-│ 8   │ Rewrote README            │ Matches actual stack: React/Vite, Express/tRPC, Drizzle/PostgreSQL. Removed references to Next.js/Python/SQLite       │
+│ 8 │ Rewrote README │ Matches actual stack: React/Vite, Express/tRPC, Drizzle/PostgreSQL. Removed references to Next.js/Python/SQLite │
 └─────┴───────────────────────────┴───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 
 ---
@@ -267,15 +267,18 @@ Complete autonomous competitor price intelligence platform on top of the existin
 ### Files Created
 
 #### Services (4 new)
+
 - `server/services/competitor-discovery.service.ts` — SerpAPI + Firecrawl search, country/language-aware, URL dedup, confidence scoring
 - `server/services/ai-extraction.service.ts` — Single LLM call per page: product match + price extraction + structured JSON
 - `server/services/price-monitoring.service.ts` — Hourly monitoring: scrape, AI extract, detect changes, snapshots, timeline, alerts
 - `server/services/cron-scheduler.service.ts` — In-process cron with overlap prevention
 
 #### Router (1 new)
+
 - `server/routers/intelligence.router.ts` — 15 tRPC endpoints
 
 #### Infrastructure
+
 - `docker-compose.yml`, `Dockerfile`, `docs/ARCHITECTURE.md`, `docs/ENVIRONMENT.md`
 - `_core/migrate-new-tables.ts`, `_core/seed-electronics.ts`, `_core/test-pipeline.ts`
 
@@ -325,17 +328,21 @@ Complete Strategic Undercutting Engine that analyzes competitor pricing, generat
 ### Business Rules Implemented
 
 **Rule 1: Market Average**
+
 ```
 avg_price = sum(valid_competitor_prices) / count(valid_competitor_prices)
 ```
+
 Invalid prices (negative, zero, null, NaN) are silently filtered out.
 
 **Rule 2: Strategic Undercut (5% Rule)**
+
 ```
 recommended_price = avg_competitor_price * 0.95
 ```
 
 **Rule 3: Margin Protection Floor**
+
 ```
 minimum_allowed_price = cost_price * 1.10
 if recommended_price < minimum_allowed_price:
@@ -344,6 +351,7 @@ if recommended_price < minimum_allowed_price:
 ```
 
 **Rule 4: Final Recommendation**
+
 ```
 if (avg * 0.95) >= (cost * 1.10):
     recommendation = avg * 0.95
@@ -354,39 +362,39 @@ else:
 
 ### Market Position Classification
 
-| Status | Condition | Color | Meaning |
-|--------|-----------|-------|---------|
-| LEADING | merchant < avg * 0.97 | Green | You are currently leading the market. |
-| COMPETITIVE | within +/-3% of avg | Blue | You are competitively priced. |
-| OVERPRICED | merchant > avg * 1.03 | Red | You are likely losing sales to competitors. |
-| INSUFFICIENT_DATA | no valid competitor data | Gray | Not enough competitor pricing data. |
+| Status            | Condition                | Color | Meaning                                     |
+| ----------------- | ------------------------ | ----- | ------------------------------------------- |
+| LEADING           | merchant < avg \* 0.97   | Green | You are currently leading the market.       |
+| COMPETITIVE       | within +/-3% of avg      | Blue  | You are competitively priced.               |
+| OVERPRICED        | merchant > avg \* 1.03   | Red   | You are likely losing sales to competitors. |
+| INSUFFICIENT_DATA | no valid competitor data | Gray  | Not enough competitor pricing data.         |
 
 ### Files Created/Modified (12 files)
 
-| File | Status | Lines |
-|------|--------|-------|
-| `server/services/pricing-engine.service.ts` | NEW | 237 |
-| `server/services/__tests__/pricing-engine.test.ts` | NEW | 256 |
-| `server/routers/pricing-engine.router.ts` | NEW | 215 |
-| `server/routers.ts` | Modified | +4 |
-| `server/services/recommendation.service.ts` | Modified | +41/-13 |
-| `drizzle/schema.ts` | Modified | +1 (margin_protection_applied) |
-| `drizzle/migrations/0004_add_margin_protection.sql` | NEW | 1 |
-| `client/src/components/dashboard/PricingRecommendationWidget.tsx` | NEW | 383 |
-| `client/src/pages/dashboard/Overview.tsx` | Modified | +4 |
-| `client/src/pages/dashboard/Products.tsx` | Modified | +47 |
-| `docs/superpowers/specs/2026-06-16-strategic-undercutting-engine-design.md` | NEW | 82 |
-| `docs/superpowers/plans/2026-06-16-phase-1-3-roadmap.md` | NEW | 177 |
+| File                                                                        | Status   | Lines                          |
+| --------------------------------------------------------------------------- | -------- | ------------------------------ |
+| `server/services/pricing-engine.service.ts`                                 | NEW      | 237                            |
+| `server/services/__tests__/pricing-engine.test.ts`                          | NEW      | 256                            |
+| `server/routers/pricing-engine.router.ts`                                   | NEW      | 215                            |
+| `server/routers.ts`                                                         | Modified | +4                             |
+| `server/services/recommendation.service.ts`                                 | Modified | +41/-13                        |
+| `drizzle/schema.ts`                                                         | Modified | +1 (margin_protection_applied) |
+| `drizzle/migrations/0004_add_margin_protection.sql`                         | NEW      | 1                              |
+| `client/src/components/dashboard/PricingRecommendationWidget.tsx`           | NEW      | 383                            |
+| `client/src/pages/dashboard/Overview.tsx`                                   | Modified | +4                             |
+| `client/src/pages/dashboard/Products.tsx`                                   | Modified | +47                            |
+| `docs/superpowers/specs/2026-06-16-strategic-undercutting-engine-design.md` | NEW      | 82                             |
+| `docs/superpowers/plans/2026-06-16-phase-1-3-roadmap.md`                    | NEW      | 177                            |
 
 ### API Endpoints (5 new tRPC endpoints)
 
-| Endpoint | Type | Description |
-|----------|------|-------------|
-| `pricingEngine.analyze` | query | Full analysis: market snapshot + recommendation + position |
-| `pricingEngine.analyzeAll` | query | Analyze all tracked products with competitor data |
-| `pricingEngine.getMarketPosition` | query | Lightweight position classification only |
-| `pricingEngine.generateRecommendation` | mutation | Generate and persist a recommendation |
-| `pricingEngine.dashboardStats` | query | Aggregate stats: leading/competitive/overpriced counts |
+| Endpoint                               | Type     | Description                                                |
+| -------------------------------------- | -------- | ---------------------------------------------------------- |
+| `pricingEngine.analyze`                | query    | Full analysis: market snapshot + recommendation + position |
+| `pricingEngine.analyzeAll`             | query    | Analyze all tracked products with competitor data          |
+| `pricingEngine.getMarketPosition`      | query    | Lightweight position classification only                   |
+| `pricingEngine.generateRecommendation` | mutation | Generate and persist a recommendation                      |
+| `pricingEngine.dashboardStats`         | query    | Aggregate stats: leading/competitive/overpriced counts     |
 
 ### UI Components
 
@@ -402,21 +410,21 @@ else:
 
 ### Git Commits
 
-| Commit | Description |
-|--------|-------------|
+| Commit    | Description                                                            |
+| --------- | ---------------------------------------------------------------------- |
 | `92943d5` | Core algorithm, tRPC router, UI components, schema changes, unit tests |
-| `41ae940` | Pricing engine service, migration SQL, design doc |
-| `43a22b2` | Comprehensive Phase 1-3 roadmap |
+| `41ae940` | Pricing engine service, migration SQL, design doc                      |
+| `43a22b2` | Comprehensive Phase 1-3 roadmap                                        |
 
 ### Edge Cases Handled
 
-| Scenario | Behavior |
-|----------|----------|
-| No competitor data | INSUFFICIENT_DATA, null recommendation |
-| Invalid prices (<=0, null, NaN) | Filtered before calculation |
-| Single competitor | Calculates normally |
-| Cost > competitor avg | Margin protection kicks in |
-| No cost price | Pure 5% undercut, no floor |
+| Scenario                        | Behavior                               |
+| ------------------------------- | -------------------------------------- |
+| No competitor data              | INSUFFICIENT_DATA, null recommendation |
+| Invalid prices (<=0, null, NaN) | Filtered before calculation            |
+| Single competitor               | Calculates normally                    |
+| Cost > competitor avg           | Margin protection kicks in             |
+| No cost price                   | Pure 5% undercut, no floor             |
 
 ### Architecture
 

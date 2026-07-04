@@ -21,7 +21,7 @@ export default function Auth() {
       utils.auth.me.invalidate();
       navigate("/");
     },
-    onError: (err) => {
+    onError: err => {
       toast.error(err.message || "Login failed");
       setIsLoading(false);
     },
@@ -33,7 +33,7 @@ export default function Auth() {
       utils.auth.me.invalidate();
       navigate("/");
     },
-    onError: (err) => {
+    onError: err => {
       toast.error(err.message || "Registration failed");
       setIsLoading(false);
     },
@@ -77,7 +77,12 @@ export default function Auth() {
                 xmlns="http://www.w3.org/2000/svg"
                 className="auth-logo__icon"
               >
-                <rect width="36" height="36" rx="9" fill="var(--color-primary)" />
+                <rect
+                  width="36"
+                  height="36"
+                  rx="9"
+                  fill="var(--color-primary)"
+                />
                 <path
                   d="M10 25V14l8-5 8 5v11l-7 4-9-3z"
                   fill="var(--color-primary-foreground)"
@@ -98,21 +103,35 @@ export default function Auth() {
                 { text: "Track" },
                 { text: "competitor" },
                 { text: "prices" },
-                { text: "effortlessly", style: { color: "var(--color-tertiary)" } },
+                {
+                  text: "effortlessly",
+                  style: { color: "var(--color-tertiary)" },
+                },
               ]}
               className="auth-branding__typewriter"
             />
 
             <p className="auth-branding__desc">
-              AI-powered pricing intelligence for your Shopify store.
-              Monitor, analyze, and optimize — all in real-time.
+              AI-powered pricing intelligence for your Shopify store. Monitor,
+              analyze, and optimize — all in real-time.
             </p>
 
             <div className="auth-branding__features">
               <div className="auth-feature">
                 <div className="auth-feature__icon" aria-hidden="true">
-                  <svg className="auth-feature__svg" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
-                    <path d="M2 10h4l3-6 4 8 3-2h4" stroke="var(--color-primary)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                  <svg
+                    className="auth-feature__svg"
+                    viewBox="0 0 20 20"
+                    fill="none"
+                    xmlns="http://www.w3.org/2000/svg"
+                  >
+                    <path
+                      d="M2 10h4l3-6 4 8 3-2h4"
+                      stroke="var(--color-primary)"
+                      strokeWidth="1.5"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    />
                   </svg>
                 </div>
                 <div>
@@ -124,9 +143,25 @@ export default function Auth() {
               </div>
               <div className="auth-feature">
                 <div className="auth-feature__icon" aria-hidden="true">
-                  <svg className="auth-feature__svg" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
-                    <circle cx="10" cy="10" r="7" stroke="var(--color-tertiary)" strokeWidth="1.5"/>
-                    <path d="M10 6v4l2.5 2.5" stroke="var(--color-tertiary)" strokeWidth="1.5" strokeLinecap="round"/>
+                  <svg
+                    className="auth-feature__svg"
+                    viewBox="0 0 20 20"
+                    fill="none"
+                    xmlns="http://www.w3.org/2000/svg"
+                  >
+                    <circle
+                      cx="10"
+                      cy="10"
+                      r="7"
+                      stroke="var(--color-tertiary)"
+                      strokeWidth="1.5"
+                    />
+                    <path
+                      d="M10 6v4l2.5 2.5"
+                      stroke="var(--color-tertiary)"
+                      strokeWidth="1.5"
+                      strokeLinecap="round"
+                    />
                   </svg>
                 </div>
                 <div>
@@ -138,9 +173,23 @@ export default function Auth() {
               </div>
               <div className="auth-feature">
                 <div className="auth-feature__icon" aria-hidden="true">
-                  <svg className="auth-feature__svg" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
-                    <path d="M4 6a2 2 0 012-2h8a2 2 0 012 2v8a2 2 0 01-2 2H6a2 2 0 01-2-2V6z" stroke="var(--color-primary)" strokeWidth="1.5"/>
-                    <path d="M8 9h4M8 12h4" stroke="var(--color-primary)" strokeWidth="1.5" strokeLinecap="round"/>
+                  <svg
+                    className="auth-feature__svg"
+                    viewBox="0 0 20 20"
+                    fill="none"
+                    xmlns="http://www.w3.org/2000/svg"
+                  >
+                    <path
+                      d="M4 6a2 2 0 012-2h8a2 2 0 012 2v8a2 2 0 01-2 2H6a2 2 0 01-2-2V6z"
+                      stroke="var(--color-primary)"
+                      strokeWidth="1.5"
+                    />
+                    <path
+                      d="M8 9h4M8 12h4"
+                      stroke="var(--color-primary)"
+                      strokeWidth="1.5"
+                      strokeLinecap="round"
+                    />
                   </svg>
                 </div>
                 <div>
@@ -202,7 +251,7 @@ export default function Auth() {
                     type="text"
                     placeholder="John Doe"
                     value={name}
-                    onChange={(e) => setName(e.target.value)}
+                    onChange={e => setName(e.target.value)}
                     required
                     autoComplete="name"
                   />
@@ -219,7 +268,7 @@ export default function Auth() {
                   type="email"
                   placeholder="you@example.com"
                   value={email}
-                  onChange={(e) => setEmail(e.target.value)}
+                  onChange={e => setEmail(e.target.value)}
                   required
                   autoComplete="email"
                 />
@@ -235,7 +284,7 @@ export default function Auth() {
                   type="password"
                   placeholder="Min. 8 characters"
                   value={password}
-                  onChange={(e) => setPassword(e.target.value)}
+                  onChange={e => setPassword(e.target.value)}
                   required
                   minLength={8}
                   autoComplete={

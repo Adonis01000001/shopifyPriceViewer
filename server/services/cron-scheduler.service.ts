@@ -57,7 +57,12 @@ class CronScheduler {
   }
 
   getStatus() {
-    return this.jobs.map(j => ({ name: j.name, intervalMs: j.intervalMs, lastRun: j.lastRun, running: j.running }));
+    return this.jobs.map(j => ({
+      name: j.name,
+      intervalMs: j.intervalMs,
+      lastRun: j.lastRun,
+      running: j.running,
+    }));
   }
 }
 
@@ -68,7 +73,9 @@ export const cronScheduler = new CronScheduler();
 cronScheduler.register(
   "price_monitor",
   ENV.monitoringIntervalHours * 60 * 60 * 1000,
-  async () => { await priceMonitoringService.runFullMonitoring(); },
+  async () => {
+    await priceMonitoringService.runFullMonitoring();
+  }
 );
 
 cronScheduler.register(
@@ -81,8 +88,11 @@ cronScheduler.register(
       try {
         await competitorDiscoveryService.discoverForAllProducts(allUsers[i].id);
       } catch (err) {
-        logger.warn({ userId: allUsers[i].id, err }, "Auto-discovery failed for user");
+        logger.warn(
+          { userId: allUsers[i].id, err },
+          "Auto-discovery failed for user"
+        );
       }
     }
-  },
+  }
 );

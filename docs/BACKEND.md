@@ -56,41 +56,49 @@ backend/
 ### Core Models
 
 **User**
+
 - User account management
 - Shopify OAuth integration
 - Email notification preferences
 
 **ShopifyStore**
+
 - Connected Shopify stores
 - OAuth token storage
 - Sync status tracking
 
 **Product**
+
 - Shopify products
 - Pricing and inventory
 - Tracking status
 
 **CompetitorProduct**
+
 - Competitor product tracking
 - Match scoring
 - Price monitoring
 
 **PriceHistory**
+
 - Historical price data
 - Price change tracking
 - Trend analysis
 
 **ProductEmbedding**
+
 - Text embeddings for matching
 - Vector storage (JSON format)
 - Similarity calculation
 
 **Alert**
+
 - Price alert configuration
 - Trigger conditions
 - Notification preferences
 
 **Recommendation**
+
 - Pricing recommendations
 - Confidence scoring
 - Implementation tracking
@@ -98,11 +106,13 @@ backend/
 ## API Endpoints
 
 ### Authentication
+
 - `POST /api/v1/auth/register` - Register new user
 - `POST /api/v1/auth/login` - User login
 - `GET /api/v1/auth/shopify/callback` - Shopify OAuth callback
 
 ### Products
+
 - `POST /api/v1/products/` - Create product
 - `GET /api/v1/products/{product_id}` - Get product
 - `GET /api/v1/products/store/{store_id}` - List store products
@@ -114,6 +124,7 @@ backend/
 - `GET /api/v1/products/{product_id}/competitors` - List competitors
 
 ### Alerts
+
 - `POST /api/v1/alerts/` - Create alert
 - `GET /api/v1/alerts/{alert_id}` - Get alert
 - `GET /api/v1/alerts/user/{user_id}` - List user alerts
@@ -123,6 +134,7 @@ backend/
 - `POST /api/v1/alerts/{alert_id}/deactivate` - Deactivate alert
 
 ### Recommendations
+
 - `GET /api/v1/recommendations/{recommendation_id}` - Get recommendation
 - `GET /api/v1/recommendations/product/{product_id}` - List recommendations
 - `GET /api/v1/recommendations/product/{product_id}/latest` - Latest recommendation
@@ -135,20 +147,24 @@ backend/
 The matching engine uses a hybrid approach combining multiple techniques:
 
 ### 1. **Embedding-Based Matching** (50% weight)
+
 - Uses OpenAI text embeddings
 - Cosine similarity calculation
 - Stored in SQL Server as JSON arrays
 
 ### 2. **Taxonomy-Based Matching** (30% weight)
+
 - Category matching
 - Vendor matching
 - Keyword extraction and Jaccard similarity
 
 ### 3. **Merchant Feedback** (20% weight)
+
 - Manual verification by merchants
 - Confirmed matches boost confidence
 
 ### 4. **Price Similarity** (Filtering)
+
 - Products within 20% price range considered similar
 - Used for filtering, not scoring
 
@@ -226,16 +242,19 @@ alembic downgrade -1
 ## Services
 
 ### ProductService
+
 - Product CRUD operations
 - Embedding storage and retrieval
 - Product tracking management
 
 ### AlertService
+
 - Alert CRUD operations
 - Alert activation/deactivation
 - Alert triggering and notification
 
 ### RecommendationService
+
 - Recommendation calculation
 - Price analysis based on competitors
 - Recommendation implementation tracking
@@ -243,6 +262,7 @@ alembic downgrade -1
 ## Background Tasks (Celery)
 
 Planned background tasks:
+
 - Product synchronization from Shopify
 - Competitor price scraping
 - Embedding generation

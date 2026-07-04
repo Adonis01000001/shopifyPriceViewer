@@ -63,7 +63,7 @@ export const COMPETITIVE_THRESHOLD = 0.03; // ±3% band
 
 function filterValidPrices(prices: number[]): number[] {
   return prices.filter(
-    (p) => p != null && typeof p === "number" && p > 0 && !isNaN(p)
+    p => p != null && typeof p === "number" && p > 0 && !isNaN(p)
   );
 }
 
@@ -153,9 +153,7 @@ export function classifyMarketPosition(
   }
 
   const diff = merchantPrice - avgCompetitorPrice;
-  const diffPercent = roundToTwoDecimals(
-    (diff / avgCompetitorPrice) * 100
-  );
+  const diffPercent = roundToTwoDecimals((diff / avgCompetitorPrice) * 100);
   const absDiff = Math.abs(diff);
   const threshold = avgCompetitorPrice * COMPETITIVE_THRESHOLD;
 
@@ -193,17 +191,13 @@ export function classifyMarketPosition(
 
 // ─── Main Analysis Function ──────────────────────────────────────────────────
 
-export function analyzeProduct(
-  input: AnalyzeProductInput
-): ProductAnalysis {
+export function analyzeProduct(input: AnalyzeProductInput): ProductAnalysis {
   const { merchantPrice, costPrice, competitorPrices } = input;
 
   const validPrices = filterValidPrices(competitorPrices);
   const avgPrice = calculateAverageCompetitorPrice(validPrices);
-  const lowestPrice =
-    validPrices.length > 0 ? Math.min(...validPrices) : null;
-  const highestPrice =
-    validPrices.length > 0 ? Math.max(...validPrices) : null;
+  const lowestPrice = validPrices.length > 0 ? Math.min(...validPrices) : null;
+  const highestPrice = validPrices.length > 0 ? Math.max(...validPrices) : null;
 
   const marketSnapshot: MarketSnapshot = {
     merchantPrice,

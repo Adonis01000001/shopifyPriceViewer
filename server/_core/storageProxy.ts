@@ -17,7 +17,11 @@ export function registerStorageProxy(app: Express) {
     }
 
     // Enforce prefix restriction (only allow keys under safe paths)
-    if (!key.startsWith("uploads/") && !key.startsWith("exports/") && !key.startsWith("public/")) {
+    if (
+      !key.startsWith("uploads/") &&
+      !key.startsWith("exports/") &&
+      !key.startsWith("public/")
+    ) {
       res.status(403).send("Access denied: invalid storage path prefix");
       return;
     }
@@ -30,7 +34,7 @@ export function registerStorageProxy(app: Express) {
     try {
       const forgeUrl = new URL(
         "v1/storage/presign/get",
-        ENV.forgeApiUrl.replace(/\/+$/, "") + "/",
+        ENV.forgeApiUrl.replace(/\/+$/, "") + "/"
       );
       forgeUrl.searchParams.set("path", key);
 
@@ -40,7 +44,10 @@ export function registerStorageProxy(app: Express) {
 
       if (!forgeResp.ok) {
         const body = await forgeResp.text().catch(() => "");
-        logger.error({ status: forgeResp.status, body }, "Storage proxy: forge error");
+        logger.error(
+          { status: forgeResp.status, body },
+          "Storage proxy: forge error"
+        );
         res.status(502).send("Storage backend error");
         return;
       }

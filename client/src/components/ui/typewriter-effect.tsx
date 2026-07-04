@@ -16,7 +16,7 @@ export const TypewriterEffect = ({
   className?: string;
   cursorClassName?: string;
 }) => {
-  const wordsArray = words.map((word) => {
+  const wordsArray = words.map(word => {
     return {
       ...word,
       text: word.text.split(""),
@@ -110,7 +110,7 @@ export const TypewriterEffectSmooth = ({
   className?: string;
   cursorClassName?: string;
 }) => {
-  const wordsArray = words.map((word) => {
+  const wordsArray = words.map(word => {
     return {
       ...word,
       text: word.text.split(""),

@@ -15,7 +15,12 @@ describe("PricingEngine", () => {
 
     it("filters out invalid prices (zero, negative, null)", () => {
       const result = calculateAverageCompetitorPrice([
-        100, 0, -10, null as any, 110, 90,
+        100,
+        0,
+        -10,
+        null as any,
+        110,
+        90,
       ]);
       expect(result).toBe(100);
     });

@@ -5,11 +5,19 @@
  */
 import { eq } from "drizzle-orm";
 import { requireDb } from "../_core/db-assert";
-import { emailConfigs, type EmailConfig, type InsertEmailConfig } from "../../drizzle/schema";
+import {
+  emailConfigs,
+  type EmailConfig,
+  type InsertEmailConfig,
+} from "../../drizzle/schema";
 import { encryptToken, decryptToken } from "../_core/sdk";
 
 export const emailService = {
-  async getByUserId(userId: string): Promise<(Omit<EmailConfig, "smtpPassword"> & { smtpPassword: string }) | undefined> {
+  async getByUserId(
+    userId: string
+  ): Promise<
+    (Omit<EmailConfig, "smtpPassword"> & { smtpPassword: string }) | undefined
+  > {
     const database = await requireDb();
     const result = await database
       .select()
@@ -19,13 +27,18 @@ export const emailService = {
     if (!result[0]) return undefined;
     return {
       ...result[0],
-      smtpPassword: result[0].smtpPassword ? decryptToken(result[0].smtpPassword) : "",
+      smtpPassword: result[0].smtpPassword
+        ? decryptToken(result[0].smtpPassword)
+        : "",
     };
   },
 
   async upsert(data: InsertEmailConfig): Promise<EmailConfig> {
     const database = await requireDb();
-    const encrypted = { ...data, smtpPassword: encryptToken(data.smtpPassword) };
+    const encrypted = {
+      ...data,
+      smtpPassword: encryptToken(data.smtpPassword),
+    };
     const existing = await database
       .select({ id: emailConfigs.id })
       .from(emailConfigs)
@@ -41,7 +54,10 @@ export const emailService = {
       return result[0];
     }
 
-    const result = await database.insert(emailConfigs).values(encrypted).returning();
+    const result = await database
+      .insert(emailConfigs)
+      .values(encrypted)
+      .returning();
     return result[0];
   },
 

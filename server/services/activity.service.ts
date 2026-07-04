@@ -7,7 +7,10 @@ import {
 } from "../../drizzle/schema";
 
 export const activityService = {
-  async getByUserId(userId: string, limit: number = 20): Promise<ActivityLog[]> {
+  async getByUserId(
+    userId: string,
+    limit: number = 20
+  ): Promise<ActivityLog[]> {
     const database = await requireDb();
     return database
       .select()

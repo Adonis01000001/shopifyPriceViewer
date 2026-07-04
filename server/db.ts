@@ -1,10 +1,17 @@
 import { drizzle } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
 import * as schema from "../drizzle/schema";
+import { dbRelations } from "../drizzle/relations";
 import { logger } from "./_core/logger";
 
+// Relational schema: Drizzle tables + relation definitions, passed to
+// drizzle() so the relational query builder (db.query.<table>) is typed.
+// Relations live under a dedicated `relations` key to avoid colliding with
+// the table objects (both would otherwise share keys like `shopifyStores`).
+const relationalSchema = { ...schema, relations: dbRelations } as const;
+
 let _pool: Pool | null = null;
-let _db: ReturnType<typeof drizzle> | null = null;
+let _db: ReturnType<typeof drizzle<typeof relationalSchema>> | null = null;
 
 function getPool(): Pool | null {
   if (!_pool && process.env.DATABASE_URL) {
@@ -15,7 +22,7 @@ function getPool(): Pool | null {
       connectionTimeoutMillis: 5000,
       ssl: false,
     });
-    _pool.on("error", (err) => {
+    _pool.on("error", err => {
       logger.error({ err }, "Unexpected database pool error");
     });
   }
@@ -30,7 +37,7 @@ export async function getDb() {
       return null;
     }
     try {
-      _db = drizzle({ client: pool, schema });
+      _db = drizzle(pool, { schema: relationalSchema });
       logger.debug("Database connection pool initialized");
     } catch (error) {
       logger.error({ err: error }, "Failed to create Drizzle instance");

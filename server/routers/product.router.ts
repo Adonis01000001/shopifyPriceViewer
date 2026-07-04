@@ -2,13 +2,53 @@ import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { protectedProcedure, router } from "../_core/trpc";
 import { productService } from "../services/product.service";
+import {
+  skuSchema,
+  productNameSchema,
+  priceSchema,
+} from "../../shared/validation";
+import * as db from "../db";
+import { shopifyStores } from "../../drizzle/schema";
+import { eq, and } from "drizzle-orm";
+
+// Helper: get or create a "Manual" store placeholder for products without Shopify
+async function getOrCreateManualStore(userId: string): Promise<string> {
+  const database = await db.getDb();
+  if (!database) throw new Error("Database not available");
+
+  // Look for existing manual store for this user
+  const existing = await database.query.shopifyStores.findFirst({
+    where: and(eq(shopifyStores.userId, userId), eq(shopifyStores.storeName, "Manual")),
+  });
+
+  if (existing) return existing.id;
+
+  // Create a placeholder manual store
+  const result = await database
+    .insert(shopifyStores)
+    .values({
+      userId,
+      shopDomain: `manual-${userId.slice(0, 8)}`,
+      storeName: "Manual",
+      currency: "USD",
+      isActive: true,
+      scopes: "manual",
+    })
+    .returning();
+
+  return result[0].id;
+}
 
 export const productRouter = router({
   list: protectedProcedure
-    .input(z.object({
-      limit: z.number().min(1).max(200).optional(),
-      offset: z.number().min(0).optional(),
-    }).optional())
+    .input(
+      z
+        .object({
+          limit: z.number().min(1).max(200).optional(),
+          offset: z.number().min(0).optional(),
+        })
+        .optional()
+    )
     .query(async ({ ctx, input }) => {
       return productService.getByUserId(ctx.user!.id, input);
     }),
@@ -27,33 +67,42 @@ export const productRouter = router({
     .input(z.object({ id: z.string().uuid() }))
     .query(async ({ ctx, input }) => {
       const product = await productService.getById(ctx.user!.id, input.id);
-      if (!product) throw new TRPCError({ code: "NOT_FOUND", message: "Product not found" });
+      if (!product)
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "Product not found",
+        });
       return product;
     }),
 
   create: protectedProcedure
-    .input(z.object({
-      storeId: z.string().uuid(),
-      title: z.string().min(1).max(500),
-      description: z.string().optional(),
-      sku: z.string().max(128).optional(),
-      barcode: z.string().max(128).optional(),
-      vendor: z.string().max(255).optional(),
-      productType: z.string().max(255).optional(),
-      category: z.string().max(255).optional(),
-      tags: z.string().optional(),
-      price: z.string().regex(/^\d+(\.\d{1,2})?$/),
-      compareAtPrice: z.string().regex(/^\d+(\.\d{1,2})?$/).optional(),
-      costPrice: z.string().regex(/^\d+(\.\d{1,2})?$/).optional(),
-      currency: z.string().length(3).default("USD"),
-      imageUrl: z.string().url().optional(),
-      shopifyProductId: z.string().max(64).optional(),
-      shopifyVariantId: z.string().max(64).optional(),
-    }))
+    .input(
+      z.object({
+        storeId: z.string().uuid().optional(),
+        title: productNameSchema,
+        description: z.string().optional(),
+        sku: skuSchema,
+        barcode: z.string().max(128).optional(),
+        vendor: z.string().max(255).optional(),
+        productType: z.string().max(255).optional(),
+        category: z.string().max(255).optional(),
+        tags: z.string().optional(),
+        price: priceSchema,
+        compareAtPrice: priceSchema.optional(),
+        costPrice: priceSchema.optional(),
+        currency: z.string().length(3).default("USD"),
+        imageUrl: z.string().url().optional(),
+        shopifyProductId: z.string().max(64).optional(),
+        shopifyVariantId: z.string().max(64).optional(),
+      })
+    )
     .mutation(async ({ ctx, input }) => {
+      // Auto-create "Manual" store for products without Shopify connection
+      const resolvedStoreId = input.storeId || (await getOrCreateManualStore(ctx.user!.id));
+
       const product = await productService.create({
         userId: ctx.user!.id,
-        storeId: input.storeId,
+        storeId: resolvedStoreId,
         title: input.title,
         description: input.description,
         sku: input.sku,
@@ -73,28 +122,40 @@ export const productRouter = router({
         isTracked: true,
         isActive: true,
       });
-      if (!product) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Failed to create product" });
+      if (!product)
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: "Failed to create product",
+        });
       return product;
     }),
 
   update: protectedProcedure
-    .input(z.object({
-      id: z.string().uuid(),
-      title: z.string().min(1).max(500).optional(),
-      description: z.string().optional(),
-      sku: z.string().max(128).optional(),
-      category: z.string().max(255).optional(),
-      price: z.string().regex(/^\d+(\.\d{1,2})?$/).optional(),
-      compareAtPrice: z.string().regex(/^\d+(\.\d{1,2})?$/).optional(),
-      costPrice: z.string().regex(/^\d+(\.\d{1,2})?$/).optional(),
-      imageUrl: z.string().url().optional(),
-      status: z.enum(["optimal", "underpriced", "overpriced", "alert"]).optional(),
-      isTracked: z.boolean().optional(),
-    }))
+    .input(
+      z.object({
+        id: z.string().uuid(),
+        title: productNameSchema.optional(),
+        description: z.string().optional(),
+        sku: skuSchema,
+        category: z.string().max(255).optional(),
+        price: priceSchema.optional(),
+        compareAtPrice: priceSchema.optional(),
+        costPrice: priceSchema.optional(),
+        imageUrl: z.string().url().optional(),
+        status: z
+          .enum(["optimal", "underpriced", "overpriced", "alert"])
+          .optional(),
+        isTracked: z.boolean().optional(),
+      })
+    )
     .mutation(async ({ ctx, input }) => {
       const { id, ...data } = input;
       const product = await productService.update(ctx.user!.id, id, data);
-      if (!product) throw new TRPCError({ code: "NOT_FOUND", message: "Product not found" });
+      if (!product)
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "Product not found",
+        });
       return product;
     }),
 
@@ -108,8 +169,16 @@ export const productRouter = router({
   toggleTracking: protectedProcedure
     .input(z.object({ id: z.string().uuid(), isTracked: z.boolean() }))
     .mutation(async ({ ctx, input }) => {
-      const product = await productService.toggleTracking(ctx.user!.id, input.id, input.isTracked);
-      if (!product) throw new TRPCError({ code: "NOT_FOUND", message: "Product not found" });
+      const product = await productService.toggleTracking(
+        ctx.user!.id,
+        input.id,
+        input.isTracked
+      );
+      if (!product)
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "Product not found",
+        });
       return product;
     }),
 
@@ -122,22 +191,28 @@ export const productRouter = router({
   }),
 
   upsertStore: protectedProcedure
-    .input(z.object({
-      shopDomain: z.string().min(1).max(255),
-      accessToken: z.string().min(1),
-      scopes: z.string().min(1),
-      storeName: z.string().max(255).optional(),
-      storeEmail: z.string().max(320).optional(),
-      currency: z.string().length(3).default("USD"),
-      timezone: z.string().max(64).optional(),
-    }))
+    .input(
+      z.object({
+        shopDomain: z.string().min(1).max(255),
+        accessToken: z.string().min(1),
+        scopes: z.string().min(1),
+        storeName: z.string().max(255).optional(),
+        storeEmail: z.string().max(320).optional(),
+        currency: z.string().length(3).default("USD"),
+        timezone: z.string().max(64).optional(),
+      })
+    )
     .mutation(async ({ ctx, input }) => {
       const store = await productService.upsertStore({
         userId: ctx.user!.id,
         ...input,
         isActive: true,
       });
-      if (!store) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Failed to save store" });
+      if (!store)
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: "Failed to save store",
+        });
       return store;
     }),
 
@@ -148,22 +223,26 @@ export const productRouter = router({
     }),
 
   bulkSync: protectedProcedure
-    .input(z.array(z.object({
-      storeId: z.string().uuid(),
-      title: z.string().min(1).max(500),
-      description: z.string().optional(),
-      sku: z.string().max(128).optional(),
-      vendor: z.string().max(255).optional(),
-      productType: z.string().max(255).optional(),
-      category: z.string().max(255).optional(),
-      price: z.string().regex(/^\d+(\.\d{1,2})?$/),
-      compareAtPrice: z.string().regex(/^\d+(\.\d{1,2})?$/).optional(),
-      currency: z.string().length(3).default("USD"),
-      imageUrl: z.string().url().optional(),
-      shopifyProductId: z.string().max(64).optional(),
-    })))
+    .input(
+      z.array(
+        z.object({
+          storeId: z.string().uuid(),
+          title: productNameSchema,
+          description: z.string().optional(),
+          sku: skuSchema,
+          vendor: z.string().max(255).optional(),
+          productType: z.string().max(255).optional(),
+          category: z.string().max(255).optional(),
+          price: priceSchema,
+          compareAtPrice: priceSchema.optional(),
+          currency: z.string().length(3).default("USD"),
+          imageUrl: z.string().url().optional(),
+          shopifyProductId: z.string().max(64).optional(),
+        })
+      )
+    )
     .mutation(async ({ ctx, input }) => {
-      const items = input.map((item) => ({
+      const items = input.map(item => ({
         ...item,
         userId: ctx.user!.id,
         status: "optimal" as const,

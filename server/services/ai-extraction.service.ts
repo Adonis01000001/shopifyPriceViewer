@@ -59,7 +59,8 @@ const EXTRACTION_SCHEMA = {
     properties: {
       isMatch: {
         type: "boolean",
-        description: "Whether the competitor product is an exact match for the merchant product",
+        description:
+          "Whether the competitor product is an exact match for the merchant product",
       },
       confidence: {
         type: "number",
@@ -67,7 +68,8 @@ const EXTRACTION_SCHEMA = {
       },
       matchConfidence: {
         type: "number",
-        description: "Confidence that this is the same product (brand + model match)",
+        description:
+          "Confidence that this is the same product (brand + model match)",
       },
       skuMatchConfidence: {
         type: "number",
@@ -82,18 +84,51 @@ const EXTRACTION_SCHEMA = {
         description: "How similar the variants are (color, size, storage)",
       },
       price: { type: "number", description: "Current selling price" },
-      currency: { type: "string", description: "Currency code (USD, EUR, GBP)" },
-      salePrice: { type: "number", description: "Sale price if on sale, null if not" },
-      originalPrice: { type: "number", description: "Original price before discount, null if not on sale" },
-      title: { type: "string", description: "Product title from competitor page" },
-      description: { type: "string", description: "Product description from competitor page" },
-      features: { type: "array", items: { type: "string" }, description: "Key product features" },
-      reasoning: { type: "string", description: "Brief explanation of match decision" },
+      currency: {
+        type: "string",
+        description: "Currency code (USD, EUR, GBP)",
+      },
+      salePrice: {
+        type: "number",
+        description: "Sale price if on sale, null if not",
+      },
+      originalPrice: {
+        type: "number",
+        description: "Original price before discount, null if not on sale",
+      },
+      title: {
+        type: "string",
+        description: "Product title from competitor page",
+      },
+      description: {
+        type: "string",
+        description: "Product description from competitor page",
+      },
+      features: {
+        type: "array",
+        items: { type: "string" },
+        description: "Key product features",
+      },
+      reasoning: {
+        type: "string",
+        description: "Brief explanation of match decision",
+      },
     },
     required: [
-      "isMatch", "confidence", "matchConfidence", "skuMatchConfidence",
-      "titleSimilarity", "variantSimilarity", "price", "currency",
-      "salePrice", "originalPrice", "title", "description", "features", "reasoning",
+      "isMatch",
+      "confidence",
+      "matchConfidence",
+      "skuMatchConfidence",
+      "titleSimilarity",
+      "variantSimilarity",
+      "price",
+      "currency",
+      "salePrice",
+      "originalPrice",
+      "title",
+      "description",
+      "features",
+      "reasoning",
     ],
   },
   strict: true,
@@ -101,7 +136,10 @@ const EXTRACTION_SCHEMA = {
 
 // ─── Prompt Builder ──────────────────────────────────────────────────────────
 
-function buildExtractionPrompt(input: ExtractionInput): { system: string; user: string } {
+function buildExtractionPrompt(input: ExtractionInput): {
+  system: string;
+  user: string;
+} {
   const { merchantProduct, competitorPageContent, competitorUrl } = input;
 
   const system = `You are a product matching and price extraction AI. Analyze a competitor's product page and determine if it matches the merchant's product, then extract structured data.
@@ -152,14 +190,27 @@ function parseExtractionResponse(raw: string): ExtractionResult {
   return {
     isMatch: Boolean(parsed.isMatch),
     confidence: Math.min(1, Math.max(0, Number(parsed.confidence) || 0)),
-    matchConfidence: Math.min(1, Math.max(0, Number(parsed.matchConfidence) || 0)),
-    skuMatchConfidence: Math.min(1, Math.max(0, Number(parsed.skuMatchConfidence) || 0)),
-    titleSimilarity: Math.min(1, Math.max(0, Number(parsed.titleSimilarity) || 0)),
-    variantSimilarity: Math.min(1, Math.max(0, Number(parsed.variantSimilarity) || 0)),
+    matchConfidence: Math.min(
+      1,
+      Math.max(0, Number(parsed.matchConfidence) || 0)
+    ),
+    skuMatchConfidence: Math.min(
+      1,
+      Math.max(0, Number(parsed.skuMatchConfidence) || 0)
+    ),
+    titleSimilarity: Math.min(
+      1,
+      Math.max(0, Number(parsed.titleSimilarity) || 0)
+    ),
+    variantSimilarity: Math.min(
+      1,
+      Math.max(0, Number(parsed.variantSimilarity) || 0)
+    ),
     price: parsed.price != null ? Number(parsed.price) : null,
     currency: String(parsed.currency || "USD").toUpperCase(),
     salePrice: parsed.salePrice != null ? Number(parsed.salePrice) : null,
-    originalPrice: parsed.originalPrice != null ? Number(parsed.originalPrice) : null,
+    originalPrice:
+      parsed.originalPrice != null ? Number(parsed.originalPrice) : null,
     title: parsed.title ? String(parsed.title) : null,
     description: parsed.description ? String(parsed.description) : null,
     features: Array.isArray(parsed.features) ? parsed.features.map(String) : [],
@@ -170,7 +221,9 @@ function parseExtractionResponse(raw: string): ExtractionResult {
 // ─── Service ─────────────────────────────────────────────────────────────────
 
 export const aiExtractionService = {
-  async extractAndValidate(input: ExtractionInput): Promise<ValidatedExtraction> {
+  async extractAndValidate(
+    input: ExtractionInput
+  ): Promise<ValidatedExtraction> {
     const { system, user } = buildExtractionPrompt(input);
 
     const result = await invokeLLM({
@@ -183,13 +236,17 @@ export const aiExtractionService = {
     });
 
     const content = result.choices[0]?.message?.content;
-    const rawContent = typeof content === "string" ? content : JSON.stringify(content ?? "");
+    const rawContent =
+      typeof content === "string" ? content : JSON.stringify(content ?? "");
     let extraction: ExtractionResult;
 
     try {
       extraction = parseExtractionResponse(rawContent);
     } catch (parseErr) {
-      logger.error({ parseErr, raw: rawContent.slice(0, 500) }, "Failed to parse AI extraction response");
+      logger.error(
+        { parseErr, raw: rawContent.slice(0, 500) },
+        "Failed to parse AI extraction response"
+      );
       throw new Error("AI extraction returned invalid JSON");
     }
 
@@ -204,10 +261,15 @@ export const aiExtractionService = {
       skuMatchConfidence: String(extraction.skuMatchConfidence),
       titleSimilarity: String(extraction.titleSimilarity),
       variantSimilarity: String(extraction.variantSimilarity),
-      extractedPrice: extraction.price != null ? String(extraction.price) : null,
+      extractedPrice:
+        extraction.price != null ? String(extraction.price) : null,
       extractedCurrency: extraction.currency,
-      extractedSalePrice: extraction.salePrice != null ? String(extraction.salePrice) : null,
-      extractedOriginalPrice: extraction.originalPrice != null ? String(extraction.originalPrice) : null,
+      extractedSalePrice:
+        extraction.salePrice != null ? String(extraction.salePrice) : null,
+      extractedOriginalPrice:
+        extraction.originalPrice != null
+          ? String(extraction.originalPrice)
+          : null,
       extractedTitle: extraction.title,
       extractedDescription: extraction.description,
       extractedFeatures: extraction.features,
@@ -216,13 +278,23 @@ export const aiExtractionService = {
       tokensUsed: result.usage?.total_tokens,
       rawResponse: { content: rawContent },
     };
-    const [record] = await database.insert(aiExtractions).values(insertData as any).returning();
+    const [record] = await database
+      .insert(aiExtractions)
+      .values(insertData as any)
+      .returning();
 
-    const passedThreshold = extraction.isMatch && extraction.confidence >= ENV.matchConfidenceThreshold;
+    const passedThreshold =
+      extraction.isMatch &&
+      extraction.confidence >= ENV.matchConfidenceThreshold;
 
     logger.info(
-      { productId: input.merchantProduct.id, isMatch: extraction.isMatch, confidence: extraction.confidence, passedThreshold },
-      "AI extraction completed",
+      {
+        productId: input.merchantProduct.id,
+        isMatch: extraction.isMatch,
+        confidence: extraction.confidence,
+        passedThreshold,
+      },
+      "AI extraction completed"
     );
 
     return { extraction, dbId: record.id, passedThreshold };
@@ -230,20 +302,30 @@ export const aiExtractionService = {
 
   async getExtractions(
     userId: string,
-    options?: { productId?: string; isMatch?: boolean; minConfidence?: number; limit?: number; offset?: number },
+    options?: {
+      productId?: string;
+      isMatch?: boolean;
+      minConfidence?: number;
+      limit?: number;
+      offset?: number;
+    }
   ): Promise<AiExtraction[]> {
     const database: any = await requireDb();
     const conditions: any[] = [];
 
     if (options?.productId) {
       const product = await database.query.products.findFirst({
-        where: and(eq(products.id, options.productId), eq(products.userId, userId)),
+        where: and(
+          eq(products.id, options.productId),
+          eq(products.userId, userId)
+        ),
       });
       if (!product) return [];
       conditions.push(eq(aiExtractions.productId, options.productId));
     }
 
-    if (options?.isMatch !== undefined) conditions.push(eq(aiExtractions.isMatch, options.isMatch));
+    if (options?.isMatch !== undefined)
+      conditions.push(eq(aiExtractions.isMatch, options.isMatch));
 
     return database
       .select()
@@ -254,12 +336,20 @@ export const aiExtractionService = {
       .offset(options?.offset ?? 0);
   },
 
-  async getLatestExtraction(productId: string, competitorId: string): Promise<AiExtraction | undefined> {
+  async getLatestExtraction(
+    productId: string,
+    competitorId: string
+  ): Promise<AiExtraction | undefined> {
     const database = await requireDb();
     const result = await database
       .select()
       .from(aiExtractions)
-      .where(and(eq(aiExtractions.productId, productId), eq(aiExtractions.competitorId, competitorId)))
+      .where(
+        and(
+          eq(aiExtractions.productId, productId),
+          eq(aiExtractions.competitorId, competitorId)
+        )
+      )
       .orderBy(desc(aiExtractions.extractedAt))
       .limit(1);
     return result[0];

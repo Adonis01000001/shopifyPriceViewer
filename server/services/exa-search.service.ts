@@ -44,10 +44,22 @@ const PRODUCT_PRICING_SCHEMA = {
         type: "object" as const,
         properties: {
           title: { type: "string" as const, description: "Product name" },
-          price: { type: "string" as const, description: "Price with currency symbol, e.g. $29.99" },
-          currency: { type: "string" as const, description: "Currency code: USD, EUR, or GBP" },
-          sourceUrl: { type: "string" as const, description: "Direct URL to the product page" },
-          sourceName: { type: "string" as const, description: "Name of the store or website" },
+          price: {
+            type: "string" as const,
+            description: "Price with currency symbol, e.g. $29.99",
+          },
+          currency: {
+            type: "string" as const,
+            description: "Currency code: USD, EUR, or GBP",
+          },
+          sourceUrl: {
+            type: "string" as const,
+            description: "Direct URL to the product page",
+          },
+          sourceName: {
+            type: "string" as const,
+            description: "Name of the store or website",
+          },
         },
         required: ["title", "price", "sourceUrl"],
       },
@@ -74,7 +86,7 @@ function createClient(): Exa | null {
  */
 async function searchProducts(
   query: string,
-  maxResults: number = 10,
+  maxResults: number = 10
 ): Promise<ExaSearchResult[]> {
   const exa = createClient();
   if (!exa) return [];
@@ -113,7 +125,7 @@ async function searchProducts(
  */
 async function structuredSearchProducts(
   query: string,
-  maxResults: number = 10,
+  maxResults: number = 10
 ): Promise<ExaStructuredResult> {
   const exa = createClient();
   if (!exa) return { products: [], grounding: [] };
@@ -135,7 +147,9 @@ async function structuredSearchProducts(
 
     const output = (results as any).output;
     const content = output?.content as ExaStructuredProduct[] | undefined;
-    const grounding = output?.grounding as ExaStructuredResult["grounding"] | undefined;
+    const grounding = output?.grounding as
+      | ExaStructuredResult["grounding"]
+      | undefined;
 
     if (!content) {
       logger.info({ query }, "Exa: structured search returned no content");
@@ -146,12 +160,12 @@ async function structuredSearchProducts(
     const products = Array.isArray(content)
       ? content
       : Array.isArray((content as any).products)
-        ? (content as any).products as ExaStructuredProduct[]
+        ? ((content as any).products as ExaStructuredProduct[])
         : [];
 
     logger.info(
       { query, productCount: products.length },
-      "Exa: structured search completed",
+      "Exa: structured search completed"
     );
 
     return {
@@ -171,7 +185,7 @@ async function structuredSearchProducts(
  * or extracting prices from URLs found by other search providers.
  */
 async function getContents(
-  urls: string[],
+  urls: string[]
 ): Promise<Array<{ url: string; title: string; text: string }>> {
   const exa = createClient();
   if (!exa || urls.length === 0) return [];

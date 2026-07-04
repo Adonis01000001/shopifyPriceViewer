@@ -52,23 +52,24 @@ The database uses **13 tables** with PostgreSQL enums:
 
 ### Core Tables
 
-| Table | Purpose | Key Fields |
-|-------|---------|-----------|
-| **users** | User accounts | `id`, `email`, `passwordHash` (bcrypt), `role` (user/admin), `loginMethod`, `openId` |
-| **shopify_stores** | Connected Shopify stores | `userId`, `shopDomain`, `accessToken` (AES-256-CBC encrypted), `currency`, `isActive` |
-| **products** | Tracked products | `userId`, `storeId`, `title`, `sku`, `price`, `status` (optimal/underpriced/overpriced/alert), `isTracked` |
-| **competitors** | Competitor stores | `userId`, `name`, `domain`, `status`, `priceIndex`, `avgPriceDiff`, `productsTracked` |
-| **competitor_products** | Matched competitor products | `competitorId`, `productId`, `price`, `matchScore`, `isVerified` |
-| **price_history** | Price change history | `productId`, `competitorProductId`, `price`, `source` (shopify/competitor/manual), `recordedAt` |
-| **alerts** | Price alerts | `userId`, `productId`, `alertType`, `severity`, `title`, `message`, `isRead`, `isResolved` |
-| **recommendations** | AI pricing recommendations | `userId`, `productId`, `currentPrice`, `recommendedPrice`, `confidenceScore`, `status` |
-| **scrape_jobs** | Competitor scraping jobs | `competitorId`, `status`, `productsScraped`, `productsUpdated` |
-| **email_configs** | SMTP settings | `userId`, `smtpServer`, `smtpPassword` (encrypted), `fromEmail` |
-| **notification_preferences** | User notification settings | `userId`, `frequency`, `priceDropThreshold`, `priceIncreaseThreshold` |
-| **product_embeddings** | AI vector embeddings | `productId`, `embedding` (JSONB), `model` |
-| **activity_logs** | Dashboard activity feed | `userId`, `action`, `entityType`, `entityId`, `detail` |
+| Table                        | Purpose                     | Key Fields                                                                                                 |
+| ---------------------------- | --------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| **users**                    | User accounts               | `id`, `email`, `passwordHash` (bcrypt), `role` (user/admin), `loginMethod`, `openId`                       |
+| **shopify_stores**           | Connected Shopify stores    | `userId`, `shopDomain`, `accessToken` (AES-256-CBC encrypted), `currency`, `isActive`                      |
+| **products**                 | Tracked products            | `userId`, `storeId`, `title`, `sku`, `price`, `status` (optimal/underpriced/overpriced/alert), `isTracked` |
+| **competitors**              | Competitor stores           | `userId`, `name`, `domain`, `status`, `priceIndex`, `avgPriceDiff`, `productsTracked`                      |
+| **competitor_products**      | Matched competitor products | `competitorId`, `productId`, `price`, `matchScore`, `isVerified`                                           |
+| **price_history**            | Price change history        | `productId`, `competitorProductId`, `price`, `source` (shopify/competitor/manual), `recordedAt`            |
+| **alerts**                   | Price alerts                | `userId`, `productId`, `alertType`, `severity`, `title`, `message`, `isRead`, `isResolved`                 |
+| **recommendations**          | AI pricing recommendations  | `userId`, `productId`, `currentPrice`, `recommendedPrice`, `confidenceScore`, `status`                     |
+| **scrape_jobs**              | Competitor scraping jobs    | `competitorId`, `status`, `productsScraped`, `productsUpdated`                                             |
+| **email_configs**            | SMTP settings               | `userId`, `smtpServer`, `smtpPassword` (encrypted), `fromEmail`                                            |
+| **notification_preferences** | User notification settings  | `userId`, `frequency`, `priceDropThreshold`, `priceIncreaseThreshold`                                      |
+| **product_embeddings**       | AI vector embeddings        | `productId`, `embedding` (JSONB), `model`                                                                  |
+| **activity_logs**            | Dashboard activity feed     | `userId`, `action`, `entityType`, `entityId`, `detail`                                                     |
 
 ### Enums
+
 - `user_role`: user, admin
 - `product_status`: optimal, underpriced, overpriced, alert
 - `competitor_status`: active, inactive, error
@@ -87,10 +88,12 @@ The database uses **13 tables** with PostgreSQL enums:
 **Purpose:** Login and registration page with glassmorphism design.
 
 **Layout:** Split-panel design:
+
 - **Left (60%):** Branding panel with logo, typewriter headline ("Track competitor prices effortlessly"), description, and 3 feature cards (Real-time Tracking, AI Recommendations, Price Alerts)
 - **Right (40%):** Form panel with Sign In / Sign Up tabs, email/password fields, and submit button
 
 **How it works:**
+
 1. User enters email + password (and name for registration)
 2. Form submits via tRPC mutation (`auth.login` or `auth.register`)
 3. Server verifies credentials with bcrypt, creates JWT session, sets httpOnly cookie
@@ -98,6 +101,7 @@ The database uses **13 tables** with PostgreSQL enums:
 5. Auth state is managed via `trpc.auth.me.useQuery()` — returns user or null
 
 **Key tRPC endpoints:**
+
 - `auth.login` — email + password → JWT session cookie
 - `auth.register` — email + password + name → create account + JWT session cookie
 - `auth.me` — returns current user from session cookie (public, not protected)
@@ -112,11 +116,13 @@ The database uses **13 tables** with PostgreSQL enums:
 **Purpose:** Main dashboard shell with sidebar navigation, top bar, search, notifications, and Shopify sync.
 
 **Layout:**
+
 - **Sidebar (collapsible):** Logo, 5 nav items (Overview, Products, Competitors, Analytics, Alerts), theme toggle, user avatar with logout
 - **Top bar:** Global search, sync status indicator, Export Data button, Sync Shopify button, notification bell with dropdown
 - **Main content:** Renders the active page component
 
 **Key features:**
+
 - **Global search:** Debounced search across products and competitors, dropdown results with navigation
 - **Notification bell:** Shows unread count badge, dropdown with alert list, mark individual/all as read, links to Alerts page. Auto-refreshes every 30 seconds.
 - **Sync Shopify:** Triggers `shopify.syncProducts` mutation to pull products from connected Shopify store
@@ -133,6 +139,7 @@ The database uses **13 tables** with PostgreSQL enums:
 **Purpose:** Strategic dashboard showing KPIs, pricing insights table, competitor movement feed, category mix, and system health.
 
 **Layout:** Multi-section dashboard:
+
 1. **KPI Row (4 cards):** Total Products, Average Price, Active Alerts, Competitors Tracked — each with icon, value, and trend indicator
 2. **Pricing Insights Table (8 cols):** Products needing attention (alert/overpriced status) with current price, AI-recommended target price, projected monthly impact, and Approve/Reject actions. Falls back to sample data if no products exist.
 3. **Competitor Movement Feed (4 cols):** Real-time feed of competitor price changes with timestamps, price gap percentages, and status badges
@@ -141,6 +148,7 @@ The database uses **13 tables** with PostgreSQL enums:
    - **Inventory Sync Status:** Health bars for Primary Shopify API, Scraping Cluster, and Price Index Engine with latency indicators
 
 **Data sources:**
+
 - `trpc.products.list` — all products for attention list and category aggregation
 - `trpc.products.stats` — total count, average price
 - `trpc.competitors.stats` — competitor count
@@ -153,11 +161,13 @@ The database uses **13 tables** with PostgreSQL enums:
 **Purpose:** Full product inventory management with search, filtering, and CSV export.
 
 **Layout:**
+
 1. **Summary Cards (4):** Count of products by status (Optimal, Underpriced, Overpriced, Alert) with percentage badges
 2. **Filter Bar:** Search input (title/SKU), Category dropdown, Status dropdown, Export CSV button
 3. **Products Table:** Columns for Product (avatar, title, category), SKU, Price, Market Low, Delta (color-coded), Status badge, Actions (auto-adjust, details, dropdown menu)
 
 **How it works:**
+
 - Products loaded via `trpc.products.list`
 - Client-side filtering by search query, category, and status
 - Market Low calculated as 92% of current price (placeholder)
@@ -166,6 +176,7 @@ The database uses **13 tables** with PostgreSQL enums:
 - Actions: auto-adjust (placeholder toast), details (placeholder toast), dropdown with View Details / Price History
 
 **Key tRPC endpoints:**
+
 - `products.list` — get all products for current user
 - `products.stats` — get status counts
 - `products.update` — update product fields
@@ -178,17 +189,20 @@ The database uses **13 tables** with PostgreSQL enums:
 **Purpose:** Competitor management with bento card layout, price comparison table, and CSV bulk import.
 
 **Layout:**
+
 1. **Bento Cards (4):** First competitor gets double-width card with detailed stats (overlap SKUs, price index, avg delta). Others show name, domain, status, product count.
 2. **Comparison Table:** All competitors with Products Tracked, Price Index, Avg Diff (with trend icons), Status, Last Scraped timestamp
 3. **Action Buttons:** Import CSV, Add Competitor (dialog)
 
 **How it works:**
+
 - Competitors loaded via `trpc.competitors.list` and `trpc.competitors.stats`
 - **Add Competitor dialog:** Form with Name, Domain (validated), Description. Submits via `trpc.competitors.create`
 - **CSV Import:** File picker → PapaParse → validates each row (name + domain required) → preview table with valid/invalid indicators → confirm import via `trpc.competitors.bulkImport` (up to 500 rows)
 - Price Index < 95 shown in primary color (cheaper), > 95 in red (more expensive)
 
 **Key tRPC endpoints:**
+
 - `competitors.list` — get all competitors
 - `competitors.stats` — get aggregate stats
 - `competitors.create` — add single competitor
@@ -203,6 +217,7 @@ The database uses **13 tables** with PostgreSQL enums:
 **Purpose:** Alert management with severity filtering, search, and resolution workflow.
 
 **Layout:**
+
 1. **Summary Cards (3):** Critical count, Active count, Resolved count — each with icon
 2. **Alert List Panel:**
    - Header with search input, sort dropdown (Newest/Oldest)
@@ -211,6 +226,7 @@ The database uses **13 tables** with PostgreSQL enums:
    - Empty state with bell icon and "No alerts found" message
 
 **How it works:**
+
 - Alerts loaded via `trpc.alerts.list` (all alerts, up to 100)
 - Stats loaded via `trpc.alerts.stats` (critical, unread, resolved counts)
 - Client-side filtering by search query and tab
@@ -219,6 +235,7 @@ The database uses **13 tables** with PostgreSQL enums:
 - Resolved alerts shown with reduced opacity and CheckCircle icon
 
 **Key tRPC endpoints:**
+
 - `alerts.list` — get alerts (with unreadOnly option)
 - `alerts.stats` — get alert counts by severity
 - `alerts.markRead` — mark single alert as read
@@ -231,6 +248,7 @@ The database uses **13 tables** with PostgreSQL enums:
 **Purpose:** Performance analytics with charts showing margin trends, recommendation impact, and market comparison.
 
 **Layout:**
+
 1. **KPI Row (4 cards):** Average Margin (from costPrice), Price Accuracy (% optimal), AI Recommendations count, Revenue Impact
 2. **Charts Row (2 columns):**
    - **Margin Trend:** Area chart (Recharts) showing actual margin % vs 30% target line for up to 12 products
@@ -238,15 +256,17 @@ The database uses **13 tables** with PostgreSQL enums:
 3. **Market Price Comparison:** Grouped bar chart comparing "Us" vs "Market Avg" prices by category (market = 102% of our price as placeholder)
 
 **Data sources:**
+
 - `trpc.products.list` — for margin calculations and category aggregation
 - `trpc.products.stats` — total product count
 - `trpc.recommendations.stats` — AI recommendation count and total savings
 - `trpc.competitors.stats` — competitor stats
 
 **Calculations:**
+
 - Average Margin: `((price - costPrice) / price) * 100` for products with costPrice
 - Price Accuracy: `(optimal products / total products) * 100`
-- Market Avg: Our average price * 1.02 (placeholder)
+- Market Avg: Our average price \* 1.02 (placeholder)
 
 ---
 
@@ -265,73 +285,81 @@ The database uses **13 tables** with PostgreSQL enums:
 ## API Routes (tRPC Routers)
 
 All routers are in `server/routers/`. Middleware types:
+
 - **`publicProcedure`** — no auth required (used for `auth.me`, `auth.login`, `auth.register`)
 - **`protectedProcedure`** — requires valid JWT session cookie (all other endpoints)
 - **`adminProcedure`** — requires admin role (defined but not currently used in routers)
 
 ### Auth Router (`auth.router.ts`)
-| Procedure | Type | Description |
-|-----------|------|-------------|
-| `auth.me` | query | Get current user from session |
-| `auth.register` | mutation | Create account + session |
-| `auth.login` | mutation | Verify credentials + create session |
-| `auth.logout` | mutation | Clear session cookie |
+
+| Procedure       | Type     | Description                         |
+| --------------- | -------- | ----------------------------------- |
+| `auth.me`       | query    | Get current user from session       |
+| `auth.register` | mutation | Create account + session            |
+| `auth.login`    | mutation | Verify credentials + create session |
+| `auth.logout`   | mutation | Clear session cookie                |
 
 ### Product Router (`product.router.ts`)
-| Procedure | Type | Description |
-|-----------|------|-------------|
-| `products.list` | query | Get all products for user |
-| `products.listByStore` | query | Get products by store ID |
-| `products.getById` | query | Get single product |
-| `products.create` | mutation | Create product |
-| `products.update` | mutation | Update product fields |
-| `products.delete` | mutation | Delete product |
-| `products.toggleTracking` | mutation | Toggle isTracked flag |
-| `products.stats` | query | Get status counts |
-| `products.stores` | query | Get user's stores |
-| `products.upsertStore` | mutation | Create/update Shopify store |
-| `products.search` | query | Search products by query |
-| `products.bulkSync` | mutation | Bulk upsert products |
+
+| Procedure                 | Type     | Description                 |
+| ------------------------- | -------- | --------------------------- |
+| `products.list`           | query    | Get all products for user   |
+| `products.listByStore`    | query    | Get products by store ID    |
+| `products.getById`        | query    | Get single product          |
+| `products.create`         | mutation | Create product              |
+| `products.update`         | mutation | Update product fields       |
+| `products.delete`         | mutation | Delete product              |
+| `products.toggleTracking` | mutation | Toggle isTracked flag       |
+| `products.stats`          | query    | Get status counts           |
+| `products.stores`         | query    | Get user's stores           |
+| `products.upsertStore`    | mutation | Create/update Shopify store |
+| `products.search`         | query    | Search products by query    |
+| `products.bulkSync`       | mutation | Bulk upsert products        |
 
 ### Competitor Router (`competitor.router.ts`)
-| Procedure | Type | Description |
-|-----------|------|-------------|
-| `competitors.list` | query | Get all competitors |
-| `competitors.getById` | query | Get single competitor |
-| `competitors.create` | mutation | Add competitor |
+
+| Procedure                | Type     | Description                      |
+| ------------------------ | -------- | -------------------------------- |
+| `competitors.list`       | query    | Get all competitors              |
+| `competitors.getById`    | query    | Get single competitor            |
+| `competitors.create`     | mutation | Add competitor                   |
 | `competitors.bulkImport` | mutation | Bulk import from CSV (up to 500) |
-| `competitors.update` | mutation | Update competitor |
-| `competitors.delete` | mutation | Delete competitor |
-| `competitors.search` | query | Search competitors |
-| `competitors.stats` | query | Get aggregate stats |
-| `competitors.products` | query | Get matched products |
-| `competitors.addProduct` | mutation | Add competitor product match |
+| `competitors.update`     | mutation | Update competitor                |
+| `competitors.delete`     | mutation | Delete competitor                |
+| `competitors.search`     | query    | Search competitors               |
+| `competitors.stats`      | query    | Get aggregate stats              |
+| `competitors.products`   | query    | Get matched products             |
+| `competitors.addProduct` | mutation | Add competitor product match     |
 
 ### Alert Router (`alert.router.ts`)
-| Procedure | Type | Description |
-|-----------|------|-------------|
-| `alerts.list` | query | Get alerts (with unreadOnly filter) |
-| `alerts.stats` | query | Get alert counts by severity |
-| `alerts.markRead` | mutation | Mark alert as read |
-| `alerts.markAllRead` | mutation | Mark all alerts as read |
+
+| Procedure            | Type     | Description                         |
+| -------------------- | -------- | ----------------------------------- |
+| `alerts.list`        | query    | Get alerts (with unreadOnly filter) |
+| `alerts.stats`       | query    | Get alert counts by severity        |
+| `alerts.markRead`    | mutation | Mark alert as read                  |
+| `alerts.markAllRead` | mutation | Mark all alerts as read             |
 
 ### Price Router (`price.router.ts`)
-| Procedure | Type | Description |
-|-----------|------|-------------|
-| `prices.history` | query | Get price history for a product |
-| `prices.competitorHistory` | query | Get competitor price history |
+
+| Procedure                  | Type  | Description                     |
+| -------------------------- | ----- | ------------------------------- |
+| `prices.history`           | query | Get price history for a product |
+| `prices.competitorHistory` | query | Get competitor price history    |
 
 ### Recommendation Router (`recommendation.router.ts`)
-| Procedure | Type | Description |
-|-----------|------|-------------|
-| `recommendations.list` | query | Get AI recommendations |
-| `recommendations.stats` | query | Get recommendation stats |
+
+| Procedure                   | Type     | Description                        |
+| --------------------------- | -------- | ---------------------------------- |
+| `recommendations.list`      | query    | Get AI recommendations             |
+| `recommendations.stats`     | query    | Get recommendation stats           |
 | `recommendations.implement` | mutation | Mark recommendation as implemented |
-| `recommendations.dismiss` | mutation | Dismiss recommendation |
+| `recommendations.dismiss`   | mutation | Dismiss recommendation             |
 
 ### Activity Router (`activity.router.ts`)
-| Procedure | Type | Description |
-|-----------|------|-------------|
+
+| Procedure       | Type  | Description              |
+| --------------- | ----- | ------------------------ |
 | `activity.list` | query | Get recent activity logs |
 
 ---
@@ -347,6 +375,7 @@ All routers are in `server/routers/`. Middleware types:
 7. Auth guard in `App.tsx` checks `auth.me` — if null, renders `<Auth />` page instead of dashboard
 
 **Default admin account** (created by seed):
+
 - Email: `admin@example.com`
 - Password: `admin123`
 

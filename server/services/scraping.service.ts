@@ -60,7 +60,7 @@ const PRODUCT_CONTAINER_SELECTORS = [
   ".product-grid-item",
   // Amazon-specific
   '[data-component-type="s-search-result"]',
-  '.s-result-item[data-asin]',
+  ".s-result-item[data-asin]",
   // Generic e-commerce
   '[class*="product-card"]',
   '[class*="productCard"]',
@@ -71,33 +71,47 @@ const PRODUCT_CONTAINER_SELECTORS = [
 ];
 
 const TITLE_SELECTORS = [
-  "h2", "h3", "h4",
-  '[class*="title"]', '[class*="name"]',
+  "h2",
+  "h3",
+  "h4",
+  '[class*="title"]',
+  '[class*="name"]',
   ".card__heading",
   // Amazon-specific
   "h2 a span",
-  '.a-text-normal',
+  ".a-text-normal",
 ];
 const PRICE_SELECTORS = [
-  '[class*="price"]', ".money", ".price__regular", '[class*="Price"]',
+  '[class*="price"]',
+  ".money",
+  ".price__regular",
+  '[class*="Price"]',
   // Amazon-specific
-  '.a-price .a-offscreen',
-  '.a-price-whole',
+  ".a-price .a-offscreen",
+  ".a-price-whole",
 ];
 const IMAGE_SELECTORS = [
-  "img[src]", "img[data-src]", "img[data-lazy-src]",
+  "img[src]",
+  "img[data-src]",
+  "img[data-lazy-src]",
   // Amazon-specific
-  '.s-image[src]',
-  'img.s-image',
+  ".s-image[src]",
+  "img.s-image",
 ];
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 function parsePrice(raw: string): { value: string; currency: string } | null {
   if (!raw) return null;
-  const match = raw.match(/(\$|€|£|USD|EUR|GBP)?\s*([0-9]{1,3}(?:[,.][0-9]{3})*(?:[,.][0-9]{2})|[0-9]+(?:[,.][0-9]{2})?)/);
+  const match = raw.match(
+    /(\$|€|£|USD|EUR|GBP)?\s*([0-9]{1,3}(?:[,.][0-9]{3})*(?:[,.][0-9]{2})|[0-9]+(?:[,.][0-9]{2})?)/
+  );
   if (!match) return null;
-  const currencyMap: Record<string, string> = { "$": "USD", "€": "EUR", "£": "GBP" };
+  const currencyMap: Record<string, string> = {
+    $: "USD",
+    "€": "EUR",
+    "£": "GBP",
+  };
   const currency = currencyMap[match[1] ?? ""] || "USD";
   let value = match[2].replace(/,/g, "");
   if (/^\d{1,3}\.\d{3}$/.test(value)) {
@@ -113,22 +127,32 @@ function parsePrice(raw: string): { value: string; currency: string } | null {
 async function scrapePage(page: Page, url: string): Promise<ScrapedProduct[]> {
   logger.info({ url }, "Scraping competitor page");
 
-  await page.goto(url, { waitUntil: "domcontentloaded", timeout: 30000 }).catch(() => {
-    throw new Error(`Timeout loading ${url}`);
-  });
+  await page
+    .goto(url, { waitUntil: "domcontentloaded", timeout: 30000 })
+    .catch(() => {
+      throw new Error(`Timeout loading ${url}`);
+    });
 
   // Check if this is an Amazon URL — needs extra wait for JS rendering
-  const isAmazon = /amazon\.(com|co\.uk|de|fr|ca|in|com\.au|it|es|nl|com\.br|jp|sg|ae|se|pl|eg|tr|sa)/i.test(url);
+  const isAmazon =
+    /amazon\.(com|co\.uk|de|fr|ca|in|com\.au|it|es|nl|com\.br|jp|sg|ae|se|pl|eg|tr|sa)/i.test(
+      url
+    );
   if (isAmazon) {
     // Amazon is JS-heavy; wait for product containers to appear
     try {
-      await page.waitForSelector('[data-component-type="s-search-result"]', { timeout: 15000 });
+      await page.waitForSelector('[data-component-type="s-search-result"]', {
+        timeout: 15000,
+      });
     } catch {
       // Amazon may have returned a CAPTCHA or blocked page — log the page title for debugging
       const title = await page.title().catch(() => "unknown");
       const bodyRaw = await page.textContent("body").catch(() => null);
       const bodySnippet = (bodyRaw ?? "").slice(0, 500);
-      logger.warn({ url, pageTitle: title, bodySnippet }, "Amazon: no product containers found — possible CAPTCHA/block");
+      logger.warn(
+        { url, pageTitle: title, bodySnippet },
+        "Amazon: no product containers found — possible CAPTCHA/block"
+      );
       return [];
     }
     await page.waitForTimeout(2000).catch(() => {});
@@ -151,10 +175,20 @@ async function scrapePage(page: Page, url: string): Promise<ScrapedProduct[]> {
           // Title
           let title: string | null = null;
           for (const sel of TITLE_SELECTORS) {
-            const count = await container.locator(sel).count().catch(() => 0);
+            const count = await container
+              .locator(sel)
+              .count()
+              .catch(() => 0);
             if (count > 0) {
-              const t = await container.locator(sel).first().textContent().catch(() => null);
-              if (t) { title = t.trim(); if (title.length > 2) break; }
+              const t = await container
+                .locator(sel)
+                .first()
+                .textContent()
+                .catch(() => null);
+              if (t) {
+                title = t.trim();
+                if (title.length > 2) break;
+              }
             }
           }
           if (!title || title.length < 3) continue;
@@ -167,43 +201,88 @@ async function scrapePage(page: Page, url: string): Promise<ScrapedProduct[]> {
           let price = "0.00";
           let currency = "USD";
           for (const sel of PRICE_SELECTORS) {
-            const count = await container.locator(sel).count().catch(() => 0);
+            const count = await container
+              .locator(sel)
+              .count()
+              .catch(() => 0);
             if (count > 0) {
-              const raw = (await container.locator(sel).first().textContent().catch(() => null))?.trim() ?? "";
+              const raw =
+                (
+                  await container
+                    .locator(sel)
+                    .first()
+                    .textContent()
+                    .catch(() => null)
+                )?.trim() ?? "";
               const parsed = parsePrice(raw);
-              if (parsed) { price = parsed.value; currency = parsed.currency; break; }
+              if (parsed) {
+                price = parsed.value;
+                currency = parsed.currency;
+                break;
+              }
             }
           }
 
           // Image
           let imageUrl: string | null = null;
           for (const sel of IMAGE_SELECTORS) {
-            const count = await container.locator(sel).count().catch(() => 0);
+            const count = await container
+              .locator(sel)
+              .count()
+              .catch(() => 0);
             if (count > 0) {
               const imgEl = container.locator(sel).first();
               const src1 = await imgEl.getAttribute("src").catch(() => null);
-              const src2 = src1 ?? await imgEl.getAttribute("data-src").catch(() => null);
-              imageUrl = src2 ?? await imgEl.getAttribute("data-lazy-src").catch(() => null);
+              const src2 =
+                src1 ??
+                (await imgEl.getAttribute("data-src").catch(() => null));
+              imageUrl =
+                src2 ??
+                (await imgEl.getAttribute("data-lazy-src").catch(() => null));
               if (imageUrl) break;
             }
           }
 
           // Product URL
           let productUrl: string | null = null;
-          const linkCount = await container.locator("a[href]").count().catch(() => 0);
+          const linkCount = await container
+            .locator("a[href]")
+            .count()
+            .catch(() => 0);
           if (linkCount > 0) {
-            productUrl = (await container.locator("a[href]").first().getAttribute("href").catch(() => null))?.trim() ?? null;
+            productUrl =
+              (
+                await container
+                  .locator("a[href]")
+                  .first()
+                  .getAttribute("href")
+                  .catch(() => null)
+              )?.trim() ?? null;
           }
 
-          products.push({ title, price, currency, imageUrl, productUrl, sku: null });
-        } catch { /* skip individual product */ }
+          products.push({
+            title,
+            price,
+            currency,
+            imageUrl,
+            productUrl,
+            sku: null,
+          });
+        } catch {
+          /* skip individual product */
+        }
       }
 
       if (products.length > 0) {
-        logger.info({ count: products.length, selector: containerSel }, "Scraped products");
+        logger.info(
+          { count: products.length, selector: containerSel },
+          "Scraped products"
+        );
         return products;
       }
-    } catch { /* try next selector */ }
+    } catch {
+      /* try next selector */
+    }
   }
 
   return [];
@@ -224,7 +303,9 @@ const PRODUCT_SCHEMA = {
   },
 } as const;
 
-function mapFirecrawlDocs(docs: { json?: unknown; metadata?: { url?: string } | null }[]): ScrapedProduct[] {
+function mapFirecrawlDocs(
+  docs: { json?: unknown; metadata?: { url?: string } | null }[]
+): ScrapedProduct[] {
   const products: ScrapedProduct[] = [];
   for (const doc of docs) {
     const j = doc.json;
@@ -244,7 +325,7 @@ function mapFirecrawlDocs(docs: { json?: unknown; metadata?: { url?: string } | 
 
 async function firecrawlScrapeSite(
   domain: string,
-  searchQuery?: string,
+  searchQuery?: string
 ): Promise<ScrapedProduct[]> {
   if (!ENV.firecrawlApiKey) {
     logger.info("Firecrawl: no API key configured, skipping");
@@ -260,7 +341,10 @@ async function firecrawlScrapeSite(
   const urls: string[] = [];
 
   // Build candidate URLs (same logic as Playwright fallback)
-  const isAmazon = /amazon\.(com|co\.uk|de|fr|ca|in|com\.au|it|es|nl|com\.br|jp|sg|ae|se|pl|eg|tr|sa)/i.test(domain);
+  const isAmazon =
+    /amazon\.(com|co\.uk|de|fr|ca|in|com\.au|it|es|nl|com\.br|jp|sg|ae|se|pl|eg|tr|sa)/i.test(
+      domain
+    );
   if (isAmazon) {
     if (searchQuery) {
       urls.push(`${baseUrl}/s?k=${encodeURIComponent(searchQuery)}`);
@@ -271,7 +355,9 @@ async function firecrawlScrapeSite(
   } else {
     if (searchQuery) {
       urls.push(`${baseUrl}/search?q=${encodeURIComponent(searchQuery)}`);
-      urls.push(`${baseUrl}/search?type=product&q=${encodeURIComponent(searchQuery)}`);
+      urls.push(
+        `${baseUrl}/search?type=product&q=${encodeURIComponent(searchQuery)}`
+      );
     }
     urls.push(`${baseUrl}/collections/all`);
     urls.push(`${baseUrl}/products`);
@@ -287,14 +373,22 @@ async function firecrawlScrapeSite(
         timeout: 30000,
       });
       if (result && "json" in result && result.json) {
-        const mapped = mapFirecrawlDocs([{ json: result.json, metadata: { url } }]);
+        const mapped = mapFirecrawlDocs([
+          { json: result.json, metadata: { url } },
+        ]);
         if (mapped.length > 0) {
-          logger.info({ count: mapped.length, url }, "Firecrawl: scraped products from single URL");
+          logger.info(
+            { count: mapped.length, url },
+            "Firecrawl: scraped products from single URL"
+          );
           return mapped;
         }
       }
     } catch (err) {
-      logger.warn({ url, err }, "Firecrawl: scrape failed for URL, trying next");
+      logger.warn(
+        { url, err },
+        "Firecrawl: scrape failed for URL, trying next"
+      );
     }
   }
 
@@ -314,7 +408,10 @@ async function firecrawlScrapeSite(
     if (crawlResult.data && crawlResult.data.length > 0) {
       const mapped = mapFirecrawlDocs(crawlResult.data);
       if (mapped.length > 0) {
-        logger.info({ count: mapped.length }, "Firecrawl: crawled products from domain");
+        logger.info(
+          { count: mapped.length },
+          "Firecrawl: crawled products from domain"
+        );
         return mapped;
       }
     }
@@ -331,15 +428,18 @@ export const scrapingService = {
   async scrapeCompetitorSite(
     competitorId: string,
     domain: string,
-    searchQuery?: string,
+    searchQuery?: string
   ): Promise<ScrapeResult> {
     const database = await requireDb();
 
-    const [job] = await database.insert(scrapeJobs).values({
-      competitorId,
-      status: "running",
-      startedAt: new Date(),
-    }).returning();
+    const [job] = await database
+      .insert(scrapeJobs)
+      .values({
+        competitorId,
+        status: "running",
+        startedAt: new Date(),
+      })
+      .returning();
 
     // ── Strategy 1: Try Firecrawl first ──────────────────────────────────────
     let products: ScrapedProduct[] = [];
@@ -349,10 +449,16 @@ export const scrapingService = {
       products = await firecrawlScrapeSite(domain, searchQuery);
       if (products.length > 0) {
         usedFirecrawl = true;
-        logger.info({ count: products.length, domain }, "Firecrawl: primary scraper succeeded");
+        logger.info(
+          { count: products.length, domain },
+          "Firecrawl: primary scraper succeeded"
+        );
       }
     } catch (fcErr) {
-      logger.warn({ domain, err: fcErr }, "Firecrawl: primary scraper failed, falling back to Playwright");
+      logger.warn(
+        { domain, err: fcErr },
+        "Firecrawl: primary scraper failed, falling back to Playwright"
+      );
     }
 
     // ── Strategy 2: Fall back to Playwright ─────────────────────────────────
@@ -369,15 +475,17 @@ export const scrapingService = {
         });
 
         const context = await browser.newContext({
-          userAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+          userAgent:
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
           viewport: { width: 1920, height: 1080 },
           locale: "en-US",
           timezoneId: "America/New_York",
           extraHTTPHeaders: {
             "Accept-Language": "en-US,en;q=0.9",
-            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+            Accept:
+              "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
             "Accept-Encoding": "gzip, deflate, br",
-            "Connection": "keep-alive",
+            Connection: "keep-alive",
             "Upgrade-Insecure-Requests": "1",
             "Sec-Fetch-Dest": "document",
             "Sec-Fetch-Mode": "navigate",
@@ -390,33 +498,50 @@ export const scrapingService = {
         const page = await context.newPage();
 
         // Block unnecessary resources to speed up loading and reduce detection
-        await page.route("**/*.{woff,woff2,ttf,otf,eot}", route => route.abort()).catch(() => {});
-        await page.route("**/analytics/**", route => route.abort()).catch(() => {});
-        await page.route("**/tracking/**", route => route.abort()).catch(() => {});
+        await page
+          .route("**/*.{woff,woff2,ttf,otf,eot}", route => route.abort())
+          .catch(() => {});
+        await page
+          .route("**/analytics/**", route => route.abort())
+          .catch(() => {});
+        await page
+          .route("**/tracking/**", route => route.abort())
+          .catch(() => {});
         await page.route("**/ads/**", route => route.abort()).catch(() => {});
         await page.route("**/pixel/**", route => route.abort()).catch(() => {});
         await page.route("**/beacon**", route => route.abort()).catch(() => {});
         // Block images and stylesheets on Amazon to speed up loading
-        const isAmazon = /amazon\.(com|co\.uk|de|fr|ca|in|com\.au|it|es|nl|com\.br|jp|sg|ae|se|pl|eg|tr|sa)/i.test(domain);
+        const isAmazon =
+          /amazon\.(com|co\.uk|de|fr|ca|in|com\.au|it|es|nl|com\.br|jp|sg|ae|se|pl|eg|tr|sa)/i.test(
+            domain
+          );
         if (isAmazon) {
-          await page.route("**/*.{png,jpg,jpeg,gif,svg,webp}", route => route.abort()).catch(() => {});
+          await page
+            .route("**/*.{png,jpg,jpeg,gif,svg,webp}", route => route.abort())
+            .catch(() => {});
           await page.route("**/*.css", route => route.abort()).catch(() => {});
         }
 
         // Override navigator.webdriver to avoid headless detection
         await page.addInitScript(() => {
-          Object.defineProperty(navigator, "webdriver", { get: () => undefined });
+          Object.defineProperty(navigator, "webdriver", {
+            get: () => undefined,
+          });
           // @ts-ignore
           window.chrome = { runtime: {} };
         });
 
-        const baseUrl = domain.startsWith("http") ? domain : `https://${domain}`;
+        const baseUrl = domain.startsWith("http")
+          ? domain
+          : `https://${domain}`;
         const urls: string[] = [];
 
         if (isAmazon) {
           if (searchQuery) {
             urls.push(`${baseUrl}/s?k=${encodeURIComponent(searchQuery)}`);
-            urls.push(`${baseUrl}/s?k=${encodeURIComponent(searchQuery)}&ref=nb_sb_noss`);
+            urls.push(
+              `${baseUrl}/s?k=${encodeURIComponent(searchQuery)}&ref=nb_sb_noss`
+            );
           } else {
             urls.push(`${baseUrl}/s?k=best+sellers`);
             urls.push(`${baseUrl}/gp/bestsellers`);
@@ -424,7 +549,9 @@ export const scrapingService = {
         } else {
           if (searchQuery) {
             urls.push(`${baseUrl}/search?q=${encodeURIComponent(searchQuery)}`);
-            urls.push(`${baseUrl}/search?type=product&q=${encodeURIComponent(searchQuery)}`);
+            urls.push(
+              `${baseUrl}/search?type=product&q=${encodeURIComponent(searchQuery)}`
+            );
           }
           urls.push(`${baseUrl}/collections/all`);
           urls.push(`${baseUrl}/products`);
@@ -443,21 +570,25 @@ export const scrapingService = {
     }
 
     const finalStatus = products.length > 0 ? "success" : "failed";
-    await database.update(scrapeJobs).set({
-      status: finalStatus,
-      completedAt: new Date(),
-      productsScraped: products.length,
-      errorMessage: products.length === 0 ? "No products found" : null,
-      metadata: { source: usedFirecrawl ? "firecrawl" : "playwright" },
-    }).where(eq(scrapeJobs.id, job.id));
+    await database
+      .update(scrapeJobs)
+      .set({
+        status: finalStatus,
+        completedAt: new Date(),
+        productsScraped: products.length,
+        errorMessage: products.length === 0 ? "No products found" : null,
+        metadata: { source: usedFirecrawl ? "firecrawl" : "playwright" },
+      })
+      .where(eq(scrapeJobs.id, job.id));
 
     return {
       products,
       scrapeJobId: job.id,
       status: finalStatus,
-      errorMessage: products.length === 0
-        ? "Could not find products on this competitor site. The site structure may not be supported yet."
-        : null,
+      errorMessage:
+        products.length === 0
+          ? "Could not find products on this competitor site. The site structure may not be supported yet."
+          : null,
     };
   },
 };

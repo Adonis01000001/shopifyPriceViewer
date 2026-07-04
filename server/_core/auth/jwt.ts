@@ -22,7 +22,9 @@ const isNonEmptyString = (value: unknown): value is string =>
 
 export async function createSessionToken(
   openId: string,
-  options: { expiresInMs?: number; name?: string } = { expiresInMs: SESSION_EXPIRY_MS }
+  options: { expiresInMs?: number; name?: string } = {
+    expiresInMs: SESSION_EXPIRY_MS,
+  }
 ): Promise<string> {
   return signSession(
     { openId, appId: ENV.appId, name: options.name || "" },
@@ -38,7 +40,11 @@ export async function signSession(
   const expiresInMs = options.expiresInMs ?? SESSION_EXPIRY_MS;
   const expirationSeconds = Math.floor((issuedAt + expiresInMs) / 1000);
   const secretKey = getSessionSecret();
-  return new SignJWT({ openId: payload.openId, appId: payload.appId, name: payload.name })
+  return new SignJWT({
+    openId: payload.openId,
+    appId: payload.appId,
+    name: payload.name,
+  })
     .setProtectedHeader({ alg: "HS256", typ: "JWT" })
     .setExpirationTime(expirationSeconds)
     .sign(secretKey);
@@ -53,10 +59,14 @@ export async function verifySession(
   }
   try {
     const secretKey = getSessionSecret();
-    const { payload } = await jwtVerify(cookieValue, secretKey, { algorithms: ["HS256"] });
+    const { payload } = await jwtVerify(cookieValue, secretKey, {
+      algorithms: ["HS256"],
+    });
     const { openId, appId, name } = payload as Record<string, unknown>;
     if (!isNonEmptyString(openId)) {
-      logger.warn("Session verification failed: payload missing required fields");
+      logger.warn(
+        "Session verification failed: payload missing required fields"
+      );
       return null;
     }
     return { openId, appId: String(appId ?? ""), name: String(name ?? "") };
@@ -72,24 +82,33 @@ export async function upsertUser(user: InsertUser): Promise<void> {
     logger.warn("Cannot upsert user: database not available");
     return;
   }
-  await database.insert(users).values(user).onConflictDoUpdate({
-    target: users.openId,
-    set: {
-      name: user.name,
-      email: user.email,
-      loginMethod: user.loginMethod,
-      lastSignedIn: user.lastSignedIn ?? new Date(),
-      updatedAt: new Date(),
-    },
-  });
+  await database
+    .insert(users)
+    .values(user)
+    .onConflictDoUpdate({
+      target: users.openId,
+      set: {
+        name: user.name,
+        email: user.email,
+        loginMethod: user.loginMethod,
+        lastSignedIn: user.lastSignedIn ?? new Date(),
+        updatedAt: new Date(),
+      },
+    });
 }
 
-export async function getUserByOpenId(openId: string): Promise<User | undefined> {
+export async function getUserByOpenId(
+  openId: string
+): Promise<User | undefined> {
   const database = await db.getDb();
   if (!database) {
     logger.warn("Cannot get user: database not available");
     return undefined;
   }
-  const result = await database.select().from(users).where(eq(users.openId, openId)).limit(1);
+  const result = await database
+    .select()
+    .from(users)
+    .where(eq(users.openId, openId))
+    .limit(1);
   return result.length > 0 ? result[0] : undefined;
 }

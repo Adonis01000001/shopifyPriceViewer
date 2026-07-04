@@ -33,20 +33,26 @@ export const emailConfigsRelations = relations(emailConfigs, ({ one }) => ({
   }),
 }));
 
-export const notificationPreferencesRelations = relations(notificationPreferences, ({ one }) => ({
-  user: one(users, {
-    fields: [notificationPreferences.userId],
-    references: [users.id],
-  }),
-}));
+export const notificationPreferencesRelations = relations(
+  notificationPreferences,
+  ({ one }) => ({
+    user: one(users, {
+      fields: [notificationPreferences.userId],
+      references: [users.id],
+    }),
+  })
+);
 
-export const shopifyStoresRelations = relations(shopifyStores, ({ one, many }) => ({
-  user: one(users, {
-    fields: [shopifyStores.userId],
-    references: [users.id],
-  }),
-  products: many(products),
-}));
+export const shopifyStoresRelations = relations(
+  shopifyStores,
+  ({ one, many }) => ({
+    user: one(users, {
+      fields: [shopifyStores.userId],
+      references: [users.id],
+    }),
+    products: many(products),
+  })
+);
 
 export const productsRelations = relations(products, ({ one, many }) => ({
   user: one(users, {
@@ -64,12 +70,15 @@ export const productsRelations = relations(products, ({ one, many }) => ({
   recommendations: many(recommendations),
 }));
 
-export const productEmbeddingsRelations = relations(productEmbeddings, ({ one }) => ({
-  product: one(products, {
-    fields: [productEmbeddings.productId],
-    references: [products.id],
-  }),
-}));
+export const productEmbeddingsRelations = relations(
+  productEmbeddings,
+  ({ one }) => ({
+    product: one(products, {
+      fields: [productEmbeddings.productId],
+      references: [products.id],
+    }),
+  })
+);
 
 export const competitorsRelations = relations(competitors, ({ one, many }) => ({
   user: one(users, {
@@ -80,18 +89,21 @@ export const competitorsRelations = relations(competitors, ({ one, many }) => ({
   scrapeJobs: many(scrapeJobs),
 }));
 
-export const competitorProductsRelations = relations(competitorProducts, ({ one, many }) => ({
-  competitor: one(competitors, {
-    fields: [competitorProducts.competitorId],
-    references: [competitors.id],
-  }),
-  product: one(products, {
-    fields: [competitorProducts.productId],
-    references: [products.id],
-  }),
-  priceHistory: many(priceHistory),
-  alerts: many(alerts),
-}));
+export const competitorProductsRelations = relations(
+  competitorProducts,
+  ({ one, many }) => ({
+    competitor: one(competitors, {
+      fields: [competitorProducts.competitorId],
+      references: [competitors.id],
+    }),
+    product: one(products, {
+      fields: [competitorProducts.productId],
+      references: [products.id],
+    }),
+    priceHistory: many(priceHistory),
+    alerts: many(alerts),
+  })
+);
 
 export const priceHistoryRelations = relations(priceHistory, ({ one }) => ({
   product: one(products, {
@@ -119,16 +131,19 @@ export const alertsRelations = relations(alerts, ({ one }) => ({
   }),
 }));
 
-export const recommendationsRelations = relations(recommendations, ({ one }) => ({
-  user: one(users, {
-    fields: [recommendations.userId],
-    references: [users.id],
-  }),
-  product: one(products, {
-    fields: [recommendations.productId],
-    references: [products.id],
-  }),
-}));
+export const recommendationsRelations = relations(
+  recommendations,
+  ({ one }) => ({
+    user: one(users, {
+      fields: [recommendations.userId],
+      references: [users.id],
+    }),
+    product: one(products, {
+      fields: [recommendations.productId],
+      references: [products.id],
+    }),
+  })
+);
 
 export const scrapeJobsRelations = relations(scrapeJobs, ({ one }) => ({
   competitor: one(competitors, {
@@ -143,3 +158,22 @@ export const activityLogsRelations = relations(activityLogs, ({ one }) => ({
     references: [users.id],
   }),
 }));
+
+// Aggregate relations object passed to drizzle() so the relational query
+// builder (db.query.<table>) is typed. Table keys must match the table
+// names Drizzle infers from pgTable calls in schema.ts.
+export const dbRelations = {
+  users: usersRelations,
+  emailConfigs: emailConfigsRelations,
+  notificationPreferences: notificationPreferencesRelations,
+  shopifyStores: shopifyStoresRelations,
+  products: productsRelations,
+  productEmbeddings: productEmbeddingsRelations,
+  competitors: competitorsRelations,
+  competitorProducts: competitorProductsRelations,
+  priceHistory: priceHistoryRelations,
+  alerts: alertsRelations,
+  recommendations: recommendationsRelations,
+  scrapeJobs: scrapeJobsRelations,
+  activityLogs: activityLogsRelations,
+} as const;

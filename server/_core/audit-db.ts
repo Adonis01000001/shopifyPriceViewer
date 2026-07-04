@@ -5,10 +5,20 @@ async function main() {
   const pool = new Pool({ connectionString: process.env.DATABASE_URL });
 
   const tables = [
-    "products", "competitor_products", "competitors", "price_history",
-    "price_snapshots", "price_changes", "scrape_logs", "cron_runs",
-    "alerts", "recommendations", "activity_logs", "notification_preferences",
-    "shopify_stores", "users"
+    "products",
+    "competitor_products",
+    "competitors",
+    "price_history",
+    "price_snapshots",
+    "price_changes",
+    "scrape_logs",
+    "cron_runs",
+    "alerts",
+    "recommendations",
+    "activity_logs",
+    "notification_preferences",
+    "shopify_stores",
+    "users",
   ];
 
   console.log("=== ROW COUNTS ===");
@@ -31,7 +41,9 @@ async function main() {
   );
   console.log(`  (${nonE.rows.length} rows)`);
   for (const r of nonE.rows) {
-    console.log(`  ${r.id}  ${r.category}  "${r.title.slice(0, 60)}"  ${r.price}`);
+    console.log(
+      `  ${r.id}  ${r.category}  "${r.title.slice(0, 60)}"  ${r.price}`
+    );
   }
 
   console.log("\n=== ELECTRONICS PRODUCTS ===");
@@ -40,7 +52,9 @@ async function main() {
   );
   console.log(`  (${elec.rows.length} rows)`);
   for (const r of elec.rows) {
-    console.log(`  ${r.id}  ${r.category}  "${r.title.slice(0, 60)}"  ${r.price}`);
+    console.log(
+      `  ${r.id}  ${r.category}  "${r.title.slice(0, 60)}"  ${r.price}`
+    );
   }
 
   console.log("\n=== FK REFERENCES TO NON-ELECTRONICS PRODUCTS ===");
@@ -54,10 +68,15 @@ async function main() {
     const r = await pool.query(
       `SELECT count(*)::int AS n FROM ${f.table} WHERE EXISTS (SELECT 1 FROM products p WHERE p.category NOT ILIKE '%Electronics%' AND p.id::text = ${f.table}.${f.col}::text)`
     );
-    console.log(`  ${f.table}.${f.col}: ${r.rows[0].n} rows referencing non-electronics`);
+    console.log(
+      `  ${f.table}.${f.col}: ${r.rows[0].n} rows referencing non-electronics`
+    );
   }
 
   await pool.end();
 }
 
-main().catch((e) => { console.error(e); process.exit(1); });
+main().catch(e => {
+  console.error(e);
+  process.exit(1);
+});

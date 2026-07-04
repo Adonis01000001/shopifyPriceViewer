@@ -216,13 +216,23 @@
     padding-right: 1rem;
   }
   @media (min-width: 640px) {
-    .container { padding-left: 1.5rem; padding-right: 1.5rem; }
+    .container {
+      padding-left: 1.5rem;
+      padding-right: 1.5rem;
+    }
   }
   @media (min-width: 1024px) {
-    .container { padding-left: 2rem; padding-right: 2rem; max-width: 1280px; }
+    .container {
+      padding-left: 2rem;
+      padding-right: 2rem;
+      max-width: 1280px;
+    }
   }
 
-  .flex { min-height: 0; min-width: 0; }
+  .flex {
+    min-height: 0;
+    min-width: 0;
+  }
 
   .glass-card,
   .glass-panel {
@@ -250,20 +260,38 @@
     text-transform: uppercase;
   }
 
-  .price-flash-green { animation: flash-green 2s ease-out; }
-  .price-flash-amber { animation: flash-amber 1.5s ease-out; }
-  .price-flash-rose { animation: flash-rose 2s ease-out; }
+  .price-flash-green {
+    animation: flash-green 2s ease-out;
+  }
+  .price-flash-amber {
+    animation: flash-amber 1.5s ease-out;
+  }
+  .price-flash-rose {
+    animation: flash-rose 2s ease-out;
+  }
   @keyframes flash-green {
-    0% { background-color: rgba(99, 224, 99, 0.15); }
-    100% { background-color: transparent; }
+    0% {
+      background-color: rgba(99, 224, 99, 0.15);
+    }
+    100% {
+      background-color: transparent;
+    }
   }
   @keyframes flash-amber {
-    0% { background-color: rgba(254, 214, 57, 0.2); }
-    100% { background-color: transparent; }
+    0% {
+      background-color: rgba(254, 214, 57, 0.2);
+    }
+    100% {
+      background-color: transparent;
+    }
   }
   @keyframes flash-rose {
-    0% { background-color: rgba(255, 177, 197, 0.15); }
-    100% { background-color: transparent; }
+    0% {
+      background-color: rgba(255, 177, 197, 0.15);
+    }
+    100% {
+      background-color: transparent;
+    }
   }
 
   .recharts-tooltip-wrapper .recharts-default-tooltip {

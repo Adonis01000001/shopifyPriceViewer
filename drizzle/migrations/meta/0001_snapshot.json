@@ -117,12 +117,8 @@
           "name": "activity_logs_user_id_users_id_fk",
           "tableFrom": "activity_logs",
           "tableTo": "users",
-          "columnsFrom": [
-            "user_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["user_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -361,12 +357,8 @@
           "name": "alerts_user_id_users_id_fk",
           "tableFrom": "alerts",
           "tableTo": "users",
-          "columnsFrom": [
-            "user_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["user_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
@@ -374,12 +366,8 @@
           "name": "alerts_product_id_products_id_fk",
           "tableFrom": "alerts",
           "tableTo": "products",
-          "columnsFrom": [
-            "product_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["product_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
@@ -387,12 +375,8 @@
           "name": "alerts_competitor_product_id_competitor_products_id_fk",
           "tableFrom": "alerts",
           "tableTo": "competitor_products",
-          "columnsFrom": [
-            "competitor_product_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["competitor_product_id"],
+          "columnsTo": ["id"],
           "onDelete": "set null",
           "onUpdate": "no action"
         }
@@ -579,12 +563,8 @@
           "name": "competitor_products_competitor_id_competitors_id_fk",
           "tableFrom": "competitor_products",
           "tableTo": "competitors",
-          "columnsFrom": [
-            "competitor_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["competitor_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
@@ -592,12 +572,8 @@
           "name": "competitor_products_product_id_products_id_fk",
           "tableFrom": "competitor_products",
           "tableTo": "products",
-          "columnsFrom": [
-            "product_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["product_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -765,12 +741,8 @@
           "name": "competitors_user_id_users_id_fk",
           "tableFrom": "competitors",
           "tableTo": "users",
-          "columnsFrom": [
-            "user_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["user_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -879,12 +851,8 @@
           "name": "email_configs_user_id_users_id_fk",
           "tableFrom": "email_configs",
           "tableTo": "users",
-          "columnsFrom": [
-            "user_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["user_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -985,12 +953,8 @@
           "name": "notification_preferences_user_id_users_id_fk",
           "tableFrom": "notification_preferences",
           "tableTo": "users",
-          "columnsFrom": [
-            "user_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["user_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -1131,12 +1095,8 @@
           "name": "price_history_product_id_products_id_fk",
           "tableFrom": "price_history",
           "tableTo": "products",
-          "columnsFrom": [
-            "product_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["product_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
@@ -1144,12 +1104,8 @@
           "name": "price_history_competitor_product_id_competitor_products_id_fk",
           "tableFrom": "price_history",
           "tableTo": "competitor_products",
-          "columnsFrom": [
-            "competitor_product_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["competitor_product_id"],
+          "columnsTo": ["id"],
           "onDelete": "set null",
           "onUpdate": "no action"
         }
@@ -1220,12 +1176,8 @@
           "name": "product_embeddings_product_id_products_id_fk",
           "tableFrom": "product_embeddings",
           "tableTo": "products",
-          "columnsFrom": [
-            "product_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["product_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -1490,12 +1442,8 @@
           "name": "products_user_id_users_id_fk",
           "tableFrom": "products",
           "tableTo": "users",
-          "columnsFrom": [
-            "user_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["user_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
@@ -1503,12 +1451,8 @@
           "name": "products_store_id_shopify_stores_id_fk",
           "tableFrom": "products",
           "tableTo": "shopify_stores",
-          "columnsFrom": [
-            "store_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["store_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -1707,12 +1651,8 @@
           "name": "recommendations_user_id_users_id_fk",
           "tableFrom": "recommendations",
           "tableTo": "users",
-          "columnsFrom": [
-            "user_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["user_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
@@ -1720,12 +1660,8 @@
           "name": "recommendations_product_id_products_id_fk",
           "tableFrom": "recommendations",
           "tableTo": "products",
-          "columnsFrom": [
-            "product_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["product_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -1859,12 +1795,8 @@
           "name": "scrape_jobs_competitor_id_competitors_id_fk",
           "tableFrom": "scrape_jobs",
           "tableTo": "competitors",
-          "columnsFrom": [
-            "competitor_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["competitor_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -2000,12 +1932,8 @@
           "name": "shopify_stores_user_id_users_id_fk",
           "tableFrom": "shopify_stores",
           "tableTo": "users",
-          "columnsFrom": [
-            "user_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["user_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -2131,9 +2059,7 @@
         "users_open_id_unique": {
           "name": "users_open_id_unique",
           "nullsNotDistinct": false,
-          "columns": [
-            "open_id"
-          ]
+          "columns": ["open_id"]
         }
       },
       "policies": {},
@@ -2145,12 +2071,7 @@
     "public.alert_severity": {
       "name": "alert_severity",
       "schema": "public",
-      "values": [
-        "low",
-        "medium",
-        "high",
-        "critical"
-      ]
+      "values": ["low", "medium", "high", "critical"]
     },
     "public.alert_type": {
       "name": "alert_type",
@@ -2165,58 +2086,32 @@
     "public.competitor_status": {
       "name": "competitor_status",
       "schema": "public",
-      "values": [
-        "active",
-        "inactive",
-        "error"
-      ]
+      "values": ["active", "inactive", "error"]
     },
     "public.notification_frequency": {
       "name": "notification_frequency",
       "schema": "public",
-      "values": [
-        "realtime",
-        "hourly",
-        "daily",
-        "weekly"
-      ]
+      "values": ["realtime", "hourly", "daily", "weekly"]
     },
     "public.product_status": {
       "name": "product_status",
       "schema": "public",
-      "values": [
-        "optimal",
-        "underpriced",
-        "overpriced",
-        "alert"
-      ]
+      "values": ["optimal", "underpriced", "overpriced", "alert"]
     },
     "public.recommendation_status": {
       "name": "recommendation_status",
       "schema": "public",
-      "values": [
-        "pending",
-        "implemented",
-        "dismissed"
-      ]
+      "values": ["pending", "implemented", "dismissed"]
     },
     "public.scrape_status": {
       "name": "scrape_status",
       "schema": "public",
-      "values": [
-        "pending",
-        "running",
-        "success",
-        "failed"
-      ]
+      "values": ["pending", "running", "success", "failed"]
     },
     "public.user_role": {
       "name": "user_role",
       "schema": "public",
-      "values": [
-        "user",
-        "admin"
-      ]
+      "values": ["user", "admin"]
     }
   },
   "schemas": {},

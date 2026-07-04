@@ -3,6 +3,7 @@
 ## Architecture Overview
 
 The application uses a modular monolith architecture with:
+
 - **Frontend**: Next.js served via Nginx/IIS
 - **Backend**: FastAPI served via Gunicorn
 - **Database**: Microsoft SQL Server
@@ -88,6 +89,7 @@ WantedBy=multi-user.target
 ```
 
 Enable and start:
+
 ```bash
 sudo systemctl daemon-reload
 sudo systemctl enable priceint-api
@@ -121,6 +123,7 @@ WantedBy=multi-user.target
 ```
 
 Enable and start:
+
 ```bash
 sudo mkdir -p /var/log/priceint /var/run/priceint
 sudo chown priceint:priceint /var/log/priceint /var/run/priceint
@@ -179,7 +182,7 @@ upstream web {
 server {
     listen 80;
     server_name yourdomain.com www.yourdomain.com;
-    
+
     # Redirect to HTTPS
     return 301 https://$server_name$request_uri;
 }
@@ -187,16 +190,16 @@ server {
 server {
     listen 443 ssl http2;
     server_name yourdomain.com www.yourdomain.com;
-    
+
     # SSL certificates (use Let's Encrypt)
     ssl_certificate /etc/letsencrypt/live/yourdomain.com/fullchain.pem;
     ssl_certificate_key /etc/letsencrypt/live/yourdomain.com/privkey.pem;
-    
+
     # Security headers
     add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
     add_header X-Frame-Options "SAMEORIGIN" always;
     add_header X-Content-Type-Options "nosniff" always;
-    
+
     # API proxy
     location /api/ {
         proxy_pass http://api;
@@ -205,7 +208,7 @@ server {
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
     }
-    
+
     # Frontend
     location / {
         proxy_pass http://web;
@@ -218,6 +221,7 @@ server {
 ```
 
 Enable Nginx site:
+
 ```bash
 sudo ln -s /etc/nginx/sites-available/priceint /etc/nginx/sites-enabled/
 sudo nginx -t
@@ -350,7 +354,7 @@ sudo tail -f /var/log/priceint/celery-worker.log
 
 ```sql
 -- Check database size
-SELECT 
+SELECT
     name,
     CAST(size * 8 / 1024.0 AS DECIMAL(10,2)) AS SizeMB
 FROM sys.master_files
@@ -437,6 +441,7 @@ For high-traffic scenarios:
 ## Support
 
 For deployment issues, refer to:
+
 - Backend documentation: `docs/BACKEND.md`
 - Setup guide: `docs/SETUP.md`
 - API documentation: `http://api.yourdomain.com/docs`

@@ -55,11 +55,13 @@ export const appRouter = router({
      * This exchanges the OAuth code for an access token.
      */
     connect: protectedProcedure
-      .input(z.object({
-        shop: z.string().min(1),
-        code: z.string().min(1),
-        state: z.string().min(1),
-      }))
+      .input(
+        z.object({
+          shop: z.string().min(1),
+          code: z.string().min(1),
+          state: z.string().min(1),
+        })
+      )
       .mutation(async ({ ctx, input }) => {
         if (!isValidShopDomain(input.shop)) {
           throw new Error("Invalid Shopify store domain");
@@ -106,20 +108,31 @@ export const appRouter = router({
               updatedAt: new Date(),
             })
             .where(eq(shopifyStores.id, existing.id));
-          return { success: true, storeId: existing.id, message: "Store reconnected" };
+          return {
+            success: true,
+            storeId: existing.id,
+            message: "Store reconnected",
+          };
         }
 
-        const result = await database.insert(shopifyStores).values({
-          userId: ctx.user!.id,
-          shopDomain: input.shop,
-          accessToken: encryptedToken,
-          scopes: ENV.shopifyScopes,
-          storeName: input.shop.split(".")[0].replace(/-/g, " "),
-          currency: "USD",
-          isActive: true,
-        }).returning();
+        const result = await database
+          .insert(shopifyStores)
+          .values({
+            userId: ctx.user!.id,
+            shopDomain: input.shop,
+            accessToken: encryptedToken,
+            scopes: ENV.shopifyScopes,
+            storeName: input.shop.split(".")[0].replace(/-/g, " "),
+            currency: "USD",
+            isActive: true,
+          })
+          .returning();
 
-        return { success: true, storeId: result[0].id, message: "Store connected" };
+        return {
+          success: true,
+          storeId: result[0].id,
+          message: "Store connected",
+        };
       }),
 
     /**
@@ -137,7 +150,7 @@ export const appRouter = router({
           .where(
             and(
               eq(shopifyStores.userId, ctx.user!.id),
-              eq(shopifyStores.shopDomain, input.shopDomain),
+              eq(shopifyStores.shopDomain, input.shopDomain)
             )
           );
 
@@ -159,7 +172,7 @@ export const appRouter = router({
           where: and(
             eq(shopifyStores.id, input.storeId),
             eq(shopifyStores.userId, ctx.user!.id),
-            eq(shopifyStores.isActive, true),
+            eq(shopifyStores.isActive, true)
           ),
         });
 
@@ -188,7 +201,10 @@ export const appRouter = router({
 
         if (!response.ok) {
           const errText = await response.text().catch(() => "");
-          logger.error({ status: response.status, err: errText }, "Shopify sync API error");
+          logger.error(
+            { status: response.status, err: errText },
+            "Shopify sync API error"
+          );
           throw new Error(`Shopify API error: ${response.status}`);
         }
 
@@ -237,7 +253,10 @@ export const appRouter = router({
           .set({ lastSyncedAt: new Date(), updatedAt: new Date() })
           .where(eq(shopifyStores.id, input.storeId));
 
-        return { synced: count, message: `Synced ${count} products from Shopify` };
+        return {
+          synced: count,
+          message: `Synced ${count} products from Shopify`,
+        };
       }),
 
     // REMOVED: getToken endpoint (C-004). Shopify access tokens must NEVER be

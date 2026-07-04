@@ -20,9 +20,30 @@ import {
 } from "@/components/ui/sidebar";
 import { useIsMobile } from "@/hooks/useMobile";
 import {
-  BarChart3, Bell, LayoutDashboard, LogOut, Moon, Package,
-  PanelLeft, RefreshCw, Search, Sun, Users, Download, Store, X, Loader2,
-  AlertTriangle, TrendingDown, TrendingUp, ArrowUpDown, Zap, CheckCircle, Check, Globe, Shield,
+  BarChart3,
+  Bell,
+  LayoutDashboard,
+  LogOut,
+  Moon,
+  Package,
+  PanelLeft,
+  RefreshCw,
+  Search,
+  Sun,
+  Users,
+  Download,
+  Store,
+  X,
+  Loader2,
+  AlertTriangle,
+  TrendingDown,
+  TrendingUp,
+  ArrowUpDown,
+  Zap,
+  CheckCircle,
+  Check,
+  Globe,
+  Shield,
 } from "lucide-react";
 import { CSSProperties, useEffect, useRef, useState, useCallback } from "react";
 import { useLocation } from "wouter";
@@ -40,7 +61,7 @@ const menuItems = [
   { icon: Users, label: "Competitors", path: "/competitors", adminOnly: false },
   { icon: BarChart3, label: "Analytics", path: "/analytics", adminOnly: false },
   { icon: Bell, label: "Alerts", path: "/alerts", adminOnly: false },
-  { icon: Shield, label: "Admin", path: "/admin", adminOnly: true },
+
 ];
 
 const SIDEBAR_WIDTH_KEY = "sidebar-width";
@@ -123,13 +144,18 @@ function DashboardLayoutContent({
     products: productSearch.data ?? [],
     competitors: competitorSearch.data ?? [],
     loading: productSearch.isLoading || competitorSearch.isLoading,
-    hasResults: (productSearch.data?.length ?? 0) > 0 || (competitorSearch.data?.length ?? 0) > 0,
+    hasResults:
+      (productSearch.data?.length ?? 0) > 0 ||
+      (competitorSearch.data?.length ?? 0) > 0,
   };
 
   // Close search dropdown on outside click
   useEffect(() => {
     const handler = (e: MouseEvent) => {
-      if (searchContainerRef.current && !searchContainerRef.current.contains(e.target as Node)) {
+      if (
+        searchContainerRef.current &&
+        !searchContainerRef.current.contains(e.target as Node)
+      ) {
         setSearchOpen(false);
       }
     };
@@ -170,10 +196,10 @@ function DashboardLayoutContent({
   // ── Sync Shopify handler ──
   const { data: stores } = trpc.shopify.listStores.useQuery();
   const syncMutation = trpc.shopify.syncProducts.useMutation({
-    onSuccess: (data) => {
+    onSuccess: data => {
       toast.success(data.message || `Synced ${data.synced} products`);
     },
-    onError: (err) => {
+    onError: err => {
       toast.error(err.message || "Sync failed");
     },
   });
@@ -197,17 +223,24 @@ function DashboardLayoutContent({
   const [notifOpen, setNotifOpen] = useState(false);
   const notifContainerRef = useRef<HTMLDivElement>(null);
 
-  const { data: alertStats } = trpc.alerts.stats.useQuery(undefined, { refetchInterval: 30000 });
-  const { data: unreadAlerts, refetch: refetchAlerts } = trpc.alerts.list.useQuery(
-    { unreadOnly: true, limit: 10 },
-    { refetchInterval: 30000 }
-  );
+  const { data: alertStats } = trpc.alerts.stats.useQuery(undefined, {
+    refetchInterval: 30000,
+  });
+  const { data: unreadAlerts, refetch: refetchAlerts } =
+    trpc.alerts.list.useQuery(
+      { unreadOnly: true, limit: 10 },
+      { refetchInterval: 30000 }
+    );
 
   const markReadMutation = trpc.alerts.markRead.useMutation({
-    onSuccess: () => { refetchAlerts(); },
+    onSuccess: () => {
+      refetchAlerts();
+    },
   });
   const markAllReadMutation = trpc.alerts.markAllRead.useMutation({
-    onSuccess: () => { refetchAlerts(); },
+    onSuccess: () => {
+      refetchAlerts();
+    },
   });
 
   const unreadCount = alertStats?.unread ?? 0;
@@ -216,10 +249,22 @@ function DashboardLayoutContent({
 
   // Severity + type config for notification items
   const severityConfig: Record<string, { label: string; className: string }> = {
-    critical: { label: "CRITICAL", className: "bg-[#93000a]/20 text-[#ffb4ab] border-[#93000a]/30" },
-    high: { label: "HIGH", className: "bg-[#93000a]/15 text-[#ffb4ab]/80 border-[#ffb4ab]/20" },
-    medium: { label: "MEDIUM", className: "bg-[#63e063]/10 text-[#21a732] border-[#63e063]/20" },
-    low: { label: "LOW", className: "bg-blue-500/10 text-blue-400 border-blue-500/20" },
+    critical: {
+      label: "CRITICAL",
+      className: "bg-[#93000a]/20 text-[#ffb4ab] border-[#93000a]/30",
+    },
+    high: {
+      label: "HIGH",
+      className: "bg-[#93000a]/15 text-[#ffb4ab]/80 border-[#ffb4ab]/20",
+    },
+    medium: {
+      label: "MEDIUM",
+      className: "bg-[#63e063]/10 text-[#21a732] border-[#63e063]/20",
+    },
+    low: {
+      label: "LOW",
+      className: "bg-blue-500/10 text-blue-400 border-blue-500/20",
+    },
   };
   const typeIcons: Record<string, typeof TrendingDown> = {
     price_drop: TrendingDown,
@@ -231,7 +276,10 @@ function DashboardLayoutContent({
   // Close notification dropdown on outside click
   useEffect(() => {
     const handler = (e: MouseEvent) => {
-      if (notifContainerRef.current && !notifContainerRef.current.contains(e.target as Node)) {
+      if (
+        notifContainerRef.current &&
+        !notifContainerRef.current.contains(e.target as Node)
+      ) {
         setNotifOpen(false);
       }
     };
@@ -239,7 +287,9 @@ function DashboardLayoutContent({
     return () => document.removeEventListener("mousedown", handler);
   }, []);
 
-  useEffect(() => { if (isCollapsed) setIsResizing(false); }, [isCollapsed]);
+  useEffect(() => {
+    if (isCollapsed) setIsResizing(false);
+  }, [isCollapsed]);
 
   useEffect(() => {
     const onMove = (e: MouseEvent) => {
@@ -264,19 +314,27 @@ function DashboardLayoutContent({
   }, [isResizing, setSidebarWidth]);
 
   const logoutMutation = trpc.auth.logout.useMutation({
-    onSuccess: () => { window.location.href = "/auth"; },
+    onSuccess: () => {
+      window.location.href = "/auth";
+    },
   });
 
   return (
     <>
       <div className="relative" ref={sidebarRef}>
-        <Sidebar collapsible="icon" className="border-r-sidebar-border bg-sidebar" disableTransition={isResizing}>
+        <Sidebar
+          collapsible="icon"
+          className="border-r-sidebar-border bg-sidebar"
+          disableTransition={isResizing}
+        >
           {/* Header */}
           <SidebarHeader className="h-14 justify-center border-b border-white/[0.04]">
             <div className="flex items-center gap-3 px-4 w-full">
-              <button onClick={toggleSidebar}
+              <button
+                onClick={toggleSidebar}
                 className="h-8 w-8 flex items-center justify-center hover:bg-white/[0.06] hover:text-primary rounded transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-ring shrink-0"
-                aria-label="Toggle navigation">
+                aria-label="Toggle navigation"
+              >
                 <PanelLeft className="h-4 w-4" />
               </button>
               {!isCollapsed && (
@@ -285,8 +343,12 @@ function DashboardLayoutContent({
                     <BarChart3 className="h-3.5 w-3.5 text-primary" />
                   </div>
                   <div className="flex flex-col">
-                    <span className="font-bold tracking-tight text-sm text-primary leading-none">PriceIntel</span>
-                    <span className="label-caps text-[9px] text-muted-foreground/60 mt-0.5">Shopify Pro Suite</span>
+                    <span className="font-bold tracking-tight text-sm text-primary leading-none">
+                      PriceIntel
+                    </span>
+                    <span className="label-caps text-[9px] text-muted-foreground/60 mt-0.5">
+                      Shopify Pro Suite
+                    </span>
                   </div>
                 </div>
               )}
@@ -297,21 +359,26 @@ function DashboardLayoutContent({
           <SidebarContent className="gap-0 px-3 py-4">
             <SidebarMenu>
               {menuItems
-                .filter((item) => !item.adminOnly || user?.role === "admin")
-                .map((item) => {
+                .filter(item => !item.adminOnly || user?.role === "admin")
+                .map(item => {
                   const isActive = location === item.path;
                   return (
                     <SidebarMenuItem key={item.path}>
-                      <SidebarMenuButton isActive={isActive}
-                        onClick={() => setLocation(item.path)} tooltip={item.label}
+                      <SidebarMenuButton
+                        isActive={isActive}
+                        onClick={() => setLocation(item.path)}
+                        tooltip={item.label}
                         className={`h-10 transition-all rounded ${
                           isActive
                             ? "text-primary font-bold border-r-2 border-primary bg-primary/[0.08]"
                             : "text-muted-foreground hover:bg-white/[0.04] font-normal"
-                        }`}>
+                        }`}
+                      >
                         <item.icon className="h-4 w-4" />
                         <span className="text-[13px]">{item.label}</span>
-                        {isActive && <div className="ml-auto h-1.5 w-1.5 rounded-full bg-primary" />}
+                        {isActive && (
+                          <div className="ml-auto h-1.5 w-1.5 rounded-full bg-primary" />
+                        )}
                       </SidebarMenuButton>
                     </SidebarMenuItem>
                   );
@@ -322,11 +389,21 @@ function DashboardLayoutContent({
           {/* Footer */}
           <SidebarFooter className="p-3 border-t border-white/[0.04] space-y-1">
             {switchable && (
-              <button onClick={toggleTheme}
+              <button
+                onClick={toggleTheme}
                 className="flex items-center gap-2 w-full rounded px-3 py-2 text-sm hover:bg-white/[0.04] transition-colors text-muted-foreground"
-                aria-label="Toggle theme">
-                {theme === "dark" ? <Sun className="h-4 w-4 text-[#63e063]" /> : <Moon className="h-4 w-4 text-primary" />}
-                {!isCollapsed && <span className="text-xs">{theme === "dark" ? "Light mode" : "Dark mode"}</span>}
+                aria-label="Toggle theme"
+              >
+                {theme === "dark" ? (
+                  <Sun className="h-4 w-4 text-[#63e063]" />
+                ) : (
+                  <Moon className="h-4 w-4 text-primary" />
+                )}
+                {!isCollapsed && (
+                  <span className="text-xs">
+                    {theme === "dark" ? "Light mode" : "Dark mode"}
+                  </span>
+                )}
               </button>
             )}
             <DropdownMenu>
@@ -338,13 +415,20 @@ function DashboardLayoutContent({
                     </AvatarFallback>
                   </Avatar>
                   <div className="flex-1 min-w-0 group-data-[collapsible=icon]:hidden">
-                    <p className="text-sm font-medium truncate leading-none">{user?.name || "—"}</p>
-                    <p className="text-[10px] label-caps text-muted-foreground truncate mt-1">STORE OWNER</p>
+                    <p className="text-sm font-medium truncate leading-none">
+                      {user?.name || "—"}
+                    </p>
+                    <p className="text-[10px] label-caps text-muted-foreground truncate mt-1">
+                      STORE OWNER
+                    </p>
                   </div>
                 </button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-48">
-                <DropdownMenuItem onClick={() => logoutMutation.mutate()} className="cursor-pointer text-destructive focus:text-destructive">
+                <DropdownMenuItem
+                  onClick={() => logoutMutation.mutate()}
+                  className="cursor-pointer text-destructive focus:text-destructive"
+                >
                   <LogOut className="mr-2 h-4 w-4" />
                   <span>Sign out</span>
                 </DropdownMenuItem>
@@ -354,7 +438,9 @@ function DashboardLayoutContent({
         </Sidebar>
         <div
           className={`absolute top-0 right-0 w-1 h-full cursor-col-resize hover:bg-primary/20 transition-colors ${isCollapsed ? "hidden" : ""}`}
-          onMouseDown={() => { if (!isCollapsed) setIsResizing(true); }}
+          onMouseDown={() => {
+            if (!isCollapsed) setIsResizing(true);
+          }}
           style={{ zIndex: 50 }}
         />
       </div>
@@ -375,17 +461,22 @@ function DashboardLayoutContent({
                     className="bg-surface-container-low border border-outline-variant rounded pl-9 pr-4 py-1.5 text-sm font-mono focus:outline-none focus:border-primary w-64 transition-all placeholder:text-muted-foreground/50"
                     placeholder="Search insights..."
                     value={searchQuery}
-                    onChange={(e) => {
+                    onChange={e => {
                       setSearchQuery(e.target.value);
                       if (e.target.value.length >= 2) setSearchOpen(true);
                       else setSearchOpen(false);
                     }}
-                    onFocus={() => { if (searchQuery.length >= 2) setSearchOpen(true); }}
+                    onFocus={() => {
+                      if (searchQuery.length >= 2) setSearchOpen(true);
+                    }}
                   />
                   {searchQuery && (
                     <button
                       className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-                      onClick={() => { setSearchQuery(""); setSearchOpen(false); }}
+                      onClick={() => {
+                        setSearchQuery("");
+                        setSearchOpen(false);
+                      }}
                     >
                       <X className="h-3.5 w-3.5" />
                     </button>
@@ -409,7 +500,7 @@ function DashboardLayoutContent({
                           <div className="px-3 py-1.5 label-caps text-[10px] text-muted-foreground bg-surface-container-high">
                             Products ({searchResults.products.length})
                           </div>
-                          {searchResults.products.map((p) => (
+                          {searchResults.products.map(p => (
                             <button
                               key={p.id}
                               className="w-full flex items-center gap-3 px-3 py-2 hover:bg-white/[0.04] transition-colors text-left"
@@ -421,8 +512,13 @@ function DashboardLayoutContent({
                             >
                               <Package className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
                               <div className="min-w-0">
-                                <p className="text-[13px] font-medium truncate">{p.title}</p>
-                                <p className="text-[10px] text-muted-foreground">{p.category || "—"} · ${Number(p.price).toFixed(2)}</p>
+                                <p className="text-[13px] font-medium truncate">
+                                  {p.title}
+                                </p>
+                                <p className="text-[10px] text-muted-foreground">
+                                  {p.category || "—"} · $
+                                  {Number(p.price).toFixed(2)}
+                                </p>
                               </div>
                             </button>
                           ))}
@@ -433,7 +529,7 @@ function DashboardLayoutContent({
                           <div className="px-3 py-1.5 label-caps text-[10px] text-muted-foreground bg-surface-container-high border-t border-outline-variant/20">
                             Competitors ({searchResults.competitors.length})
                           </div>
-                          {searchResults.competitors.map((c) => (
+                          {searchResults.competitors.map(c => (
                             <button
                               key={c.id}
                               className="w-full flex items-center gap-3 px-3 py-2 hover:bg-white/[0.04] transition-colors text-left"
@@ -445,8 +541,12 @@ function DashboardLayoutContent({
                             >
                               <Store className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
                               <div className="min-w-0">
-                                <p className="text-[13px] font-medium truncate">{c.name}</p>
-                                <p className="text-[10px] text-muted-foreground">{c.domain}</p>
+                                <p className="text-[13px] font-medium truncate">
+                                  {c.name}
+                                </p>
+                                <p className="text-[10px] text-muted-foreground">
+                                  {c.domain}
+                                </p>
                               </div>
                             </button>
                           ))}
@@ -458,7 +558,9 @@ function DashboardLayoutContent({
 
                 <div className="flex items-center gap-2 px-3 py-1 bg-surface-container-high rounded-full border border-outline-variant">
                   <div className="w-2 h-2 rounded-full bg-primary animate-pulse" />
-                  <span className="label-caps text-[10px] text-muted-foreground">Last Sync: 2m ago</span>
+                  <span className="label-caps text-[10px] text-muted-foreground">
+                    Last Sync: 2m ago
+                  </span>
                 </div>
               </>
             )}
@@ -509,7 +611,9 @@ function DashboardLayoutContent({
                   <div className="px-4 py-3 border-b border-outline-variant/30 bg-surface-container/50 flex items-center justify-between">
                     <div className="flex items-center gap-2">
                       <Bell className="h-4 w-4 text-primary" />
-                      <span className="text-sm font-semibold">Notifications</span>
+                      <span className="text-sm font-semibold">
+                        Notifications
+                      </span>
                       {unreadCount > 0 && (
                         <span className="text-[10px] font-bold bg-error-container/20 text-error-container px-1.5 py-0.5 rounded-full">
                           {unreadCount} new
@@ -533,12 +637,18 @@ function DashboardLayoutContent({
                     {notifItems.length === 0 ? (
                       <div className="py-8 text-center">
                         <CheckCircle className="h-8 w-8 text-muted-foreground/30 mx-auto mb-2" />
-                        <p className="text-sm text-muted-foreground">No new notifications</p>
-                        <p className="text-[11px] text-muted-foreground/60">You&apos;re all caught up!</p>
+                        <p className="text-sm text-muted-foreground">
+                          No new notifications
+                        </p>
+                        <p className="text-[11px] text-muted-foreground/60">
+                          You&apos;re all caught up!
+                        </p>
                       </div>
                     ) : (
-                      notifItems.map((alert) => {
-                        const severity = severityConfig[alert.severity] ?? severityConfig.medium;
+                      notifItems.map(alert => {
+                        const severity =
+                          severityConfig[alert.severity] ??
+                          severityConfig.medium;
                         const TypeIcon = typeIcons[alert.alertType] ?? Zap;
                         return (
                           <div
@@ -550,25 +660,41 @@ function DashboardLayoutContent({
                               setNotifOpen(false);
                             }}
                           >
-                            <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded ${severity.className}`}>
+                            <div
+                              className={`flex h-8 w-8 shrink-0 items-center justify-center rounded ${severity.className}`}
+                            >
                               <TypeIcon className="h-3.5 w-3.5" />
                             </div>
                             <div className="min-w-0 flex-1">
                               <div className="flex items-center gap-1.5">
-                                <p className="text-[12px] font-medium truncate">{alert.title}</p>
-                                <span className={`inline-flex items-center rounded px-1 py-0.5 text-[8px] font-bold label-caps shrink-0 ${severity.className}`}>
+                                <p className="text-[12px] font-medium truncate">
+                                  {alert.title}
+                                </p>
+                                <span
+                                  className={`inline-flex items-center rounded px-1 py-0.5 text-[8px] font-bold label-caps shrink-0 ${severity.className}`}
+                                >
                                   {severity.label}
                                 </span>
                               </div>
-                              <p className="text-[11px] text-muted-foreground truncate mt-0.5">{alert.message}</p>
+                              <p className="text-[11px] text-muted-foreground truncate mt-0.5">
+                                {alert.message}
+                              </p>
                               <p className="text-[10px] text-muted-foreground/50 mt-1">
-                                {new Date(alert.createdAt).toLocaleString("en-US", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
+                                {new Date(alert.createdAt).toLocaleString(
+                                  "en-US",
+                                  {
+                                    month: "short",
+                                    day: "numeric",
+                                    hour: "2-digit",
+                                    minute: "2-digit",
+                                  }
+                                )}
                               </p>
                             </div>
                             <button
                               className="opacity-0 group-hover:opacity-100 p-1 text-muted-foreground hover:text-primary transition-all shrink-0"
                               title="Mark as read"
-                              onClick={(e) => {
+                              onClick={e => {
                                 e.stopPropagation();
                                 markReadMutation.mutate({ id: alert.id });
                               }}

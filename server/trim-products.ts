@@ -57,7 +57,7 @@ async function main() {
   await client.end();
 }
 
-main().catch((err) => {
+main().catch(err => {
   console.error("Error:", err.message);
   client.end().catch(() => {});
   process.exit(1);

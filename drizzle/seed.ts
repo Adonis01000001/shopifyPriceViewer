@@ -127,27 +127,207 @@ async function seed() {
     shopifyProductId: string;
   }[] = [
     // Electronics
-    { title: "Sony WH-1000XM5 Wireless Headphones", sku: "ELEC-HP-001", category: "Electronics", vendor: "Sony", price: "349.99", compareAtPrice: "399.99", costPrice: "210.00", status: "optimal", shopifyProductId: "gid://shopify/Product/1001" },
-    { title: "Apple AirPods Pro 2nd Gen", sku: "ELEC-HP-002", category: "Electronics", vendor: "Apple", price: "249.00", compareAtPrice: "279.00", costPrice: "150.00", status: "optimal", shopifyProductId: "gid://shopify/Product/1002" },
-    { title: "Samsung Galaxy Watch 6 Classic", sku: "ELEC-WT-001", category: "Electronics", vendor: "Samsung", price: "329.99", compareAtPrice: "369.99", costPrice: "198.00", status: "underpriced", shopifyProductId: "gid://shopify/Product/1003" },
-    { title: "Bose QuietComfort Ultra Earbuds", sku: "ELEC-HP-003", category: "Electronics", vendor: "Bose", price: "299.00", compareAtPrice: "299.00", costPrice: "180.00", status: "optimal", shopifyProductId: "gid://shopify/Product/1004" },
-    { title: "JBL Charge 5 Bluetooth Speaker", sku: "ELEC-SP-001", category: "Electronics", vendor: "JBL", price: "179.99", compareAtPrice: "199.99", costPrice: "90.00", status: "optimal", shopifyProductId: "gid://shopify/Product/1005" },
+    {
+      title: "Sony WH-1000XM5 Wireless Headphones",
+      sku: "ELEC-HP-001",
+      category: "Electronics",
+      vendor: "Sony",
+      price: "349.99",
+      compareAtPrice: "399.99",
+      costPrice: "210.00",
+      status: "optimal",
+      shopifyProductId: "gid://shopify/Product/1001",
+    },
+    {
+      title: "Apple AirPods Pro 2nd Gen",
+      sku: "ELEC-HP-002",
+      category: "Electronics",
+      vendor: "Apple",
+      price: "249.00",
+      compareAtPrice: "279.00",
+      costPrice: "150.00",
+      status: "optimal",
+      shopifyProductId: "gid://shopify/Product/1002",
+    },
+    {
+      title: "Samsung Galaxy Watch 6 Classic",
+      sku: "ELEC-WT-001",
+      category: "Electronics",
+      vendor: "Samsung",
+      price: "329.99",
+      compareAtPrice: "369.99",
+      costPrice: "198.00",
+      status: "underpriced",
+      shopifyProductId: "gid://shopify/Product/1003",
+    },
+    {
+      title: "Bose QuietComfort Ultra Earbuds",
+      sku: "ELEC-HP-003",
+      category: "Electronics",
+      vendor: "Bose",
+      price: "299.00",
+      compareAtPrice: "299.00",
+      costPrice: "180.00",
+      status: "optimal",
+      shopifyProductId: "gid://shopify/Product/1004",
+    },
+    {
+      title: "JBL Charge 5 Bluetooth Speaker",
+      sku: "ELEC-SP-001",
+      category: "Electronics",
+      vendor: "JBL",
+      price: "179.99",
+      compareAtPrice: "199.99",
+      costPrice: "90.00",
+      status: "optimal",
+      shopifyProductId: "gid://shopify/Product/1005",
+    },
     // Clothing
-    { title: "Nike Air Max 270 Running Shoes", sku: "CLO-SH-001", category: "Clothing", vendor: "Nike", price: "150.00", compareAtPrice: "170.00", costPrice: "60.00", status: "optimal", shopifyProductId: "gid://shopify/Product/2001" },
-    { title: "Levi's 501 Original Fit Jeans", sku: "CLO-JN-001", category: "Clothing", vendor: "Levi's", price: "69.50", compareAtPrice: "89.50", costPrice: "22.00", status: "overpriced", shopifyProductId: "gid://shopify/Product/2002" },
-    { title: "Patagonia Better Sweater Fleece Jacket", sku: "CLO-JK-001", category: "Clothing", vendor: "Patagonia", price: "139.00", compareAtPrice: "159.00", costPrice: "48.00", status: "optimal", shopifyProductId: "gid://shopify/Product/2003" },
-    { title: "Adidas Ultraboost 23 Running Shoes", sku: "CLO-SH-002", category: "Clothing", vendor: "Adidas", price: "190.00", compareAtPrice: "190.00", costPrice: "76.00", status: "alert", shopifyProductId: "gid://shopify/Product/2004" },
-    { title: "The North Face Puffer Jacket", sku: "CLO-JK-002", category: "Clothing", vendor: "The North Face", price: "229.00", compareAtPrice: "279.00", costPrice: "92.00", status: "optimal", shopifyProductId: "gid://shopify/Product/2005" },
+    {
+      title: "Nike Air Max 270 Running Shoes",
+      sku: "CLO-SH-001",
+      category: "Clothing",
+      vendor: "Nike",
+      price: "150.00",
+      compareAtPrice: "170.00",
+      costPrice: "60.00",
+      status: "optimal",
+      shopifyProductId: "gid://shopify/Product/2001",
+    },
+    {
+      title: "Levi's 501 Original Fit Jeans",
+      sku: "CLO-JN-001",
+      category: "Clothing",
+      vendor: "Levi's",
+      price: "69.50",
+      compareAtPrice: "89.50",
+      costPrice: "22.00",
+      status: "overpriced",
+      shopifyProductId: "gid://shopify/Product/2002",
+    },
+    {
+      title: "Patagonia Better Sweater Fleece Jacket",
+      sku: "CLO-JK-001",
+      category: "Clothing",
+      vendor: "Patagonia",
+      price: "139.00",
+      compareAtPrice: "159.00",
+      costPrice: "48.00",
+      status: "optimal",
+      shopifyProductId: "gid://shopify/Product/2003",
+    },
+    {
+      title: "Adidas Ultraboost 23 Running Shoes",
+      sku: "CLO-SH-002",
+      category: "Clothing",
+      vendor: "Adidas",
+      price: "190.00",
+      compareAtPrice: "190.00",
+      costPrice: "76.00",
+      status: "alert",
+      shopifyProductId: "gid://shopify/Product/2004",
+    },
+    {
+      title: "The North Face Puffer Jacket",
+      sku: "CLO-JK-002",
+      category: "Clothing",
+      vendor: "The North Face",
+      price: "229.00",
+      compareAtPrice: "279.00",
+      costPrice: "92.00",
+      status: "optimal",
+      shopifyProductId: "gid://shopify/Product/2005",
+    },
     // Home & Garden
-    { title: "Dyson V15 Detect Vacuum", sku: "HOM-VC-001", category: "Home & Garden", vendor: "Dyson", price: "749.99", compareAtPrice: "799.99", costPrice: "450.00", status: "underpriced", shopifyProductId: "gid://shopify/Product/3001" },
-    { title: "iRobot Roomba j9+ Robot Vacuum", sku: "HOM-VC-002", category: "Home & Garden", vendor: "iRobot", price: "899.99", compareAtPrice: "999.99", costPrice: "540.00", status: "optimal", shopifyProductId: "gid://shopify/Product/3002" },
-    { title: "Philips Hue Starter Kit (4 bulbs)", sku: "HOM-LT-001", category: "Home & Garden", vendor: "Philips", price: "199.99", compareAtPrice: "229.99", costPrice: "100.00", status: "optimal", shopifyProductId: "gid://shopify/Product/3003" },
-    { title: "Ninja Foodi 9-in-1 Air Fryer Oven", sku: "HOM-AP-001", category: "Home & Garden", vendor: "Ninja", price: "249.99", compareAtPrice: "279.99", costPrice: "137.00", status: "overpriced", shopifyProductId: "gid://shopify/Product/3004" },
+    {
+      title: "Dyson V15 Detect Vacuum",
+      sku: "HOM-VC-001",
+      category: "Home & Garden",
+      vendor: "Dyson",
+      price: "749.99",
+      compareAtPrice: "799.99",
+      costPrice: "450.00",
+      status: "underpriced",
+      shopifyProductId: "gid://shopify/Product/3001",
+    },
+    {
+      title: "iRobot Roomba j9+ Robot Vacuum",
+      sku: "HOM-VC-002",
+      category: "Home & Garden",
+      vendor: "iRobot",
+      price: "899.99",
+      compareAtPrice: "999.99",
+      costPrice: "540.00",
+      status: "optimal",
+      shopifyProductId: "gid://shopify/Product/3002",
+    },
+    {
+      title: "Philips Hue Starter Kit (4 bulbs)",
+      sku: "HOM-LT-001",
+      category: "Home & Garden",
+      vendor: "Philips",
+      price: "199.99",
+      compareAtPrice: "229.99",
+      costPrice: "100.00",
+      status: "optimal",
+      shopifyProductId: "gid://shopify/Product/3003",
+    },
+    {
+      title: "Ninja Foodi 9-in-1 Air Fryer Oven",
+      sku: "HOM-AP-001",
+      category: "Home & Garden",
+      vendor: "Ninja",
+      price: "249.99",
+      compareAtPrice: "279.99",
+      costPrice: "137.00",
+      status: "overpriced",
+      shopifyProductId: "gid://shopify/Product/3004",
+    },
     // Sports
-    { title: "Yeti Rambler 30oz Tumbler", sku: "SPT-DK-001", category: "Sports", vendor: "Yeti", price: "38.00", compareAtPrice: "38.00", costPrice: "12.00", status: "optimal", shopifyProductId: "gid://shopify/Product/4001" },
-    { title: "Hydro Flask 32oz Water Bottle", sku: "SPT-DK-002", category: "Sports", vendor: "Hydro Flask", price: "44.95", compareAtPrice: "49.95", costPrice: "14.00", status: "optimal", shopifyProductId: "gid://shopify/Product/4002" },
-    { title: "Garmin Forerunner 965 GPS Watch", sku: "SPT-WT-001", category: "Sports", vendor: "Garmin", price: "499.99", compareAtPrice: "549.99", costPrice: "300.00", status: "alert", shopifyProductId: "gid://shopify/Product/4003" },
-    { title: "Peloton Bike+ Indoor Cycle", sku: "SPT-FN-001", category: "Sports", vendor: "Peloton", price: "2495.00", compareAtPrice: "2495.00", costPrice: "1500.00", status: "optimal", shopifyProductId: "gid://shopify/Product/4004" },
+    {
+      title: "Yeti Rambler 30oz Tumbler",
+      sku: "SPT-DK-001",
+      category: "Sports",
+      vendor: "Yeti",
+      price: "38.00",
+      compareAtPrice: "38.00",
+      costPrice: "12.00",
+      status: "optimal",
+      shopifyProductId: "gid://shopify/Product/4001",
+    },
+    {
+      title: "Hydro Flask 32oz Water Bottle",
+      sku: "SPT-DK-002",
+      category: "Sports",
+      vendor: "Hydro Flask",
+      price: "44.95",
+      compareAtPrice: "49.95",
+      costPrice: "14.00",
+      status: "optimal",
+      shopifyProductId: "gid://shopify/Product/4002",
+    },
+    {
+      title: "Garmin Forerunner 965 GPS Watch",
+      sku: "SPT-WT-001",
+      category: "Sports",
+      vendor: "Garmin",
+      price: "499.99",
+      compareAtPrice: "549.99",
+      costPrice: "300.00",
+      status: "alert",
+      shopifyProductId: "gid://shopify/Product/4003",
+    },
+    {
+      title: "Peloton Bike+ Indoor Cycle",
+      sku: "SPT-FN-001",
+      category: "Sports",
+      vendor: "Peloton",
+      price: "2495.00",
+      compareAtPrice: "2495.00",
+      costPrice: "1500.00",
+      status: "optimal",
+      shopifyProductId: "gid://shopify/Product/4004",
+    },
   ];
 
   const productIds: string[] = [];
@@ -193,12 +373,60 @@ async function seed() {
     productsTracked: number;
     scrapeStatus: "pending" | "running" | "success" | "failed";
   }[] = [
-    { name: "TechHaven", domain: "techhaven.com", status: "active", priceIndex: "97.50", avgPriceDiff: "-2.50", productsTracked: 8, scrapeStatus: "success" },
-    { name: "FashionForward", domain: "fashionforward.com", status: "active", priceIndex: "103.20", avgPriceDiff: "3.20", productsTracked: 5, scrapeStatus: "success" },
-    { name: "HomeEssentials", domain: "homeessentials.com", status: "active", priceIndex: "99.80", avgPriceDiff: "-0.20", productsTracked: 4, scrapeStatus: "success" },
-    { name: "SportZone", domain: "sportzone.com", status: "active", priceIndex: "105.40", avgPriceDiff: "5.40", productsTracked: 3, scrapeStatus: "success" },
-    { name: "MegaMart", domain: "megamart.com", status: "inactive", priceIndex: "94.10", avgPriceDiff: "-5.90", productsTracked: 0, scrapeStatus: "pending" },
-    { name: "QuickBuy", domain: "quickbuy.com", status: "error", priceIndex: "101.00", avgPriceDiff: "1.00", productsTracked: 2, scrapeStatus: "failed" },
+    {
+      name: "TechHaven",
+      domain: "techhaven.com",
+      status: "active",
+      priceIndex: "97.50",
+      avgPriceDiff: "-2.50",
+      productsTracked: 8,
+      scrapeStatus: "success",
+    },
+    {
+      name: "FashionForward",
+      domain: "fashionforward.com",
+      status: "active",
+      priceIndex: "103.20",
+      avgPriceDiff: "3.20",
+      productsTracked: 5,
+      scrapeStatus: "success",
+    },
+    {
+      name: "HomeEssentials",
+      domain: "homeessentials.com",
+      status: "active",
+      priceIndex: "99.80",
+      avgPriceDiff: "-0.20",
+      productsTracked: 4,
+      scrapeStatus: "success",
+    },
+    {
+      name: "SportZone",
+      domain: "sportzone.com",
+      status: "active",
+      priceIndex: "105.40",
+      avgPriceDiff: "5.40",
+      productsTracked: 3,
+      scrapeStatus: "success",
+    },
+    {
+      name: "MegaMart",
+      domain: "megamart.com",
+      status: "inactive",
+      priceIndex: "94.10",
+      avgPriceDiff: "-5.90",
+      productsTracked: 0,
+      scrapeStatus: "pending",
+    },
+    {
+      name: "QuickBuy",
+      domain: "quickbuy.com",
+      status: "error",
+      priceIndex: "101.00",
+      avgPriceDiff: "1.00",
+      productsTracked: 2,
+      scrapeStatus: "failed",
+    },
   ];
 
   const competitorIds: string[] = [];
@@ -216,7 +444,8 @@ async function seed() {
       productsTracked: c.productsTracked,
       avgPriceDiff: c.avgPriceDiff,
       priceIndex: c.priceIndex,
-      lastScrapedAt: c.status === "active" ? daysAgo(Math.floor(Math.random() * 3)) : null,
+      lastScrapedAt:
+        c.status === "active" ? daysAgo(Math.floor(Math.random() * 3)) : null,
       scrapeStatus: c.scrapeStatus,
       scrapeError: c.status === "error" ? "Connection timeout after 30s" : null,
       createdAt: daysAgo(rnd(60, 90)),
@@ -241,14 +470,15 @@ async function seed() {
     for (const prodId of matched) {
       const origPrice = Number(productData[productIds.indexOf(prodId)].price);
       // Competitor price varies from -8% to +12% of our price
-      const compPrice = Math.round(origPrice * (1 + rnd(-0.08, 0.12)) * 100) / 100;
+      const compPrice =
+        Math.round(origPrice * (1 + rnd(-0.08, 0.12)) * 100) / 100;
       await db.insert(schema.competitorProducts).values({
         id: uid(),
         competitorId: compId,
         productId: prodId,
         competitorProductUrl: `https://${competitorData[ci].domain}/products/${prodId.slice(0, 8)}`,
         competitorProductTitle: productData[productIds.indexOf(prodId)].title,
-        competitorSku: `COMP-${(ci + 1)}-${matched.indexOf(prodId) + 1}`,
+        competitorSku: `COMP-${ci + 1}-${matched.indexOf(prodId) + 1}`,
         price: String(compPrice),
         currency: "USD",
         matchScore: rnd(0.72, 0.99),
@@ -275,7 +505,8 @@ async function seed() {
     for (let day = 90; day >= 0; day -= 2 + Math.floor(Math.random() * 2)) {
       // Price fluctuates slightly around the current price
       const variation = rnd(-0.05, 0.05);
-      const historicalPrice = Math.round(basePrice * (1 + variation) * 100) / 100;
+      const historicalPrice =
+        Math.round(basePrice * (1 + variation) * 100) / 100;
 
       await db.insert(schema.priceHistory).values({
         id: uid(),
@@ -300,7 +531,8 @@ async function seed() {
     if (compMatch.length > 0) {
       for (let day = 30; day >= 0; day -= 5) {
         const compVariation = rnd(-0.03, 0.08);
-        const compPrice = Math.round(basePrice * (1 + compVariation) * 100) / 100;
+        const compPrice =
+          Math.round(basePrice * (1 + compVariation) * 100) / 100;
         await db.insert(schema.priceHistory).values({
           id: uid(),
           productId: prodId,
@@ -321,23 +553,127 @@ async function seed() {
   const alertData: {
     title: string;
     message: string;
-    alertType: "price_drop" | "price_increase" | "competitor_change" | "threshold";
+    alertType:
+      | "price_drop"
+      | "price_increase"
+      | "competitor_change"
+      | "threshold";
     severity: "low" | "medium" | "high" | "critical";
     isRead: boolean;
     isResolved: boolean;
     triggerPrice: string;
     triggerCondition: string;
   }[] = [
-    { title: "Sony WH-1000XM5 price dropped 12%", message: "TechHaven dropped Sony WH-1000XM5 from $349.99 to $307.99. Consider matching or beating this price.", alertType: "price_drop", severity: "high", isRead: false, isResolved: false, triggerPrice: "307.99", triggerCondition: "below" },
-    { title: "Levi's 501 Jeans overpriced vs market", message: "Our price ($69.50) is 15% higher than FashionForward ($59.99). Risk of losing sales.", alertType: "competitor_change", severity: "medium", isRead: true, isResolved: false, triggerPrice: "59.99", triggerCondition: "below" },
-    { title: "Adidas Ultraboost 23 - critical alert", message: "SportZone is selling Adidas Ultraboost 23 for $159.99, 15% below our $190.00. Immediate action recommended.", alertType: "price_drop", severity: "critical", isRead: false, isResolved: false, triggerPrice: "159.99", triggerCondition: "below" },
-    { title: "Garmin Forerunner 965 price threshold breached", message: "Garmin Forerunner 965 dropped below $450 threshold at SportZone ($429.99).", alertType: "threshold", severity: "high", isRead: false, isResolved: false, triggerPrice: "429.99", triggerCondition: "below" },
-    { title: "Dyson V15 underpriced opportunity", message: "Our Dyson V15 ($749.99) is priced below HomeEssentials ($799.99). Room to increase margin.", alertType: "competitor_change", severity: "low", isRead: true, isResolved: true, triggerPrice: "799.99", triggerCondition: "above" },
-    { title: "Nike Air Max 270 competitor price increase", message: "FashionForward raised Nike Air Max 270 from $145.00 to $160.00. Our $150.00 is now competitive.", alertType: "price_increase", severity: "low", isRead: true, isResolved: true, triggerPrice: "160.00", triggerCondition: "above" },
-    { title: "Samsung Galaxy Watch 6 underpriced", message: "Samsung Galaxy Watch 6 Classic is priced $40 below market average. Consider raising to $369.99.", alertType: "competitor_change", severity: "medium", isRead: false, isResolved: false, triggerPrice: "369.99", triggerCondition: "above" },
-    { title: "Ninja Foodi overpriced vs HomeEssentials", message: "HomeEssentials sells Ninja Foodi for $219.99 vs our $249.99. 12% price gap detected.", alertType: "competitor_change", severity: "medium", isRead: true, isResolved: false, triggerPrice: "219.99", triggerCondition: "below" },
-    { title: "Peloton Bike+ price match opportunity", message: "SportZone has Peloton Bike+ at $2,395.00 vs our $2,495.00. Consider matching.", alertType: "price_drop", severity: "low", isRead: false, isResolved: false, triggerPrice: "2395.00", triggerCondition: "below" },
-    { title: "QuickBuy scrape failed", message: "Failed to scrape QuickBuy after 3 retries. Last error: Connection timeout after 30s.", alertType: "competitor_change", severity: "high", isRead: false, isResolved: false, triggerPrice: null, triggerCondition: null },
+    {
+      title: "Sony WH-1000XM5 price dropped 12%",
+      message:
+        "TechHaven dropped Sony WH-1000XM5 from $349.99 to $307.99. Consider matching or beating this price.",
+      alertType: "price_drop",
+      severity: "high",
+      isRead: false,
+      isResolved: false,
+      triggerPrice: "307.99",
+      triggerCondition: "below",
+    },
+    {
+      title: "Levi's 501 Jeans overpriced vs market",
+      message:
+        "Our price ($69.50) is 15% higher than FashionForward ($59.99). Risk of losing sales.",
+      alertType: "competitor_change",
+      severity: "medium",
+      isRead: true,
+      isResolved: false,
+      triggerPrice: "59.99",
+      triggerCondition: "below",
+    },
+    {
+      title: "Adidas Ultraboost 23 - critical alert",
+      message:
+        "SportZone is selling Adidas Ultraboost 23 for $159.99, 15% below our $190.00. Immediate action recommended.",
+      alertType: "price_drop",
+      severity: "critical",
+      isRead: false,
+      isResolved: false,
+      triggerPrice: "159.99",
+      triggerCondition: "below",
+    },
+    {
+      title: "Garmin Forerunner 965 price threshold breached",
+      message:
+        "Garmin Forerunner 965 dropped below $450 threshold at SportZone ($429.99).",
+      alertType: "threshold",
+      severity: "high",
+      isRead: false,
+      isResolved: false,
+      triggerPrice: "429.99",
+      triggerCondition: "below",
+    },
+    {
+      title: "Dyson V15 underpriced opportunity",
+      message:
+        "Our Dyson V15 ($749.99) is priced below HomeEssentials ($799.99). Room to increase margin.",
+      alertType: "competitor_change",
+      severity: "low",
+      isRead: true,
+      isResolved: true,
+      triggerPrice: "799.99",
+      triggerCondition: "above",
+    },
+    {
+      title: "Nike Air Max 270 competitor price increase",
+      message:
+        "FashionForward raised Nike Air Max 270 from $145.00 to $160.00. Our $150.00 is now competitive.",
+      alertType: "price_increase",
+      severity: "low",
+      isRead: true,
+      isResolved: true,
+      triggerPrice: "160.00",
+      triggerCondition: "above",
+    },
+    {
+      title: "Samsung Galaxy Watch 6 underpriced",
+      message:
+        "Samsung Galaxy Watch 6 Classic is priced $40 below market average. Consider raising to $369.99.",
+      alertType: "competitor_change",
+      severity: "medium",
+      isRead: false,
+      isResolved: false,
+      triggerPrice: "369.99",
+      triggerCondition: "above",
+    },
+    {
+      title: "Ninja Foodi overpriced vs HomeEssentials",
+      message:
+        "HomeEssentials sells Ninja Foodi for $219.99 vs our $249.99. 12% price gap detected.",
+      alertType: "competitor_change",
+      severity: "medium",
+      isRead: true,
+      isResolved: false,
+      triggerPrice: "219.99",
+      triggerCondition: "below",
+    },
+    {
+      title: "Peloton Bike+ price match opportunity",
+      message:
+        "SportZone has Peloton Bike+ at $2,395.00 vs our $2,495.00. Consider matching.",
+      alertType: "price_drop",
+      severity: "low",
+      isRead: false,
+      isResolved: false,
+      triggerPrice: "2395.00",
+      triggerCondition: "below",
+    },
+    {
+      title: "QuickBuy scrape failed",
+      message:
+        "Failed to scrape QuickBuy after 3 retries. Last error: Connection timeout after 30s.",
+      alertType: "competitor_change",
+      severity: "high",
+      isRead: false,
+      isResolved: false,
+      triggerPrice: null,
+      triggerCondition: null,
+    },
   ];
 
   let alertIdx = 0;
@@ -377,16 +713,114 @@ async function seed() {
     status: "pending" | "implemented" | "dismissed";
     reason: string;
   }[] = [
-    { title: "Sony WH-1000XM5", currentPrice: "349.99", recommendedPrice: "319.99", priceChange: "-30.00", priceChangePercent: "-8.57", confidenceScore: 0.92, status: "pending", reason: "TechHaven dropped price to $307.99. Recommend matching at $319.99 to stay competitive while preserving margin." },
-    { title: "Levi's 501 Jeans", currentPrice: "69.50", recommendedPrice: "59.99", priceChange: "-9.51", priceChangePercent: "-13.68", confidenceScore: 0.88, status: "pending", reason: "FashionForward sells at $59.99. Our 15% premium is causing lost sales. Recommend matching." },
-    { title: "Samsung Galaxy Watch 6", currentPrice: "329.99", recommendedPrice: "359.99", priceChange: "30.00", priceChangePercent: "9.09", confidenceScore: 0.85, status: "pending", reason: "We are underpriced by $40 vs market. Competitors average $369.99. Room to increase." },
-    { title: "Adidas Ultraboost 23", currentPrice: "190.00", recommendedPrice: "164.99", priceChange: "-25.01", priceChangePercent: "-13.16", confidenceScore: 0.95, status: "pending", reason: "SportZone at $159.99. Critical price gap. Recommend $164.99 to undercut while maintaining margin." },
-    { title: "Dyson V15 Detect", currentPrice: "749.99", recommendedPrice: "779.99", priceChange: "30.00", priceChangePercent: "4.00", confidenceScore: 0.78, status: "implemented", reason: "HomeEssentials at $799.99. We can increase to $779.99 and still be competitive." },
-    { title: "Ninja Foodi Air Fryer", currentPrice: "249.99", recommendedPrice: "229.99", priceChange: "-20.00", priceChangePercent: "-8.00", confidenceScore: 0.82, status: "pending", reason: "HomeEssentials at $219.99. Recommend $229.99 to be competitive." },
-    { title: "Garmin Forerunner 965", currentPrice: "499.99", recommendedPrice: "449.99", priceChange: "-50.00", priceChangePercent: "-10.00", confidenceScore: 0.90, status: "pending", reason: "SportZone at $429.99. Recommend $449.99 to match market." },
-    { title: "Nike Air Max 270", currentPrice: "150.00", recommendedPrice: "155.00", priceChange: "5.00", priceChangePercent: "3.33", confidenceScore: 0.65, status: "dismissed", reason: "FashionForward raised to $160.00. Our $150.00 is already competitive. No action needed." },
-    { title: "Peloton Bike+", currentPrice: "2495.00", recommendedPrice: "2449.00", priceChange: "-46.00", priceChangePercent: "-1.84", confidenceScore: 0.71, status: "pending", reason: "SportZone at $2,395.00. Small gap, but recommend $2,449.00 to stay competitive." },
-    { title: "Bose QC Ultra Earbuds", currentPrice: "299.00", recommendedPrice: "289.00", priceChange: "-10.00", priceChangePercent: "-3.34", confidenceScore: 0.55, status: "dismissed", reason: "Low confidence match. Competitor data may not be for exact same SKU. Skipping." },
+    {
+      title: "Sony WH-1000XM5",
+      currentPrice: "349.99",
+      recommendedPrice: "319.99",
+      priceChange: "-30.00",
+      priceChangePercent: "-8.57",
+      confidenceScore: 0.92,
+      status: "pending",
+      reason:
+        "TechHaven dropped price to $307.99. Recommend matching at $319.99 to stay competitive while preserving margin.",
+    },
+    {
+      title: "Levi's 501 Jeans",
+      currentPrice: "69.50",
+      recommendedPrice: "59.99",
+      priceChange: "-9.51",
+      priceChangePercent: "-13.68",
+      confidenceScore: 0.88,
+      status: "pending",
+      reason:
+        "FashionForward sells at $59.99. Our 15% premium is causing lost sales. Recommend matching.",
+    },
+    {
+      title: "Samsung Galaxy Watch 6",
+      currentPrice: "329.99",
+      recommendedPrice: "359.99",
+      priceChange: "30.00",
+      priceChangePercent: "9.09",
+      confidenceScore: 0.85,
+      status: "pending",
+      reason:
+        "We are underpriced by $40 vs market. Competitors average $369.99. Room to increase.",
+    },
+    {
+      title: "Adidas Ultraboost 23",
+      currentPrice: "190.00",
+      recommendedPrice: "164.99",
+      priceChange: "-25.01",
+      priceChangePercent: "-13.16",
+      confidenceScore: 0.95,
+      status: "pending",
+      reason:
+        "SportZone at $159.99. Critical price gap. Recommend $164.99 to undercut while maintaining margin.",
+    },
+    {
+      title: "Dyson V15 Detect",
+      currentPrice: "749.99",
+      recommendedPrice: "779.99",
+      priceChange: "30.00",
+      priceChangePercent: "4.00",
+      confidenceScore: 0.78,
+      status: "implemented",
+      reason:
+        "HomeEssentials at $799.99. We can increase to $779.99 and still be competitive.",
+    },
+    {
+      title: "Ninja Foodi Air Fryer",
+      currentPrice: "249.99",
+      recommendedPrice: "229.99",
+      priceChange: "-20.00",
+      priceChangePercent: "-8.00",
+      confidenceScore: 0.82,
+      status: "pending",
+      reason: "HomeEssentials at $219.99. Recommend $229.99 to be competitive.",
+    },
+    {
+      title: "Garmin Forerunner 965",
+      currentPrice: "499.99",
+      recommendedPrice: "449.99",
+      priceChange: "-50.00",
+      priceChangePercent: "-10.00",
+      confidenceScore: 0.9,
+      status: "pending",
+      reason: "SportZone at $429.99. Recommend $449.99 to match market.",
+    },
+    {
+      title: "Nike Air Max 270",
+      currentPrice: "150.00",
+      recommendedPrice: "155.00",
+      priceChange: "5.00",
+      priceChangePercent: "3.33",
+      confidenceScore: 0.65,
+      status: "dismissed",
+      reason:
+        "FashionForward raised to $160.00. Our $150.00 is already competitive. No action needed.",
+    },
+    {
+      title: "Peloton Bike+",
+      currentPrice: "2495.00",
+      recommendedPrice: "2449.00",
+      priceChange: "-46.00",
+      priceChangePercent: "-1.84",
+      confidenceScore: 0.71,
+      status: "pending",
+      reason:
+        "SportZone at $2,395.00. Small gap, but recommend $2,449.00 to stay competitive.",
+    },
+    {
+      title: "Bose QC Ultra Earbuds",
+      currentPrice: "299.00",
+      recommendedPrice: "289.00",
+      priceChange: "-10.00",
+      priceChangePercent: "-3.34",
+      confidenceScore: 0.55,
+      status: "dismissed",
+      reason:
+        "Low confidence match. Competitor data may not be for exact same SKU. Skipping.",
+    },
   ];
 
   let recIdx = 0;
@@ -410,7 +844,10 @@ async function seed() {
       status: r.status,
       implementedAt: r.status === "implemented" ? daysAgo(rnd(1, 10)) : null,
       dismissedAt: r.status === "dismissed" ? daysAgo(rnd(1, 7)) : null,
-      potentialSavings: r.status === "implemented" ? String(Math.abs(Number(r.priceChange)) * rnd(5, 25)) : null,
+      potentialSavings:
+        r.status === "implemented"
+          ? String(Math.abs(Number(r.priceChange)) * rnd(5, 25))
+          : null,
       createdAt: daysAgo(rnd(0, 20)),
       updatedAt: daysAgo(rnd(0, 5)),
     });
@@ -423,7 +860,10 @@ async function seed() {
     const comp = competitorData[competitorIds.indexOf(compId)];
     const numJobs = 3 + Math.floor(Math.random() * 5);
     for (let j = 0; j < numJobs; j++) {
-      const status = j === 0 && comp.status === "active" ? "success" : pick(["success", "success", "success", "failed"]);
+      const status =
+        j === 0 && comp.status === "active"
+          ? "success"
+          : pick(["success", "success", "success", "failed"]);
       const startedAt = daysAgo(j * 3 + Math.floor(Math.random() * 2));
       const completedAt = new Date(startedAt.getTime() + rnd(5, 45) * 1000);
       await db.insert(schema.scrapeJobs).values({
@@ -434,7 +874,15 @@ async function seed() {
         completedAt,
         productsScraped: status === "success" ? Math.floor(rnd(5, 50)) : 0,
         productsUpdated: status === "success" ? Math.floor(rnd(3, 30)) : 0,
-        errorMessage: status === "failed" ? pick(["Connection timeout", "HTTP 429 rate limited", "Parse error: selector not found", "DNS resolution failed"]) : null,
+        errorMessage:
+          status === "failed"
+            ? pick([
+                "Connection timeout",
+                "HTTP 429 rate limited",
+                "Parse error: selector not found",
+                "DNS resolution failed",
+              ])
+            : null,
         metadata: { durationMs: completedAt.getTime() - startedAt.getTime() },
         createdAt: startedAt,
       });
@@ -443,23 +891,84 @@ async function seed() {
   console.log("✅ Scrape Jobs");
 
   // ── 12. Activity Logs ────────────────────────────────────────────────
-  const activityData: { action: string; entityType: string; detail: string }[] = [
-    { action: "Product synced from Shopify", entityType: "product", detail: "Sony WH-1000XM5 - price updated to $349.99" },
-    { action: "Competitor price detected", entityType: "competitor", detail: "TechHaven: Sony WH-1000XM5 at $307.99 (-12%)" },
-    { action: "Alert created", entityType: "alert", detail: "Critical: Adidas Ultraboost 23 price gap detected" },
-    { action: "Recommendation generated", entityType: "recommendation", detail: "Samsung Galaxy Watch 6: suggest $359.99 (+9.09%)" },
-    { action: "Scrape completed", entityType: "competitor", detail: "FashionForward: 28 products scraped, 19 updated" },
-    { action: "Price recommendation implemented", entityType: "recommendation", detail: "Dyson V15 price changed from $749.99 to $779.99" },
-    { action: "Alert resolved", entityType: "alert", detail: "Nike Air Max 270 competitor price increase - resolved" },
-    { action: "New competitor added", entityType: "competitor", detail: "SportZone (sportzone.com) added for monitoring" },
-    { action: "Product tracking enabled", entityType: "product", detail: "Garmin Forerunner 965 added to tracking" },
-    { action: "Scrape failed", entityType: "competitor", detail: "QuickBuy: Connection timeout after 30s" },
-    { action: "Bulk price sync completed", entityType: "product", detail: "18 products synced from Shopify store" },
-    { action: "Recommendation dismissed", entityType: "recommendation", detail: "Bose QC Ultra Earbuds - low confidence match" },
-    { action: "Alert created", entityType: "alert", detail: "High: Levi's 501 Jeans overpriced vs FashionForward" },
-    { action: "Competitor scrape started", entityType: "competitor", detail: "HomeEssentials: scraping 42 product pages" },
-    { action: "Product created", entityType: "product", detail: "Peloton Bike+ added at $2,495.00" },
-  ];
+  const activityData: { action: string; entityType: string; detail: string }[] =
+    [
+      {
+        action: "Product synced from Shopify",
+        entityType: "product",
+        detail: "Sony WH-1000XM5 - price updated to $349.99",
+      },
+      {
+        action: "Competitor price detected",
+        entityType: "competitor",
+        detail: "TechHaven: Sony WH-1000XM5 at $307.99 (-12%)",
+      },
+      {
+        action: "Alert created",
+        entityType: "alert",
+        detail: "Critical: Adidas Ultraboost 23 price gap detected",
+      },
+      {
+        action: "Recommendation generated",
+        entityType: "recommendation",
+        detail: "Samsung Galaxy Watch 6: suggest $359.99 (+9.09%)",
+      },
+      {
+        action: "Scrape completed",
+        entityType: "competitor",
+        detail: "FashionForward: 28 products scraped, 19 updated",
+      },
+      {
+        action: "Price recommendation implemented",
+        entityType: "recommendation",
+        detail: "Dyson V15 price changed from $749.99 to $779.99",
+      },
+      {
+        action: "Alert resolved",
+        entityType: "alert",
+        detail: "Nike Air Max 270 competitor price increase - resolved",
+      },
+      {
+        action: "New competitor added",
+        entityType: "competitor",
+        detail: "SportZone (sportzone.com) added for monitoring",
+      },
+      {
+        action: "Product tracking enabled",
+        entityType: "product",
+        detail: "Garmin Forerunner 965 added to tracking",
+      },
+      {
+        action: "Scrape failed",
+        entityType: "competitor",
+        detail: "QuickBuy: Connection timeout after 30s",
+      },
+      {
+        action: "Bulk price sync completed",
+        entityType: "product",
+        detail: "18 products synced from Shopify store",
+      },
+      {
+        action: "Recommendation dismissed",
+        entityType: "recommendation",
+        detail: "Bose QC Ultra Earbuds - low confidence match",
+      },
+      {
+        action: "Alert created",
+        entityType: "alert",
+        detail: "High: Levi's 501 Jeans overpriced vs FashionForward",
+      },
+      {
+        action: "Competitor scrape started",
+        entityType: "competitor",
+        detail: "HomeEssentials: scraping 42 product pages",
+      },
+      {
+        action: "Product created",
+        entityType: "product",
+        detail: "Peloton Bike+ added at $2,495.00",
+      },
+    ];
 
   for (const a of activityData) {
     await db.insert(schema.activityLogs).values({
@@ -494,7 +1003,9 @@ async function seed() {
   console.log("🎉 Seed complete! Summary:");
   console.log("   1 user (demo@priceintelligence.com)");
   console.log("   1 Shopify store");
-  console.log(`   ${productIds.length} products (Electronics, Clothing, Home & Garden, Sports)`);
+  console.log(
+    `   ${productIds.length} products (Electronics, Clothing, Home & Garden, Sports)`
+  );
   console.log(`   ${competitorIds.length} competitors`);
   console.log(`   ${matchCount} competitor product matches`);
   console.log(`   ${priceHistoryCount} price history records`);
@@ -508,7 +1019,7 @@ async function seed() {
   await pool.end();
 }
 
-seed().catch((e) => {
+seed().catch(e => {
   console.error("❌ Seed failed:", e);
   pool.end();
   process.exit(1);

@@ -76,7 +76,10 @@ function simplifyCategory(category: string): string {
 }
 
 /** Assign a status based on rating and discount */
-function assignStatus(rating: number, discountPct: number): "optimal" | "underpriced" | "overpriced" | "alert" {
+function assignStatus(
+  rating: number,
+  discountPct: number
+): "optimal" | "underpriced" | "overpriced" | "alert" {
   if (rating < 3.0) return "alert";
   if (discountPct > 70) return "underpriced";
   if (discountPct < 20) return "overpriced";
@@ -94,14 +97,17 @@ async function seed() {
     if (existingUsers.length === 0) {
       logger.info("👤 Creating default admin user...");
       const passwordHash = await bcrypt.hash("admin123", 12);
-      const [user] = await db.insert(schema.users).values({
-        openId: "local_admin_001",
-        email: "admin@example.com",
-        passwordHash,
-        name: "Admin User",
-        loginMethod: "email",
-        role: "admin",
-      }).returning();
+      const [user] = await db
+        .insert(schema.users)
+        .values({
+          openId: "local_admin_001",
+          email: "admin@example.com",
+          passwordHash,
+          name: "Admin User",
+          loginMethod: "email",
+          role: "admin",
+        })
+        .returning();
       userId = user.id;
       logger.info(`✅ Created admin user: ${user.email}`);
     } else {
@@ -111,17 +117,21 @@ async function seed() {
 
     // 2. Create a shopify store for the user
     logger.info("🏪 Creating mock Shopify store...");
-    const [store] = await db.insert(schema.shopifyStores).values({
-      userId,
-      shopDomain: "pricevision-demo.myshopify.com",
-      storeName: "PriceVision Demo Store",
-      currency: "USD",
-      isActive: true,
-      scopes: "read_products,write_products",
-    }).onConflictDoUpdate({
-      target: schema.shopifyStores.shopDomain,
-      set: { updatedAt: new Date() }
-    }).returning();
+    const [store] = await db
+      .insert(schema.shopifyStores)
+      .values({
+        userId,
+        shopDomain: "pricevision-demo.myshopify.com",
+        storeName: "PriceVision Demo Store",
+        currency: "USD",
+        isActive: true,
+        scopes: "read_products,write_products",
+      })
+      .onConflictDoUpdate({
+        target: schema.shopifyStores.shopDomain,
+        set: { updatedAt: new Date() },
+      })
+      .returning();
     logger.info(`✅ Store created/updated: ${store.shopDomain}`);
 
     // 3. Create competitors
@@ -129,17 +139,20 @@ async function seed() {
     const competitorData = [
       { name: "Amazon", domain: "amazon.com" },
       { name: "Walmart", domain: "walmart.com" },
-      { name: "Best Buy", domain: "bestbuy.com" }
+      { name: "Best Buy", domain: "bestbuy.com" },
     ];
 
     const competitors = [];
     for (const comp of competitorData) {
-      const [inserted] = await db.insert(schema.competitors).values({
-        userId,
-        name: comp.name,
-        domain: comp.domain,
-        status: "active",
-      }).returning();
+      const [inserted] = await db
+        .insert(schema.competitors)
+        .values({
+          userId,
+          name: comp.name,
+          domain: comp.domain,
+          status: "active",
+        })
+        .returning();
       competitors.push(inserted);
     }
     logger.info(`✅ Created ${competitors.length} competitors`);
@@ -190,7 +203,9 @@ async function seed() {
 
       const discountPct = parseDiscount(fields[colDiscount] || "0");
       const rating = parseFloat(fields[colRating] || "0") || 0;
-      const title = (fields[colName] || `Amazon Product ${fields[colProductId] || i}`).slice(0, 500);
+      const title = (
+        fields[colName] || `Amazon Product ${fields[colProductId] || i}`
+      ).slice(0, 500);
       const category = simplifyCategory(rawCategory);
       const status = assignStatus(rating, parseFloat(discountPct));
 
@@ -213,40 +228,56 @@ async function seed() {
       if (batch.length >= BATCH && amazonCount < MAX_AMAZON_PRODUCTS) {
         const remaining = MAX_AMAZON_PRODUCTS - amazonCount;
         const toInsert = batch.slice(0, remaining);
-        const inserted = await db.insert(schema.products).values(toInsert).returning();
+        const inserted = await db
+          .insert(schema.products)
+          .values(toInsert)
+          .returning();
         amazonCount += inserted.length;
         batch.length = 0;
-        process.stdout.write(`\r   Inserted ${amazonCount} / ${MAX_AMAZON_PRODUCTS} Amazon products...`);
+        process.stdout.write(
+          `\r   Inserted ${amazonCount} / ${MAX_AMAZON_PRODUCTS} Amazon products...`
+        );
       }
     }
 
     // Flush final batch
     if (batch.length > 0 && amazonCount < MAX_AMAZON_PRODUCTS) {
       const remaining = MAX_AMAZON_PRODUCTS - amazonCount;
-      const inserted = await db.insert(schema.products).values(batch.slice(0, remaining)).returning();
+      const inserted = await db
+        .insert(schema.products)
+        .values(batch.slice(0, remaining))
+        .returning();
       amazonCount += inserted.length;
     }
 
-    logger.info(`\n✅ Seeded ${amazonCount} Amazon products from CSV (Electronics only, capped at ${MAX_AMAZON_PRODUCTS})`);
+    logger.info(
+      `\n✅ Seeded ${amazonCount} Amazon products from CSV (Electronics only, capped at ${MAX_AMAZON_PRODUCTS})`
+    );
 
     // 6. Create notification preferences for the user
     logger.info("🔔 Creating notification preferences...");
-    await db.insert(schema.notificationPreferences).values({
-      userId,
-      emailNotifications: true,
-      inAppNotifications: true,
-      frequency: "realtime",
-      priceDropThreshold: "5.00",
-      priceIncreaseThreshold: "5.00",
-    }).onConflictDoUpdate({
-      target: schema.notificationPreferences.userId,
-      set: { updatedAt: new Date() }
-    });
+    await db
+      .insert(schema.notificationPreferences)
+      .values({
+        userId,
+        emailNotifications: true,
+        inAppNotifications: true,
+        frequency: "realtime",
+        priceDropThreshold: "5.00",
+        priceIncreaseThreshold: "5.00",
+      })
+      .onConflictDoUpdate({
+        target: schema.notificationPreferences.userId,
+        set: { updatedAt: new Date() },
+      });
     logger.info("✅ Notification preferences created");
 
     // 7. Create sample alerts
     logger.info("🚨 Creating sample alerts...");
-    const allProducts = await db.select().from(schema.products).where(eq(schema.products.userId, userId));
+    const allProducts = await db
+      .select()
+      .from(schema.products)
+      .where(eq(schema.products.userId, userId));
     const sampleAlerts = [
       {
         userId,
@@ -328,8 +359,13 @@ async function seed() {
         priceChange: "-10.00",
         priceChangePercent: "-7.69",
         confidenceScore: 0.92,
-        reason: "Amazon is pricing 8% lower. Matching their price could increase conversion by ~12%.",
-        factors: JSON.stringify({ competitorAvg: 119.5, demandTrend: "rising", marginImpact: "minimal" }),
+        reason:
+          "Amazon is pricing 8% lower. Matching their price could increase conversion by ~12%.",
+        factors: JSON.stringify({
+          competitorAvg: 119.5,
+          demandTrend: "rising",
+          marginImpact: "minimal",
+        }),
         status: "pending" as const,
         potentialSavings: "500.00",
       },
@@ -341,8 +377,13 @@ async function seed() {
         priceChange: "-5.00",
         priceChangePercent: "-6.25",
         confidenceScore: 0.85,
-        reason: "Walmart undercut by $5. Price elasticity analysis suggests 15% volume increase at lower price.",
-        factors: JSON.stringify({ competitorAvg: 75.0, demandTrend: "stable", marginImpact: "low" }),
+        reason:
+          "Walmart undercut by $5. Price elasticity analysis suggests 15% volume increase at lower price.",
+        factors: JSON.stringify({
+          competitorAvg: 75.0,
+          demandTrend: "stable",
+          marginImpact: "low",
+        }),
         status: "pending" as const,
         potentialSavings: "250.00",
       },
@@ -354,8 +395,13 @@ async function seed() {
         priceChange: "20.00",
         priceChangePercent: "5.71",
         confidenceScore: 0.78,
-        reason: "You are underpriced vs market average of $365. Raising price could improve margin without volume loss.",
-        factors: JSON.stringify({ competitorAvg: 365.0, demandTrend: "rising", marginImpact: "positive" }),
+        reason:
+          "You are underpriced vs market average of $365. Raising price could improve margin without volume loss.",
+        factors: JSON.stringify({
+          competitorAvg: 365.0,
+          demandTrend: "rising",
+          marginImpact: "positive",
+        }),
         status: "pending" as const,
         potentialSavings: "1200.00",
       },
@@ -366,16 +412,43 @@ async function seed() {
         await db.insert(schema.recommendations).values(rec);
       }
     }
-    logger.info(`✅ Created ${sampleRecommendations.length} sample recommendations`);
+    logger.info(
+      `✅ Created ${sampleRecommendations.length} sample recommendations`
+    );
 
     // 9. Create activity logs
     logger.info("📋 Creating activity logs...");
     const sampleActivities = [
-      { action: "product.created", entityType: "product", entityId: allProducts[0]?.id, detail: `Created product: ${allProducts[0]?.title}` },
-      { action: "competitor.added", entityType: "competitor", entityId: competitors[0]?.id, detail: `Added competitor: ${competitors[0]?.name}` },
-      { action: "alert.triggered", entityType: "alert", entityId: null, detail: "Price drop alert triggered for Mechanical Keyboard RGB" },
-      { action: "product.imported", entityType: "product", entityId: null, detail: `Imported ${amazonCount} products from Amazon CSV` },
-      { action: "store.connected", entityType: "shopify_store", entityId: store.id, detail: `Connected Shopify store: ${store.storeName}` },
+      {
+        action: "product.created",
+        entityType: "product",
+        entityId: allProducts[0]?.id,
+        detail: `Created product: ${allProducts[0]?.title}`,
+      },
+      {
+        action: "competitor.added",
+        entityType: "competitor",
+        entityId: competitors[0]?.id,
+        detail: `Added competitor: ${competitors[0]?.name}`,
+      },
+      {
+        action: "alert.triggered",
+        entityType: "alert",
+        entityId: null,
+        detail: "Price drop alert triggered for Mechanical Keyboard RGB",
+      },
+      {
+        action: "product.imported",
+        entityType: "product",
+        entityId: null,
+        detail: `Imported ${amazonCount} products from Amazon CSV`,
+      },
+      {
+        action: "store.connected",
+        entityType: "shopify_store",
+        entityId: store.id,
+        detail: `Connected Shopify store: ${store.storeName}`,
+      },
     ];
 
     for (const activity of sampleActivities) {
@@ -395,7 +468,10 @@ async function seed() {
   } catch (error) {
     logger.error({ err: error }, "❌ Seeding failed");
     if (error instanceof Error) {
-      logger.error({ message: error.message, stack: error.stack }, "Error details");
+      logger.error(
+        { message: error.message, stack: error.stack },
+        "Error details"
+      );
     }
   } finally {
     await pool.end();

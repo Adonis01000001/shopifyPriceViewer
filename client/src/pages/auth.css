@@ -27,9 +27,21 @@
   position: absolute;
   inset: 0;
   background:
-    radial-gradient(ellipse 80% 60% at 15% 20%, rgba(255, 177, 197, 0.08) 0%, transparent 60%),
-    radial-gradient(ellipse 60% 80% at 85% 80%, rgba(99, 224, 99, 0.04) 0%, transparent 60%),
-    radial-gradient(ellipse 40% 40% at 50% 50%, rgba(255, 177, 197, 0.03) 0%, transparent 50%);
+    radial-gradient(
+      ellipse 80% 60% at 15% 20%,
+      rgba(255, 177, 197, 0.08) 0%,
+      transparent 60%
+    ),
+    radial-gradient(
+      ellipse 60% 80% at 85% 80%,
+      rgba(99, 224, 99, 0.04) 0%,
+      transparent 60%
+    ),
+    radial-gradient(
+      ellipse 40% 40% at 50% 50%,
+      rgba(255, 177, 197, 0.03) 0%,
+      transparent 50%
+    );
   pointer-events: none;
 }
 
@@ -44,7 +56,11 @@
 .auth-bg-orb--1 {
   width: 500px;
   height: 500px;
-  background: radial-gradient(circle, rgba(186, 0, 92, 0.25) 0%, transparent 70%);
+  background: radial-gradient(
+    circle,
+    rgba(186, 0, 92, 0.25) 0%,
+    transparent 70%
+  );
   top: -10%;
   left: -8%;
   animation: auth-float 20s ease-in-out infinite;
@@ -53,7 +69,11 @@
 .auth-bg-orb--2 {
   width: 450px;
   height: 450px;
-  background: radial-gradient(circle, rgba(33, 167, 50, 0.15) 0%, transparent 70%);
+  background: radial-gradient(
+    circle,
+    rgba(33, 167, 50, 0.15) 0%,
+    transparent 70%
+  );
   bottom: -15%;
   right: -5%;
   animation: auth-float 25s ease-in-out infinite reverse;
@@ -62,16 +82,27 @@
 .auth-bg-orb--3 {
   width: 300px;
   height: 300px;
-  background: radial-gradient(circle, rgba(255, 177, 197, 0.12) 0%, transparent 70%);
+  background: radial-gradient(
+    circle,
+    rgba(255, 177, 197, 0.12) 0%,
+    transparent 70%
+  );
   top: 40%;
   left: 60%;
   animation: auth-float 18s ease-in-out infinite 3s;
 }
 
 @keyframes auth-float {
-  0%, 100% { transform: translate(0, 0) scale(1); }
-  33% { transform: translate(20px, -15px) scale(1.03); }
-  66% { transform: translate(-15px, 10px) scale(0.97); }
+  0%,
+  100% {
+    transform: translate(0, 0) scale(1);
+  }
+  33% {
+    transform: translate(20px, -15px) scale(1.03);
+  }
+  66% {
+    transform: translate(-15px, 10px) scale(0.97);
+  }
 }
 
 /* ── Grid pattern overlay ────────────────────────────── */
@@ -83,8 +114,16 @@
     linear-gradient(rgba(255, 177, 197, 0.03) 1px, transparent 1px),
     linear-gradient(90deg, rgba(255, 177, 197, 0.03) 1px, transparent 1px);
   background-size: 48px 48px;
-  mask-image: radial-gradient(ellipse 70% 70% at 50% 50%, black 30%, transparent 100%);
-  -webkit-mask-image: radial-gradient(ellipse 70% 70% at 50% 50%, black 30%, transparent 100%);
+  mask-image: radial-gradient(
+    ellipse 70% 70% at 50% 50%,
+    black 30%,
+    transparent 100%
+  );
+  -webkit-mask-image: radial-gradient(
+    ellipse 70% 70% at 50% 50%,
+    black 30%,
+    transparent 100%
+  );
   pointer-events: none;
 }
 
@@ -131,8 +170,16 @@
   position: absolute;
   inset: 0;
   background:
-    radial-gradient(ellipse 180px 180px at 75% 25%, rgba(186, 0, 92, 0.08) 0%, transparent 100%),
-    radial-gradient(ellipse 120px 120px at 25% 75%, rgba(33, 167, 50, 0.04) 0%, transparent 100%);
+    radial-gradient(
+      ellipse 180px 180px at 75% 25%,
+      rgba(186, 0, 92, 0.08) 0%,
+      transparent 100%
+    ),
+    radial-gradient(
+      ellipse 120px 120px at 25% 75%,
+      rgba(33, 167, 50, 0.04) 0%,
+      transparent 100%
+    );
   pointer-events: none;
 }
 
@@ -376,7 +423,12 @@
   content: "";
   position: absolute;
   inset: 0;
-  background: linear-gradient(135deg, transparent 0%, rgba(255, 255, 255, 0.08) 50%, transparent 100%);
+  background: linear-gradient(
+    135deg,
+    transparent 0%,
+    rgba(255, 255, 255, 0.08) 50%,
+    transparent 100%
+  );
   opacity: 0;
   transition: opacity 0.3s;
 }
@@ -410,7 +462,9 @@
 }
 
 @keyframes auth-spin {
-  to { transform: rotate(360deg); }
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 /* ── Footer ──────────────────────────────────────────── */
@@ -451,7 +505,11 @@
   height: 120px;
   top: 8%;
   right: 12%;
-  background: radial-gradient(circle, rgba(255, 177, 197, 0.06) 0%, transparent 70%);
+  background: radial-gradient(
+    circle,
+    rgba(255, 177, 197, 0.06) 0%,
+    transparent 70%
+  );
   border: 1px solid rgba(255, 175, 197, 0.04);
   animation: auth-float 15s ease-in-out infinite;
 }
@@ -461,7 +519,11 @@
   height: 80px;
   bottom: 12%;
   left: 8%;
-  background: radial-gradient(circle, rgba(99, 224, 99, 0.04) 0%, transparent 70%);
+  background: radial-gradient(
+    circle,
+    rgba(99, 224, 99, 0.04) 0%,
+    transparent 70%
+  );
   border: 1px solid rgba(99, 224, 99, 0.03);
   animation: auth-float 20s ease-in-out infinite reverse;
 }

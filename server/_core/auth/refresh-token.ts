@@ -22,7 +22,9 @@ export async function createRefreshToken(userId: string): Promise<string> {
   return raw;
 }
 
-export async function rotateRefreshToken(oldRaw: string): Promise<{ newRefresh: string; userId: string } | null> {
+export async function rotateRefreshToken(
+  oldRaw: string
+): Promise<{ newRefresh: string; userId: string } | null> {
   const oldHash = hashToken(oldRaw);
   const database = await requireDb();
 
@@ -31,11 +33,13 @@ export async function rotateRefreshToken(oldRaw: string): Promise<{ newRefresh: 
   const result = await database
     .select()
     .from(refreshTokens)
-    .where(and(
-      eq(refreshTokens.tokenHash, oldHash),
-      isNull(refreshTokens.revokedAt),
-      gt(refreshTokens.expiresAt, now),
-    ))
+    .where(
+      and(
+        eq(refreshTokens.tokenHash, oldHash),
+        isNull(refreshTokens.revokedAt),
+        gt(refreshTokens.expiresAt, now)
+      )
+    )
     .limit(1);
   const existing = result[0];
 
@@ -55,12 +59,16 @@ export async function rotateRefreshToken(oldRaw: string): Promise<{ newRefresh: 
 export function revokeRefreshToken(raw: string): void {
   // Fire-and-forget revocation — caller doesn't need to await
   const tokenHash = hashToken(raw);
-  requireDb().then(database =>
-    database
-      .update(refreshTokens)
-      .set({ revokedAt: new Date() })
-      .where(eq(refreshTokens.tokenHash, tokenHash))
-  ).catch(() => { /* best-effort */ });
+  requireDb()
+    .then(database =>
+      database
+        .update(refreshTokens)
+        .set({ revokedAt: new Date() })
+        .where(eq(refreshTokens.tokenHash, tokenHash))
+    )
+    .catch(() => {
+      /* best-effort */
+    });
 }
 
 export async function revokeAllUserTokens(userId: string): Promise<void> {
@@ -68,7 +76,9 @@ export async function revokeAllUserTokens(userId: string): Promise<void> {
   await database
     .update(refreshTokens)
     .set({ revokedAt: new Date() })
-    .where(and(eq(refreshTokens.userId, userId), isNull(refreshTokens.revokedAt)));
+    .where(
+      and(eq(refreshTokens.userId, userId), isNull(refreshTokens.revokedAt))
+    );
 }
 
 /** Cleanup expired tokens — run periodically (e.g., via cron). */

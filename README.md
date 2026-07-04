@@ -4,14 +4,14 @@ A full-stack SaaS platform for competitive price monitoring and optimization, in
 
 ## Tech Stack
 
-| Layer | Technology |
-|-------|-----------|
-| **Frontend** | React 19, Vite 7, Wouter (routing), shadcn/ui, Tailwind CSS 4, Recharts |
-| **Backend** | Express 4, tRPC 11, Drizzle ORM, PostgreSQL (node-pg) |
-| **Auth** | JWT (jose 6.1.0), bcrypt (12 rounds), Shopify OAuth 2.0 |
-| **Crypto** | AES-256-CBC (token encryption via PBKDF2-derived key), HMAC-SHA256 (Shopify verification) |
-| **Security** | Helmet (headers), CORS, CSRF (csrf-csrf), rate-limiting |
-| **Validation** | Zod (tRPC inputs) |
+| Layer          | Technology                                                                                |
+| -------------- | ----------------------------------------------------------------------------------------- |
+| **Frontend**   | React 19, Vite 7, Wouter (routing), shadcn/ui, Tailwind CSS 4, Recharts                   |
+| **Backend**    | Express 4, tRPC 11, Drizzle ORM, PostgreSQL (node-pg)                                     |
+| **Auth**       | JWT (jose 6.1.0), bcrypt (12 rounds), Shopify OAuth 2.0                                   |
+| **Crypto**     | AES-256-CBC (token encryption via PBKDF2-derived key), HMAC-SHA256 (Shopify verification) |
+| **Security**   | Helmet (headers), CORS, CSRF (csrf-csrf), rate-limiting                                   |
+| **Validation** | Zod (tRPC inputs)                                                                         |
 
 ## Project Structure
 
@@ -64,6 +64,7 @@ pnpm db:seed      # Seed database
 ```
 
 ### Prerequisites
+
 - Node.js 18+
 - pnpm 10+
 - PostgreSQL 14+
@@ -71,6 +72,7 @@ pnpm db:seed      # Seed database
 ### Initial Setup
 
 1. Copy `.env.example` to `.env` and configure:
+
 ```bash
 DATABASE_URL=postgresql://user:password@localhost:5432/priceviewer
 JWT_SECRET=your-64-char-hex-secret-here
@@ -80,17 +82,20 @@ SHOPIFY_API_SECRET=your_shopify_secret
 ```
 
 2. Generate secrets:
+
 ```bash
 node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
 ```
 
 3. Run migrations and seed:
+
 ```bash
 pnpm db:push
 pnpm db:seed
 ```
 
 4. Start development:
+
 ```bash
 pnpm dev
 ```
@@ -100,12 +105,14 @@ pnpm dev
 All API endpoints are exposed via tRPC at `/api/trpc`.
 
 ### Auth
+
 - `auth.me` — Get current user
 - `auth.register` — Register with email + password
 - `auth.login` — Login with email + password
 - `auth.logout` — Clear session cookie
 
 ### Products
+
 - `products.list` — List products (paginated: limit/offset)
 - `products.count` — Get total product count
 - `products.getById` — Get single product
@@ -118,6 +125,7 @@ All API endpoints are exposed via tRPC at `/api/trpc`.
 - `products.bulkSync` — Bulk upsert from Shopify
 
 ### Competitors
+
 - `competitors.list` — List competitors (paginated)
 - `competitors.count` — Get total competitor count
 - `competitors.getById` — Get single competitor
@@ -130,6 +138,7 @@ All API endpoints are exposed via tRPC at `/api/trpc`.
 - `competitors.products` — Get matched products for a competitor
 
 ### Alerts
+
 - `alerts.list` — List alerts (paginated, filterable by unread)
 - `alerts.count` — Get total alert count
 - `alerts.stats` — Alert statistics
@@ -139,11 +148,13 @@ All API endpoints are exposed via tRPC at `/api/trpc`.
 - `alerts.delete` — Delete alert
 
 ### Prices
+
 - `prices.history` — Get price history for a product
 - `prices.summary` — Get price summary (min/max/avg)
 - `prices.trend` — Get trend data for charts
 
 ### Recommendations
+
 - `recommendations.list` — List recommendations
 - `recommendations.getByProduct` — Get recommendations for a product
 - `recommendations.implement` — Apply a recommendation
@@ -152,6 +163,7 @@ All API endpoints are exposed via tRPC at `/api/trpc`.
 - `recommendations.stats` — Recommendation statistics
 
 ### Shopify
+
 - `shopify.listStores` — List connected stores
 - `shopify.connect` — Connect a new store (OAuth)
 - `shopify.disconnect` — Disconnect a store

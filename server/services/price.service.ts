@@ -25,8 +25,10 @@ export const priceService = {
     if (product.length === 0) return [];
 
     const conditions = [eq(priceHistory.productId, productId)];
-    if (options?.fromDate) conditions.push(gte(priceHistory.recordedAt, options.fromDate));
-    if (options?.toDate) conditions.push(lte(priceHistory.recordedAt, options.toDate));
+    if (options?.fromDate)
+      conditions.push(gte(priceHistory.recordedAt, options.fromDate));
+    if (options?.toDate)
+      conditions.push(lte(priceHistory.recordedAt, options.toDate));
 
     return database
       .select()
@@ -58,7 +60,12 @@ export const priceService = {
         count: sql<number>`count(*)::int`,
       })
       .from(priceHistory)
-      .where(and(eq(priceHistory.productId, productId), gte(priceHistory.recordedAt, thirtyDaysAgo)))
+      .where(
+        and(
+          eq(priceHistory.productId, productId),
+          gte(priceHistory.recordedAt, thirtyDaysAgo)
+        )
+      )
       .limit(1);
 
     const latest = await database
@@ -88,7 +95,10 @@ export const priceService = {
   async bulkRecord(items: InsertPriceHistory[]): Promise<number> {
     if (items.length === 0) return 0;
     const database = await requireDb();
-    const result = await database.insert(priceHistory).values(items).returning();
+    const result = await database
+      .insert(priceHistory)
+      .values(items)
+      .returning();
     return result.length;
   },
 
@@ -106,7 +116,12 @@ export const priceService = {
         maxPrice: sql<number>`max(${priceHistory.price})`,
       })
       .from(priceHistory)
-      .where(and(eq(priceHistory.productId, productId), gte(priceHistory.recordedAt, fromDate)))
+      .where(
+        and(
+          eq(priceHistory.productId, productId),
+          gte(priceHistory.recordedAt, fromDate)
+        )
+      )
       .groupBy(sql`date_trunc('month', ${priceHistory.recordedAt})`)
       .orderBy(sql`date_trunc('month', ${priceHistory.recordedAt})`);
   },

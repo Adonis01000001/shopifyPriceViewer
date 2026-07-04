@@ -5,6 +5,7 @@ import {
   competitorDiscoveries,
   competitors,
   products,
+  alerts,
   type CompetitorDiscovery,
   type InsertCompetitorDiscovery,
 } from "../../drizzle/schema";
@@ -39,16 +40,76 @@ interface SearchConfig {
 }
 
 const COUNTRY_CONFIG: Record<string, SearchConfig> = {
-  US: { country: "US", language: "en", googleDomain: "google.com", gl: "us", hl: "en" },
-  GB: { country: "GB", language: "en", googleDomain: "google.co.uk", gl: "uk", hl: "en" },
-  DE: { country: "DE", language: "de", googleDomain: "google.de", gl: "de", hl: "de" },
-  FR: { country: "FR", language: "fr", googleDomain: "google.fr", gl: "fr", hl: "fr" },
-  CA: { country: "CA", language: "en", googleDomain: "google.ca", gl: "ca", hl: "en" },
-  AU: { country: "AU", language: "en", googleDomain: "google.com.au", gl: "au", hl: "en" },
-  JP: { country: "JP", language: "ja", googleDomain: "google.co.jp", gl: "jp", hl: "ja" },
-  BR: { country: "BR", language: "pt", googleDomain: "google.com.br", gl: "br", hl: "pt" },
-  IN: { country: "IN", language: "en", googleDomain: "google.co.in", gl: "in", hl: "en" },
-  NL: { country: "NL", language: "nl", googleDomain: "google.nl", gl: "nl", hl: "nl" },
+  US: {
+    country: "US",
+    language: "en",
+    googleDomain: "google.com",
+    gl: "us",
+    hl: "en",
+  },
+  GB: {
+    country: "GB",
+    language: "en",
+    googleDomain: "google.co.uk",
+    gl: "uk",
+    hl: "en",
+  },
+  DE: {
+    country: "DE",
+    language: "de",
+    googleDomain: "google.de",
+    gl: "de",
+    hl: "de",
+  },
+  FR: {
+    country: "FR",
+    language: "fr",
+    googleDomain: "google.fr",
+    gl: "fr",
+    hl: "fr",
+  },
+  CA: {
+    country: "CA",
+    language: "en",
+    googleDomain: "google.ca",
+    gl: "ca",
+    hl: "en",
+  },
+  AU: {
+    country: "AU",
+    language: "en",
+    googleDomain: "google.com.au",
+    gl: "au",
+    hl: "en",
+  },
+  JP: {
+    country: "JP",
+    language: "ja",
+    googleDomain: "google.co.jp",
+    gl: "jp",
+    hl: "ja",
+  },
+  BR: {
+    country: "BR",
+    language: "pt",
+    googleDomain: "google.com.br",
+    gl: "br",
+    hl: "pt",
+  },
+  IN: {
+    country: "IN",
+    language: "en",
+    googleDomain: "google.co.in",
+    gl: "in",
+    hl: "en",
+  },
+  NL: {
+    country: "NL",
+    language: "nl",
+    googleDomain: "google.nl",
+    gl: "nl",
+    hl: "nl",
+  },
 };
 
 function getSearchConfig(country?: string, language?: string): SearchConfig {
@@ -66,7 +127,15 @@ function normalizeUrl(url: string): string {
   try {
     const u = new URL(url);
     u.hash = "";
-    for (const p of ["utm_source", "utm_medium", "utm_campaign", "utm_term", "utm_content", "ref", "referrer"]) {
+    for (const p of [
+      "utm_source",
+      "utm_medium",
+      "utm_campaign",
+      "utm_term",
+      "utm_content",
+      "ref",
+      "referrer",
+    ]) {
       u.searchParams.delete(p);
     }
     return u.toString().replace(/\/+$/, "").toLowerCase();
@@ -117,7 +186,7 @@ function buildSearchQueries(product: {
 
 async function searchWithFirecrawl(
   query: string,
-  numResults: number = 10,
+  numResults: number = 10
 ): Promise<DiscoveryCandidate[]> {
   if (!ENV.firecrawlApiKey) return [];
 
@@ -133,7 +202,15 @@ async function searchWithFirecrawl(
     });
 
     const candidates: DiscoveryCandidate[] = [];
-    const searchData = (result as unknown as { data?: Array<{ url?: string; title?: string; metadata?: { url?: string } }> }).data;
+    const searchData = (
+      result as unknown as {
+        data?: Array<{
+          url?: string;
+          title?: string;
+          metadata?: { url?: string };
+        }>;
+      }
+    ).data;
     if (searchData) {
       for (let i = 0; i < searchData.length; i++) {
         const item = searchData[i];
@@ -161,7 +238,7 @@ async function searchWithFirecrawl(
 async function searchWithSerpApi(
   query: string,
   config: SearchConfig,
-  numResults: number = 10,
+  numResults: number = 10
 ): Promise<DiscoveryCandidate[]> {
   if (!ENV.serpApiKey) return [];
 
@@ -188,7 +265,11 @@ async function searchWithSerpApi(
     const data = await response.json();
     const candidates: DiscoveryCandidate[] = [];
 
-    const organic = (data.organic_results ?? []) as Array<{ link?: string; title?: string; position?: number }>;
+    const organic = (data.organic_results ?? []) as Array<{
+      link?: string;
+      title?: string;
+      position?: number;
+    }>;
     for (const item of organic) {
       if (!item.link) continue;
       candidates.push({
@@ -200,7 +281,11 @@ async function searchWithSerpApi(
       });
     }
 
-    const shopping = (data.shopping_results ?? []) as Array<{ link?: string; title?: string; position?: number }>;
+    const shopping = (data.shopping_results ?? []) as Array<{
+      link?: string;
+      title?: string;
+      position?: number;
+    }>;
     for (const item of shopping) {
       if (!item.link) continue;
       candidates.push({
@@ -224,7 +309,7 @@ async function searchWithSerpApi(
 function scoreCandidate(
   candidate: DiscoveryCandidate,
   product: { title: string; brand?: string | null; sku?: string | null },
-  knownDomains: Set<string>,
+  knownDomains: Set<string>
 ): number {
   let score = candidate.confidence;
 
@@ -232,7 +317,10 @@ function scoreCandidate(
     score *= 0.3;
   }
 
-  const productWords = product.title.toLowerCase().split(/\s+/).filter(w => w.length > 2);
+  const productWords = product.title
+    .toLowerCase()
+    .split(/\s+/)
+    .filter(w => w.length > 2);
   const candidateTitle = candidate.title.toLowerCase();
   const matchedWords = productWords.filter(w => candidateTitle.includes(w));
   const titleOverlap = matchedWords.length / Math.max(productWords.length, 1);
@@ -240,7 +328,10 @@ function scoreCandidate(
 
   if (product.brand) {
     const brandLower = product.brand.toLowerCase();
-    if (candidateTitle.includes(brandLower) || candidate.domain.includes(brandLower)) {
+    if (
+      candidateTitle.includes(brandLower) ||
+      candidate.domain.includes(brandLower)
+    ) {
       score = Math.min(1.0, score + 0.15);
     }
   }
@@ -254,7 +345,7 @@ export const competitorDiscoveryService = {
   async discoverForProduct(
     userId: string,
     productId: string,
-    options?: { country?: string; language?: string; maxResults?: number },
+    options?: { country?: string; language?: string; maxResults?: number }
   ): Promise<DiscoveryResult> {
     const database: any = await requireDb();
 
@@ -274,13 +365,17 @@ export const competitorDiscoveryService = {
       .select({ domain: competitors.domain })
       .from(competitors)
       .where(eq(competitors.userId, userId));
-    const knownDomains = new Set<string>(existingCompetitors.map((c: any) => (c.domain as string).toLowerCase()));
+    const knownDomains = new Set<string>(
+      existingCompetitors.map((c: any) => (c.domain as string).toLowerCase())
+    );
 
     const existingDiscoveries = await database
       .select({ url: competitorDiscoveries.candidateUrl })
       .from(competitorDiscoveries)
       .where(eq(competitorDiscoveries.productId, productId));
-    const seenUrls = new Set<string>(existingDiscoveries.map((d: any) => normalizeUrl(d.url as string)));
+    const seenUrls = new Set<string>(
+      existingDiscoveries.map((d: any) => normalizeUrl(d.url as string))
+    );
 
     const allCandidates: DiscoveryCandidate[] = [];
     const seenCandidates = new Set<string>();
@@ -300,11 +395,15 @@ export const competitorDiscoveryService = {
         if (seenCandidates.has(normalized)) continue;
         seenCandidates.add(normalized);
 
-        candidate.confidence = scoreCandidate(candidate, {
-          title: product.title,
-          brand: product.vendor,
-          sku: product.sku,
-        }, knownDomains);
+        candidate.confidence = scoreCandidate(
+          candidate,
+          {
+            title: product.title,
+            brand: product.vendor,
+            sku: product.sku,
+          },
+          knownDomains
+        );
 
         allCandidates.push(candidate);
       }
@@ -313,10 +412,12 @@ export const competitorDiscoveryService = {
     allCandidates.sort((a, b) => b.confidence - a.confidence);
 
     const maxResults = options?.maxResults ?? 50;
-    const filtered = allCandidates.filter(c => {
-      const normalized = normalizeUrl(c.url);
-      return !seenUrls.has(normalized) && c.confidence >= 0.3;
-    }).slice(0, maxResults);
+    const filtered = allCandidates
+      .filter(c => {
+        const normalized = normalizeUrl(c.url);
+        return !seenUrls.has(normalized) && c.confidence >= 0.3;
+      })
+      .slice(0, maxResults);
 
     let newCount = 0;
     for (let fi = 0; fi < filtered.length; fi++) {
@@ -338,32 +439,72 @@ export const competitorDiscoveryService = {
         } as any);
         newCount++;
       } catch (err) {
-        logger.debug({ url: candidate.url, err }, "Skipping duplicate discovery");
+        logger.debug(
+          { url: candidate.url, err },
+          "Skipping duplicate discovery"
+        );
       }
     }
 
-    logger.info({ productId, totalFound: allCandidates.length, newCandidates: newCount }, "Competitor discovery completed");
+    // G3 — Create competitor_change alert if new candidates found
+    if (newCount > 0) {
+      try {
+        await database.insert(alerts).values({
+          userId,
+          productId,
+          alertType: "competitor_change",
+          severity: "low",
+          title: "New Competitors Discovered",
+          message: `Found ${newCount} potential competitor${newCount > 1 ? "s" : ""} for "${product.title}". Review and add them to tracking.`,
+        });
+      } catch {
+        // non-critical
+      }
+    }
 
-    return { productId, candidates: filtered, totalFound: allCandidates.length, newCandidates: newCount };
+    logger.info(
+      { productId, totalFound: allCandidates.length, newCandidates: newCount },
+      "Competitor discovery completed"
+    );
+
+    return {
+      productId,
+      candidates: filtered,
+      totalFound: allCandidates.length,
+      newCandidates: newCount,
+    };
   },
 
   async discoverForAllProducts(
     userId: string,
-    options?: { country?: string; language?: string },
+    options?: { country?: string; language?: string }
   ): Promise<DiscoveryResult[]> {
     const database = await requireDb();
     const userProducts = await database
       .select()
       .from(products)
-      .where(and(eq(products.userId, userId), eq(products.isActive, true), eq(products.isTracked, true)));
+      .where(
+        and(
+          eq(products.userId, userId),
+          eq(products.isActive, true),
+          eq(products.isTracked, true)
+        )
+      );
 
     const results: DiscoveryResult[] = [];
     for (const product of userProducts) {
       try {
-        const result = await this.discoverForProduct(userId, product.id, options);
+        const result = await this.discoverForProduct(
+          userId,
+          product.id,
+          options
+        );
         results.push(result);
       } catch (err) {
-        logger.warn({ productId: product.id, err }, "Discovery failed for product");
+        logger.warn(
+          { productId: product.id, err },
+          "Discovery failed for product"
+        );
       }
     }
     return results;
@@ -371,15 +512,25 @@ export const competitorDiscoveryService = {
 
   async getDiscoveries(
     userId: string,
-    options?: { productId?: string; status?: string; minConfidence?: number; limit?: number; offset?: number },
+    options?: {
+      productId?: string;
+      status?: string;
+      minConfidence?: number;
+      limit?: number;
+      offset?: number;
+    }
   ): Promise<CompetitorDiscovery[]> {
     const database = await requireDb();
     const conditions = [eq(competitorDiscoveries.userId, userId)];
 
-    if (options?.productId) conditions.push(eq(competitorDiscoveries.productId, options.productId));
-    if (options?.status) conditions.push(eq(competitorDiscoveries.status, options.status));
+    if (options?.productId)
+      conditions.push(eq(competitorDiscoveries.productId, options.productId));
+    if (options?.status)
+      conditions.push(eq(competitorDiscoveries.status, options.status));
     if (options?.minConfidence !== undefined) {
-      conditions.push(sql`${competitorDiscoveries.confidence} >= ${options.minConfidence}`);
+      conditions.push(
+        sql`${competitorDiscoveries.confidence} >= ${options.minConfidence}`
+      );
     }
 
     return database
@@ -391,22 +542,38 @@ export const competitorDiscoveryService = {
       .offset(options?.offset ?? 0);
   },
 
-  async approveDiscovery(userId: string, discoveryId: string): Promise<CompetitorDiscovery | undefined> {
+  async approveDiscovery(
+    userId: string,
+    discoveryId: string
+  ): Promise<CompetitorDiscovery | undefined> {
     const database = await requireDb();
     const result = await database
       .update(competitorDiscoveries)
       .set({ status: "verified" })
-      .where(and(eq(competitorDiscoveries.id, discoveryId), eq(competitorDiscoveries.userId, userId)))
+      .where(
+        and(
+          eq(competitorDiscoveries.id, discoveryId),
+          eq(competitorDiscoveries.userId, userId)
+        )
+      )
       .returning();
     return result[0];
   },
 
-  async rejectDiscovery(userId: string, discoveryId: string): Promise<CompetitorDiscovery | undefined> {
+  async rejectDiscovery(
+    userId: string,
+    discoveryId: string
+  ): Promise<CompetitorDiscovery | undefined> {
     const database = await requireDb();
     const result = await database
       .update(competitorDiscoveries)
       .set({ status: "rejected" })
-      .where(and(eq(competitorDiscoveries.id, discoveryId), eq(competitorDiscoveries.userId, userId)))
+      .where(
+        and(
+          eq(competitorDiscoveries.id, discoveryId),
+          eq(competitorDiscoveries.userId, userId)
+        )
+      )
       .returning();
     return result[0];
   },
@@ -423,7 +590,14 @@ export const competitorDiscoveryService = {
       .where(eq(competitorDiscoveries.userId, userId))
       .groupBy(competitorDiscoveries.status);
 
-    const stats = { total: 0, pending: 0, verified: 0, rejected: 0, imported: 0, avgConfidence: 0 };
+    const stats = {
+      total: 0,
+      pending: 0,
+      verified: 0,
+      rejected: 0,
+      imported: 0,
+      avgConfidence: 0,
+    };
     for (const row of result) {
       stats.total += row.count;
       if (row.status === "pending") stats.pending = row.count;

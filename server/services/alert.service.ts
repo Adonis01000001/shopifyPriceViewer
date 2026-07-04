@@ -1,13 +1,12 @@
 import { eq, and, desc, sql } from "drizzle-orm";
 import { requireDb } from "../_core/db-assert";
-import {
-  alerts,
-  type Alert,
-  type InsertAlert,
-} from "../../drizzle/schema";
+import { alerts, type Alert, type InsertAlert } from "../../drizzle/schema";
 
 export const alertService = {
-  async getByUserId(userId: string, options?: { unreadOnly?: boolean; limit?: number; offset?: number }): Promise<Alert[]> {
+  async getByUserId(
+    userId: string,
+    options?: { unreadOnly?: boolean; limit?: number; offset?: number }
+  ): Promise<Alert[]> {
     const database = await requireDb();
 
     const conditions = [eq(alerts.userId, userId)];
@@ -25,7 +24,10 @@ export const alertService = {
       .offset(offset);
   },
 
-  async countByUserId(userId: string, options?: { unreadOnly?: boolean }): Promise<number> {
+  async countByUserId(
+    userId: string,
+    options?: { unreadOnly?: boolean }
+  ): Promise<number> {
     const database = await requireDb();
     const conditions = [eq(alerts.userId, userId)];
     if (options?.unreadOnly) conditions.push(eq(alerts.isRead, false));
@@ -76,7 +78,12 @@ export const alertService = {
     const database = await requireDb();
     const result = await database
       .update(alerts)
-      .set({ isResolved: true, isRead: true, resolvedAt: new Date(), updatedAt: new Date() })
+      .set({
+        isResolved: true,
+        isRead: true,
+        resolvedAt: new Date(),
+        updatedAt: new Date(),
+      })
       .where(and(eq(alerts.id, alertId), eq(alerts.userId, userId)))
       .returning();
     return result[0];
@@ -106,7 +113,8 @@ export const alertService = {
     for (const row of result) {
       stats.total += row.count;
       if (!row.isRead) stats.unread += row.count;
-      if (row.severity === "critical" && !row.isResolved) stats.critical += row.count;
+      if (row.severity === "critical" && !row.isResolved)
+        stats.critical += row.count;
       if (row.isResolved) stats.resolved += row.count;
     }
     return stats;

@@ -26,7 +26,7 @@ async function debug() {
   await pool.end();
 }
 
-debug().catch((err) => {
+debug().catch(err => {
   logger.error({ err }, "Debug failed");
   process.exit(1);
 });

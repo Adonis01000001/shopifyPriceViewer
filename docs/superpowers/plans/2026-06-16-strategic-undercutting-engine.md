@@ -12,31 +12,33 @@
 
 ## File Map
 
-| File | Action | Responsibility |
-|------|--------|----------------|
-| `server/services/pricing-engine.service.ts` | **Create** | Core algorithm: avg price, 5% undercut, margin floor, position classification |
-| `server/services/recommendation.service.ts` | **Modify** | Replace simple 2% logic with call to pricing engine; add `marginProtectionApplied` field |
-| `server/routers/pricing-engine.router.ts` | **Create** | tRPC router: `analyze`, `analyzeAll`, `getMarketPosition`, `generateRecommendation`, `dashboardStats` endpoints |
-| `server/routers.ts` | **Modify** | Register `pricingEngine` router |
-| `drizzle/schema.ts` | **Modify** | Add `marginProtectionApplied` column to `recommendations` table |
-| `drizzle/migrations/0004_add_margin_protection.sql` | **Create** | Migration SQL |
-| `server/services/__tests__/pricing-engine.test.ts` | **Create** | Unit tests for the pricing engine |
-| `client/src/components/dashboard/PricingRecommendationWidget.tsx` | **Create** | Dashboard widget: Market Snapshot, Recommendation Card, Position Indicator, Margin Warning |
-| `client/src/pages/dashboard/Overview.tsx` | **Modify** | Integrate `<PricingDashboardSummary />` into the dashboard |
-| `client/src/pages/dashboard/Products.tsx` | **Modify** | Add per-product market position badges |
-| `docs/superpowers/specs/2026-06-16-strategic-undercutting-engine-design.md` | **Create** | Design doc |
+| File                                                                        | Action     | Responsibility                                                                                                  |
+| --------------------------------------------------------------------------- | ---------- | --------------------------------------------------------------------------------------------------------------- |
+| `server/services/pricing-engine.service.ts`                                 | **Create** | Core algorithm: avg price, 5% undercut, margin floor, position classification                                   |
+| `server/services/recommendation.service.ts`                                 | **Modify** | Replace simple 2% logic with call to pricing engine; add `marginProtectionApplied` field                        |
+| `server/routers/pricing-engine.router.ts`                                   | **Create** | tRPC router: `analyze`, `analyzeAll`, `getMarketPosition`, `generateRecommendation`, `dashboardStats` endpoints |
+| `server/routers.ts`                                                         | **Modify** | Register `pricingEngine` router                                                                                 |
+| `drizzle/schema.ts`                                                         | **Modify** | Add `marginProtectionApplied` column to `recommendations` table                                                 |
+| `drizzle/migrations/0004_add_margin_protection.sql`                         | **Create** | Migration SQL                                                                                                   |
+| `server/services/__tests__/pricing-engine.test.ts`                          | **Create** | Unit tests for the pricing engine                                                                               |
+| `client/src/components/dashboard/PricingRecommendationWidget.tsx`           | **Create** | Dashboard widget: Market Snapshot, Recommendation Card, Position Indicator, Margin Warning                      |
+| `client/src/pages/dashboard/Overview.tsx`                                   | **Modify** | Integrate `<PricingDashboardSummary />` into the dashboard                                                      |
+| `client/src/pages/dashboard/Products.tsx`                                   | **Modify** | Add per-product market position badges                                                                          |
+| `docs/superpowers/specs/2026-06-16-strategic-undercutting-engine-design.md` | **Create** | Design doc                                                                                                      |
 
 ---
 
 ## Task 1: Database Migration — Add `marginProtectionApplied` Column
 
 **Files:**
+
 - Modify: `drizzle/schema.ts:425` (after `potentialSavings` column in recommendations table)
 - Create: `drizzle/migrations/0004_add_margin_protection.sql`
 
 - [ ] **Step 1: Add column to schema**
 
 In `drizzle/schema.ts`, in the `recommendations` table definition, add after the `potentialSavings` line (line ~425):
+
 ```typescript
 marginProtectionApplied: boolean("margin_protection_applied").default(false).notNull(),
 ```
@@ -44,6 +46,7 @@ marginProtectionApplied: boolean("margin_protection_applied").default(false).not
 - [ ] **Step 2: Create migration SQL file**
 
 Create `drizzle/migrations/0004_add_margin_protection.sql`:
+
 ```sql
 ALTER TABLE recommendations ADD COLUMN IF NOT EXISTS margin_protection_applied BOOLEAN NOT NULL DEFAULT FALSE;
 ```
@@ -66,6 +69,7 @@ git commit -m "feat(db): add margin_protection_applied column to recommendations
 ## Task 2: Pricing Engine Service — Core Algorithm
 
 **Files:**
+
 - Create: `server/services/pricing-engine.service.ts`
 - Create: `server/services/__tests__/pricing-engine.test.ts`
 
@@ -74,53 +78,62 @@ git commit -m "feat(db): add margin_protection_applied column to recommendations
 Create `server/services/__tests__/pricing-engine.test.ts`:
 
 ```typescript
-import { describe, it, expect } from 'vitest';
-import { pricingEngine } from '../pricing-engine.service';
+import { describe, it, expect } from "vitest";
+import { pricingEngine } from "../pricing-engine.service";
 
-describe('PricingEngine', () => {
-  describe('calculateAverageCompetitorPrice', () => {
-    it('calculates average of valid competitor prices', () => {
-      const result = pricingEngine.calculateAverageCompetitorPrice([100, 110, 90]);
+describe("PricingEngine", () => {
+  describe("calculateAverageCompetitorPrice", () => {
+    it("calculates average of valid competitor prices", () => {
+      const result = pricingEngine.calculateAverageCompetitorPrice([
+        100, 110, 90,
+      ]);
       expect(result).toBe(100);
     });
 
-    it('filters out invalid prices (zero, negative, null)', () => {
-      const result = pricingEngine.calculateAverageCompetitorPrice([100, 0, -10, null as any, 110, 90]);
+    it("filters out invalid prices (zero, negative, null)", () => {
+      const result = pricingEngine.calculateAverageCompetitorPrice([
+        100,
+        0,
+        -10,
+        null as any,
+        110,
+        90,
+      ]);
       expect(result).toBe(100);
     });
 
-    it('returns null for empty array', () => {
+    it("returns null for empty array", () => {
       const result = pricingEngine.calculateAverageCompetitorPrice([]);
       expect(result).toBeNull();
     });
 
-    it('handles single competitor', () => {
+    it("handles single competitor", () => {
       const result = pricingEngine.calculateAverageCompetitorPrice([100]);
       expect(result).toBe(100);
     });
   });
 
-  describe('calculateRecommendedPrice', () => {
-    it('applies 5% undercut to average competitor price', () => {
+  describe("calculateRecommendedPrice", () => {
+    it("applies 5% undercut to average competitor price", () => {
       const result = pricingEngine.calculateRecommendedPrice(100, 50);
       expect(result.recommendedPrice).toBe(95);
       expect(result.marginProtectionApplied).toBe(false);
     });
 
-    it('enforces margin protection floor when undercut goes below minimum', () => {
+    it("enforces margin protection floor when undercut goes below minimum", () => {
       // cost=100, floor=110, 5% undercut of 90 = 85.5 < 110
       const result = pricingEngine.calculateRecommendedPrice(90, 100);
       expect(result.recommendedPrice).toBe(110);
       expect(result.marginProtectionApplied).toBe(true);
     });
 
-    it('returns floor price when cost is zero (no margin protection)', () => {
+    it("returns floor price when cost is zero (no margin protection)", () => {
       const result = pricingEngine.calculateRecommendedPrice(100, 0);
       expect(result.recommendedPrice).toBe(95);
       expect(result.marginProtectionApplied).toBe(false);
     });
 
-    it('exact boundary: undercut equals floor', () => {
+    it("exact boundary: undercut equals floor", () => {
       // avg=100, 5% undercut=95, cost=86.36, floor=95
       const result = pricingEngine.calculateRecommendedPrice(100, 86.36);
       expect(result.recommendedPrice).toBe(95);
@@ -128,45 +141,45 @@ describe('PricingEngine', () => {
     });
   });
 
-  describe('classifyMarketPosition', () => {
-    it('classifies as LEADING when merchant is cheaper', () => {
+  describe("classifyMarketPosition", () => {
+    it("classifies as LEADING when merchant is cheaper", () => {
       const result = pricingEngine.classifyMarketPosition(90, 100);
-      expect(result.status).toBe('LEADING');
+      expect(result.status).toBe("LEADING");
     });
 
-    it('classifies as COMPETITIVE when within 3%', () => {
+    it("classifies as COMPETITIVE when within 3%", () => {
       const result = pricingEngine.classifyMarketPosition(102, 100);
-      expect(result.status).toBe('COMPETITIVE');
+      expect(result.status).toBe("COMPETITIVE");
     });
 
-    it('classifies as COMPETITIVE at exactly 3% above', () => {
+    it("classifies as COMPETITIVE at exactly 3% above", () => {
       const result = pricingEngine.classifyMarketPosition(103, 100);
-      expect(result.status).toBe('COMPETITIVE');
+      expect(result.status).toBe("COMPETITIVE");
     });
 
-    it('classifies as OVERPRICED when more than 3% above', () => {
+    it("classifies as OVERPRICED when more than 3% above", () => {
       const result = pricingEngine.classifyMarketPosition(104, 100);
-      expect(result.status).toBe('OVERPRICED');
+      expect(result.status).toBe("OVERPRICED");
     });
 
-    it('classifies as COMPETITIVE at exactly 3% below', () => {
+    it("classifies as COMPETITIVE at exactly 3% below", () => {
       const result = pricingEngine.classifyMarketPosition(97, 100);
-      expect(result.status).toBe('COMPETITIVE');
+      expect(result.status).toBe("COMPETITIVE");
     });
 
-    it('classifies as LEADING when more than 3% below', () => {
+    it("classifies as LEADING when more than 3% below", () => {
       const result = pricingEngine.classifyMarketPosition(96, 100);
-      expect(result.status).toBe('LEADING');
+      expect(result.status).toBe("LEADING");
     });
 
-    it('classifies as INSUFFICIENT_DATA when avg is null', () => {
+    it("classifies as INSUFFICIENT_DATA when avg is null", () => {
       const result = pricingEngine.classifyMarketPosition(100, null);
-      expect(result.status).toBe('INSUFFICIENT_DATA');
+      expect(result.status).toBe("INSUFFICIENT_DATA");
     });
   });
 
-  describe('analyzeProduct', () => {
-    it('returns full analysis with recommendation and position', () => {
+  describe("analyzeProduct", () => {
+    it("returns full analysis with recommendation and position", () => {
       const result = pricingEngine.analyzeProduct({
         merchantPrice: 105,
         costPrice: 80,
@@ -178,10 +191,10 @@ describe('PricingEngine', () => {
       expect(result.marketSnapshot.competitorCount).toBe(3);
       expect(result.recommendation.recommendedPrice).toBe(95);
       expect(result.recommendation.marginProtectionApplied).toBe(false);
-      expect(result.position.status).toBe('OVERPRICED');
+      expect(result.position.status).toBe("OVERPRICED");
     });
 
-    it('handles no competitor data', () => {
+    it("handles no competitor data", () => {
       const result = pricingEngine.analyzeProduct({
         merchantPrice: 100,
         costPrice: 80,
@@ -189,10 +202,10 @@ describe('PricingEngine', () => {
       });
       expect(result.marketSnapshot.avgCompetitorPrice).toBeNull();
       expect(result.recommendation).toBeNull();
-      expect(result.position.status).toBe('INSUFFICIENT_DATA');
+      expect(result.position.status).toBe("INSUFFICIENT_DATA");
     });
 
-    it('handles extreme market undercutting scenario', () => {
+    it("handles extreme market undercutting scenario", () => {
       // cost=100, floor=110, competitor avg=90, 5% undercut=85.5
       const result = pricingEngine.analyzeProduct({
         merchantPrice: 95,
@@ -211,6 +224,7 @@ describe('PricingEngine', () => {
 ```bash
 cd "D:\PV\shopify price viwer" && pnpm test server/services/__tests__/pricing-engine.test.ts
 ```
+
 Expected: FAIL with "Cannot find module '../pricing-engine.service'"
 
 - [ ] **Step 3: Implement the pricing engine service**
@@ -243,11 +257,15 @@ export interface PricingRecommendation {
   explanation: string;
 }
 
-export type MarketPositionStatus = 'LEADING' | 'COMPETITIVE' | 'OVERPRICED' | 'INSUFFICIENT_DATA';
+export type MarketPositionStatus =
+  | "LEADING"
+  | "COMPETITIVE"
+  | "OVERPRICED"
+  | "INSUFFICIENT_DATA";
 
 export interface MarketPosition {
   status: MarketPositionStatus;
-  color: 'green' | 'blue' | 'red' | 'gray';
+  color: "green" | "blue" | "red" | "gray";
   label: string;
   meaning: string;
   priceDiff: number | null;
@@ -269,13 +287,15 @@ export interface AnalyzeProductInput {
 // ─── Constants ───────────────────────────────────────────────────────────────
 
 const UNDERCUT_FACTOR = 0.95; // 5% below average
-const MARGIN_FACTOR = 1.10;   // 10% minimum margin above cost
+const MARGIN_FACTOR = 1.1; // 10% minimum margin above cost
 const COMPETITIVE_THRESHOLD = 0.03; // ±3% band
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 function filterValidPrices(prices: number[]): number[] {
-  return prices.filter((p) => p != null && typeof p === 'number' && p > 0 && !isNaN(p));
+  return prices.filter(
+    p => p != null && typeof p === "number" && p > 0 && !isNaN(p)
+  );
 }
 
 function roundToTwoDecimals(value: number): number {
@@ -295,7 +315,9 @@ function calculateRecommendedPrice(
   avgCompetitorPrice: number,
   costPrice: number | null
 ): PricingRecommendation {
-  const undercutPrice = roundToTwoDecimals(avgCompetitorPrice * UNDERCUT_FACTOR);
+  const undercutPrice = roundToTwoDecimals(
+    avgCompetitorPrice * UNDERCUT_FACTOR
+  );
 
   // If no cost data, no margin floor
   if (costPrice == null || costPrice <= 0) {
@@ -336,10 +358,10 @@ function classifyMarketPosition(
 ): MarketPosition {
   if (avgCompetitorPrice == null || avgCompetitorPrice <= 0) {
     return {
-      status: 'INSUFFICIENT_DATA',
-      color: 'gray',
-      label: 'No Data',
-      meaning: 'Not enough competitor pricing data.',
+      status: "INSUFFICIENT_DATA",
+      color: "gray",
+      label: "No Data",
+      meaning: "Not enough competitor pricing data.",
       priceDiff: null,
       priceDiffPercent: null,
     };
@@ -352,10 +374,10 @@ function classifyMarketPosition(
 
   if (absDiff <= threshold) {
     return {
-      status: 'COMPETITIVE',
-      color: 'blue',
-      label: 'Competitive',
-      meaning: 'You are competitively priced.',
+      status: "COMPETITIVE",
+      color: "blue",
+      label: "Competitive",
+      meaning: "You are competitively priced.",
       priceDiff: roundToTwoDecimals(diff),
       priceDiffPercent,
     };
@@ -363,20 +385,20 @@ function classifyMarketPosition(
 
   if (merchantPrice < avgCompetitorPrice) {
     return {
-      status: 'LEADING',
-      color: 'green',
-      label: 'Leading Market',
-      meaning: 'You are currently leading the market.',
+      status: "LEADING",
+      color: "green",
+      label: "Leading Market",
+      meaning: "You are currently leading the market.",
       priceDiff: roundToTwoDecimals(diff),
       priceDiffPercent,
     };
   }
 
   return {
-    status: 'OVERPRICED',
-    color: 'red',
-    label: 'Overpriced',
-    meaning: 'You are likely losing sales to competitors.',
+    status: "OVERPRICED",
+    color: "red",
+    label: "Overpriced",
+    meaning: "You are likely losing sales to competitors.",
     priceDiff: roundToTwoDecimals(diff),
     priceDiffPercent,
   };
@@ -430,6 +452,7 @@ export const pricingEngine = {
 ```bash
 cd "D:\PV\shopify price viwer" && pnpm test server/services/__tests__/pricing-engine.test.ts
 ```
+
 Expected: All tests PASS
 
 - [ ] **Step 5: Commit**
@@ -444,16 +467,19 @@ git commit -m "feat(pricing-engine): implement core undercutting algorithm with 
 ## Task 3: Update Recommendation Service to Use Pricing Engine
 
 **Files:**
+
 - Modify: `server/services/recommendation.service.ts:81-132` (the `generateForProduct` method)
 
 - [ ] **Step 1: Add import and helper to recommendation.service.ts**
 
 At the top of `server/services/recommendation.service.ts`, after the existing imports, add:
+
 ```typescript
 import { pricingEngine } from "./pricing-engine.service";
 ```
 
 After the imports, add a helper function:
+
 ```typescript
 function round(n: number): number {
   return Math.round(n * 100) / 100;
@@ -540,6 +566,7 @@ async generateForProduct(userId: string, productId: string): Promise<Recommendat
 ```bash
 cd "D:\PV\shopify price viwer" && pnpm test
 ```
+
 Expected: All tests PASS
 
 - [ ] **Step 4: Commit**
@@ -554,6 +581,7 @@ git commit -m "feat(recommendation): integrate pricing engine into recommendatio
 ## Task 4: Pricing Engine tRPC Router
 
 **Files:**
+
 - Create: `server/routers/pricing-engine.router.ts`
 - Modify: `server/routers.ts:12,24`
 
@@ -581,9 +609,15 @@ export const pricingEngineRouter = router({
     .query(async ({ ctx, input }) => {
       const database = await requireDb();
 
-      const product = await productService.getById(ctx.user!.id, input.productId);
+      const product = await productService.getById(
+        ctx.user!.id,
+        input.productId
+      );
       if (!product) {
-        throw new TRPCError({ code: "NOT_FOUND", message: "Product not found" });
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "Product not found",
+        });
       }
 
       const compPrices = await database
@@ -596,7 +630,7 @@ export const pricingEngineRouter = router({
           )
         );
 
-      const prices = compPrices.map((c) => Number(c.price));
+      const prices = compPrices.map(c => Number(c.price));
       const merchantPrice = Number(product.price);
       const costPrice = product.costPrice ? Number(product.costPrice) : null;
 
@@ -642,7 +676,7 @@ export const pricingEngineRouter = router({
 
       if (compPrices.length === 0) continue;
 
-      const prices = compPrices.map((c) => Number(c.price));
+      const prices = compPrices.map(c => Number(c.price));
       const merchantPrice = Number(product.price);
       const costPrice = product.costPrice ? Number(product.costPrice) : null;
 
@@ -670,9 +704,15 @@ export const pricingEngineRouter = router({
     .query(async ({ ctx, input }) => {
       const database = await requireDb();
 
-      const product = await productService.getById(ctx.user!.id, input.productId);
+      const product = await productService.getById(
+        ctx.user!.id,
+        input.productId
+      );
       if (!product) {
-        throw new TRPCError({ code: "NOT_FOUND", message: "Product not found" });
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "Product not found",
+        });
       }
 
       const compPrices = await database
@@ -685,7 +725,7 @@ export const pricingEngineRouter = router({
           )
         );
 
-      const prices = compPrices.map((c) => Number(c.price));
+      const prices = compPrices.map(c => Number(c.price));
       const avgPrice = pricingEngine.calculateAverageCompetitorPrice(prices);
       const position = pricingEngine.classifyMarketPosition(
         Number(product.price),
@@ -715,7 +755,8 @@ export const pricingEngineRouter = router({
       if (!rec) {
         throw new TRPCError({
           code: "BAD_REQUEST",
-          message: "Could not generate recommendation. Ensure the product has competitor prices.",
+          message:
+            "Could not generate recommendation. Ensure the product has competitor prices.",
         });
       }
       return rec;
@@ -760,7 +801,7 @@ export const pricingEngineRouter = router({
       }
 
       withCompetitorData++;
-      const prices = compPrices.map((c) => Number(c.price));
+      const prices = compPrices.map(c => Number(c.price));
       const avgPrice = pricingEngine.calculateAverageCompetitorPrice(prices);
       const position = pricingEngine.classifyMarketPosition(
         Number(product.price),
@@ -768,20 +809,23 @@ export const pricingEngineRouter = router({
       );
 
       switch (position.status) {
-        case 'LEADING':
+        case "LEADING":
           leadingCount++;
           break;
-        case 'COMPETITIVE':
+        case "COMPETITIVE":
           competitiveCount++;
           break;
-        case 'OVERPRICED':
+        case "OVERPRICED":
           overpricedCount++;
           break;
       }
 
       const costPrice = product.costPrice ? Number(product.costPrice) : null;
       if (costPrice && avgPrice) {
-        const rec = pricingEngine.calculateRecommendedPrice(avgPrice, costPrice);
+        const rec = pricingEngine.calculateRecommendedPrice(
+          avgPrice,
+          costPrice
+        );
         if (rec.marginProtectionApplied) marginProtectionCount++;
       }
     }
@@ -802,11 +846,13 @@ export const pricingEngineRouter = router({
 - [ ] **Step 2: Register the router in routers.ts**
 
 In `server/routers.ts`, add after line 12:
+
 ```typescript
 import { pricingEngineRouter } from "./routers/pricing-engine.router";
 ```
 
 In the `appRouter` object, add after `intelligence: intelligenceRouter,`:
+
 ```typescript
 pricingEngine: pricingEngineRouter,
 ```
@@ -816,6 +862,7 @@ pricingEngine: pricingEngineRouter,
 ```bash
 cd "D:\PV\shopify price viwer" && pnpm check
 ```
+
 Expected: No type errors
 
 - [ ] **Step 4: Commit**
@@ -830,6 +877,7 @@ git commit -m "feat(api): add pricing engine tRPC router with analyze, analyzeAl
 ## Task 5: Pricing Recommendation Widget — Frontend Component
 
 **Files:**
+
 - Create: `client/src/components/dashboard/PricingRecommendationWidget.tsx`
 
 - [ ] **Step 1: Create the widget component**
@@ -921,13 +969,17 @@ function MarketSnapshotCard({ analysis }: { analysis: any }) {
   return (
     <div className="grid grid-cols-2 gap-3">
       <div className="bg-surface-container/50 rounded-lg p-3 border border-white/[0.04]">
-        <p className="label-caps text-[10px] text-muted-foreground/60 mb-1">Your Price</p>
+        <p className="label-caps text-[10px] text-muted-foreground/60 mb-1">
+          Your Price
+        </p>
         <p className="text-lg font-bold font-mono tracking-tight">
           ${Number(marketSnapshot.merchantPrice).toFixed(2)}
         </p>
       </div>
       <div className="bg-surface-container/50 rounded-lg p-3 border border-white/[0.04]">
-        <p className="label-caps text-[10px] text-muted-foreground/60 mb-1">Avg. Competitor</p>
+        <p className="label-caps text-[10px] text-muted-foreground/60 mb-1">
+          Avg. Competitor
+        </p>
         <p className="text-lg font-bold font-mono tracking-tight">
           {marketSnapshot.avgCompetitorPrice != null
             ? `$${Number(marketSnapshot.avgCompetitorPrice).toFixed(2)}`
@@ -935,7 +987,9 @@ function MarketSnapshotCard({ analysis }: { analysis: any }) {
         </p>
       </div>
       <div className="bg-surface-container/50 rounded-lg p-3 border border-white/[0.04]">
-        <p className="label-caps text-[10px] text-muted-foreground/60 mb-1">Lowest</p>
+        <p className="label-caps text-[10px] text-muted-foreground/60 mb-1">
+          Lowest
+        </p>
         <p className="text-sm font-mono text-[#21a732]">
           {marketSnapshot.lowestCompetitorPrice != null
             ? `$${Number(marketSnapshot.lowestCompetitorPrice).toFixed(2)}`
@@ -943,7 +997,9 @@ function MarketSnapshotCard({ analysis }: { analysis: any }) {
         </p>
       </div>
       <div className="bg-surface-container/50 rounded-lg p-3 border border-white/[0.04]">
-        <p className="label-caps text-[10px] text-muted-foreground/60 mb-1">Highest</p>
+        <p className="label-caps text-[10px] text-muted-foreground/60 mb-1">
+          Highest
+        </p>
         <p className="text-sm font-mono text-[#ffb4ab]">
           {marketSnapshot.highestCompetitorPrice != null
             ? `$${Number(marketSnapshot.highestCompetitorPrice).toFixed(2)}`
@@ -951,8 +1007,12 @@ function MarketSnapshotCard({ analysis }: { analysis: any }) {
         </p>
       </div>
       <div className="col-span-2 bg-surface-container/30 rounded-lg px-3 py-2 border border-white/[0.04] flex items-center justify-between">
-        <p className="label-caps text-[10px] text-muted-foreground/60">Competitors Analyzed</p>
-        <p className="text-sm font-mono font-bold">{marketSnapshot.competitorCount}</p>
+        <p className="label-caps text-[10px] text-muted-foreground/60">
+          Competitors Analyzed
+        </p>
+        <p className="text-sm font-mono font-bold">
+          {marketSnapshot.competitorCount}
+        </p>
       </div>
     </div>
   );
@@ -965,7 +1025,9 @@ function RecommendationCard({ analysis }: { analysis: any }) {
     return (
       <div className="bg-surface-container/30 rounded-lg p-4 border border-white/[0.04] text-center">
         <Info className="h-5 w-5 text-muted-foreground/40 mx-auto mb-2" />
-        <p className="text-sm text-muted-foreground">No recommendation available</p>
+        <p className="text-sm text-muted-foreground">
+          No recommendation available
+        </p>
         <p className="text-[11px] text-muted-foreground/60 mt-1">
           Add competitor pricing data to get recommendations.
         </p>
@@ -978,7 +1040,9 @@ function RecommendationCard({ analysis }: { analysis: any }) {
       <div className="bg-primary/[0.08] rounded-lg p-4 border border-primary/20">
         <div className="flex items-center gap-2 mb-2">
           <Sparkles className="h-4 w-4 text-primary" />
-          <p className="label-caps text-[10px] text-primary font-semibold">RECOMMENDED PRICE</p>
+          <p className="label-caps text-[10px] text-primary font-semibold">
+            RECOMMENDED PRICE
+          </p>
         </div>
         <p className="text-3xl font-bold font-mono tracking-tight text-primary">
           ${Number(recommendation.recommendedPrice).toFixed(2)}
@@ -992,7 +1056,9 @@ function RecommendationCard({ analysis }: { analysis: any }) {
         <div className="bg-[#93000a]/10 rounded-lg p-3 border border-[#93000a]/20 flex items-start gap-2.5">
           <Shield className="h-4 w-4 text-[#ffb4ab] shrink-0 mt-0.5" />
           <div>
-            <p className="text-[11px] font-semibold text-[#ffb4ab]">Margin Protection Active</p>
+            <p className="text-[11px] font-semibold text-[#ffb4ab]">
+              Margin Protection Active
+            </p>
             <p className="text-[10px] text-[#ffb4ab]/70 mt-0.5 leading-relaxed">
               Recommendation limited by minimum profit margin protection.
             </p>
@@ -1005,20 +1071,36 @@ function RecommendationCard({ analysis }: { analysis: any }) {
 
 function PositionIndicator({ analysis }: { analysis: any }) {
   const { position } = analysis;
-  const config = positionConfig[position.status] || positionConfig.INSUFFICIENT_DATA;
+  const config =
+    positionConfig[position.status] || positionConfig.INSUFFICIENT_DATA;
   const Icon = config.icon;
 
   return (
-    <div className={cn("rounded-lg p-4 border", config.bgClass, config.borderClass)}>
+    <div
+      className={cn(
+        "rounded-lg p-4 border",
+        config.bgClass,
+        config.borderClass
+      )}
+    >
       <div className="flex items-center gap-3">
-        <div className={cn("h-10 w-10 rounded-lg flex items-center justify-center", config.bgClass)}>
+        <div
+          className={cn(
+            "h-10 w-10 rounded-lg flex items-center justify-center",
+            config.bgClass
+          )}
+        >
           <Icon className={cn("h-5 w-5", config.textClass)} />
         </div>
         <div className="flex-1">
           <div className="flex items-center gap-2">
-            <p className={cn("text-sm font-bold", config.textClass)}>{config.label}</p>
+            <p className={cn("text-sm font-bold", config.textClass)}>
+              {config.label}
+            </p>
           </div>
-          <p className="text-[11px] text-muted-foreground mt-0.5">{position.meaning}</p>
+          <p className="text-[11px] text-muted-foreground mt-0.5">
+            {position.meaning}
+          </p>
         </div>
         {position.priceDiffPercent != null && (
           <div className="text-right">
@@ -1038,7 +1120,7 @@ function WidgetSkeleton() {
   return (
     <div className="space-y-4">
       <div className="grid grid-cols-2 gap-3">
-        {[1, 2, 3, 4].map((i) => (
+        {[1, 2, 3, 4].map(i => (
           <Skeleton key={i} className="h-20 rounded-lg" />
         ))}
       </div>
@@ -1059,15 +1141,16 @@ export function PricingRecommendationWidget({
     { enabled: !!productId }
   );
 
-  const generateRecMutation = trpc.pricingEngine.generateRecommendation.useMutation({
-    onSuccess: () => {
-      toast.success("Recommendation generated");
-      analyzeQuery.refetch();
-    },
-    onError: (err) => {
-      toast.error(err.message || "Failed to generate recommendation");
-    },
-  });
+  const generateRecMutation =
+    trpc.pricingEngine.generateRecommendation.useMutation({
+      onSuccess: () => {
+        toast.success("Recommendation generated");
+        analyzeQuery.refetch();
+      },
+      onError: err => {
+        toast.error(err.message || "Failed to generate recommendation");
+      },
+    });
 
   const analysis = analyzeQuery.data;
 
@@ -1123,15 +1206,21 @@ export function PricingRecommendationWidget({
         ) : (
           <div className="space-y-5">
             <div>
-              <p className="label-caps text-[10px] text-muted-foreground/60 mb-3">MARKET SNAPSHOT</p>
+              <p className="label-caps text-[10px] text-muted-foreground/60 mb-3">
+                MARKET SNAPSHOT
+              </p>
               <MarketSnapshotCard analysis={analysis} />
             </div>
             <div>
-              <p className="label-caps text-[10px] text-muted-foreground/60 mb-3">RECOMMENDATION</p>
+              <p className="label-caps text-[10px] text-muted-foreground/60 mb-3">
+                RECOMMENDATION
+              </p>
               <RecommendationCard analysis={analysis} />
             </div>
             <div>
-              <p className="label-caps text-[10px] text-muted-foreground/60 mb-3">MARKET POSITION</p>
+              <p className="label-caps text-[10px] text-muted-foreground/60 mb-3">
+                MARKET POSITION
+              </p>
               <PositionIndicator analysis={analysis} />
             </div>
           </div>
@@ -1155,7 +1244,7 @@ export function PricingDashboardSummary() {
       <div className="glass-card p-5 rounded-lg">
         <Skeleton className="h-4 w-32 mb-4" />
         <div className="grid grid-cols-4 gap-3">
-          {[1, 2, 3, 4].map((i) => (
+          {[1, 2, 3, 4].map(i => (
             <Skeleton key={i} className="h-16 rounded-lg" />
           ))}
         </div>
@@ -1171,27 +1260,38 @@ export function PricingDashboardSummary() {
       </div>
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         <div className="bg-[#21a732]/10 rounded-lg p-3 border border-[#21a732]/20 text-center">
-          <p className="text-2xl font-bold font-mono text-[#21a732]">{stats.leadingCount}</p>
+          <p className="text-2xl font-bold font-mono text-[#21a732]">
+            {stats.leadingCount}
+          </p>
           <p className="label-caps text-[10px] text-[#21a732]/70">Leading</p>
         </div>
         <div className="bg-blue-500/10 rounded-lg p-3 border border-blue-500/20 text-center">
-          <p className="text-2xl font-bold font-mono text-blue-400">{stats.competitiveCount}</p>
+          <p className="text-2xl font-bold font-mono text-blue-400">
+            {stats.competitiveCount}
+          </p>
           <p className="label-caps text-[10px] text-blue-400/70">Competitive</p>
         </div>
         <div className="bg-[#93000a]/10 rounded-lg p-3 border border-[#93000a]/20 text-center">
-          <p className="text-2xl font-bold font-mono text-[#ffb4ab]">{stats.overpricedCount}</p>
+          <p className="text-2xl font-bold font-mono text-[#ffb4ab]">
+            {stats.overpricedCount}
+          </p>
           <p className="label-caps text-[10px] text-[#ffb4ab]/70">Overpriced</p>
         </div>
         <div className="bg-muted/50 rounded-lg p-3 border border-border text-center">
-          <p className="text-2xl font-bold font-mono text-muted-foreground">{stats.insufficientDataCount}</p>
-          <p className="label-caps text-[10px] text-muted-foreground/60">No Data</p>
+          <p className="text-2xl font-bold font-mono text-muted-foreground">
+            {stats.insufficientDataCount}
+          </p>
+          <p className="label-caps text-[10px] text-muted-foreground/60">
+            No Data
+          </p>
         </div>
       </div>
       {stats.marginProtectionCount > 0 && (
         <div className="mt-3 bg-[#93000a]/10 rounded-lg p-2.5 border border-[#93000a]/15 flex items-center gap-2">
           <Shield className="h-3.5 w-3.5 text-[#ffb4ab] shrink-0" />
           <p className="text-[11px] text-[#ffb4ab]">
-            <span className="font-bold">{stats.marginProtectionCount}</span> product(s) have margin protection limiting recommendations.
+            <span className="font-bold">{stats.marginProtectionCount}</span>{" "}
+            product(s) have margin protection limiting recommendations.
           </p>
         </div>
       )}
@@ -1205,6 +1305,7 @@ export function PricingDashboardSummary() {
 ```bash
 cd "D:\PV\shopify price viwer" && pnpm check
 ```
+
 Expected: No type errors
 
 - [ ] **Step 3: Commit**
@@ -1219,6 +1320,7 @@ git commit -m "feat(ui): add PricingRecommendationWidget and PricingDashboardSum
 ## Task 6: Integrate Widget into Overview Dashboard
 
 **Files:**
+
 - Modify: `client/src/pages/dashboard/Overview.tsx`
 
 - [ ] **Step 1: Add import and component to Overview page**
@@ -1226,14 +1328,18 @@ git commit -m "feat(ui): add PricingRecommendationWidget and PricingDashboardSum
 In `client/src/pages/dashboard/Overview.tsx`:
 
 Add import at top:
+
 ```tsx
 import { PricingDashboardSummary } from "@/components/dashboard/PricingRecommendationWidget";
 ```
 
 Insert `<PricingDashboardSummary />` right after the KPI Row closing `</div>` and before the `{/* Main Grid */}` comment:
+
 ```tsx
-{/* Pricing Intelligence Summary */}
-<PricingDashboardSummary />
+{
+  /* Pricing Intelligence Summary */
+}
+<PricingDashboardSummary />;
 ```
 
 - [ ] **Step 2: Verify TypeScript compiles**
@@ -1241,6 +1347,7 @@ Insert `<PricingDashboardSummary />` right after the KPI Row closing `</div>` an
 ```bash
 cd "D:\PV\shopify price viwer" && pnpm check
 ```
+
 Expected: No type errors
 
 - [ ] **Step 3: Commit**
@@ -1255,6 +1362,7 @@ git commit -m "feat(dashboard): integrate pricing intelligence summary into Over
 ## Task 7: Add Market Position Badges to Products Page
 
 **Files:**
+
 - Modify: `client/src/pages/dashboard/Products.tsx`
 
 - [ ] **Step 1: Add MarketPositionBadge component and position column**
@@ -1262,16 +1370,21 @@ git commit -m "feat(dashboard): integrate pricing intelligence summary into Over
 In `client/src/pages/dashboard/Products.tsx`:
 
 Add imports:
+
 ```tsx
 import { ArrowDown, ArrowUp, Equal, Minus } from "lucide-react";
 ```
 
 Add a "Position" column header after the "Delta" column header:
+
 ```tsx
-<TableHead className="text-center label-caps text-muted-foreground font-normal">Position</TableHead>
+<TableHead className="text-center label-caps text-muted-foreground font-normal">
+  Position
+</TableHead>
 ```
 
 Add the position cell after the Delta cell in each row:
+
 ```tsx
 <td className="py-3 text-center">
   <MarketPositionBadge productId={product.id} />
@@ -1279,6 +1392,7 @@ Add the position cell after the Delta cell in each row:
 ```
 
 Add the `MarketPositionBadge` component before the `export default function Products()` closing brace:
+
 ```tsx
 function MarketPositionBadge({ productId }: { productId: string }) {
   const positionQuery = trpc.pricingEngine.getMarketPosition.useQuery(
@@ -1287,7 +1401,9 @@ function MarketPositionBadge({ productId }: { productId: string }) {
   );
 
   if (positionQuery.isLoading) {
-    return <span className="inline-block h-2 w-2 rounded-full bg-muted-foreground/30 animate-pulse" />;
+    return (
+      <span className="inline-block h-2 w-2 rounded-full bg-muted-foreground/30 animate-pulse" />
+    );
   }
 
   const position = positionQuery.data?.position;
@@ -1295,19 +1411,32 @@ function MarketPositionBadge({ productId }: { productId: string }) {
     return <Minus className="h-3 w-3 text-muted-foreground/40 mx-auto" />;
   }
 
-  const config: Record<string, { bg: string; text: string; icon: typeof ArrowDown }> = {
+  const config: Record<
+    string,
+    { bg: string; text: string; icon: typeof ArrowDown }
+  > = {
     LEADING: { bg: "bg-[#21a732]/10", text: "text-[#21a732]", icon: ArrowDown },
     COMPETITIVE: { bg: "bg-blue-500/10", text: "text-blue-400", icon: Equal },
-    OVERPRICED: { bg: "bg-[#93000a]/15", text: "text-[#ffb4ab]", icon: ArrowUp },
+    OVERPRICED: {
+      bg: "bg-[#93000a]/15",
+      text: "text-[#ffb4ab]",
+      icon: ArrowUp,
+    },
   };
 
   const c = config[position.status] || config.COMPETITIVE;
   const Icon = c.icon;
 
   return (
-    <span className={`inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[9px] font-bold label-caps ${c.bg} ${c.text}`}>
+    <span
+      className={`inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[9px] font-bold label-caps ${c.bg} ${c.text}`}
+    >
       <Icon className="h-2.5 w-2.5" />
-      {position.status === 'LEADING' ? 'LEAD' : position.status === 'COMPETITIVE' ? 'COMP' : 'OVER'}
+      {position.status === "LEADING"
+        ? "LEAD"
+        : position.status === "COMPETITIVE"
+          ? "COMP"
+          : "OVER"}
     </span>
   );
 }
@@ -1318,6 +1447,7 @@ function MarketPositionBadge({ productId }: { productId: string }) {
 ```bash
 cd "D:\PV\shopify price viwer" && pnpm check
 ```
+
 Expected: No type errors
 
 - [ ] **Step 3: Commit**
@@ -1332,6 +1462,7 @@ git commit -m "feat(products): add market position badges to product table"
 ## Task 8: Write Design Doc
 
 **Files:**
+
 - Create: `docs/superpowers/specs/2026-06-16-strategic-undercutting-engine-design.md`
 
 - [ ] **Step 1: Write the design document**
@@ -1352,23 +1483,28 @@ Active optimization: "Help merchants strategically undercut competitors while pr
 ## Algorithm
 
 ### Rule 1: Market Average
+
 `avg_price = sum(valid_competitor_prices) / count(valid_competitor_prices)`
 Valid prices: positive, non-zero, non-null numbers.
 
 ### Rule 2: Strategic Undercut (5% Rule)
+
 `recommended_price = avg_competitor_price × 0.95`
 
 ### Rule 3: Margin Protection Floor
+
 `minimum_allowed_price = cost_price × 1.10`
 If `recommended_price < minimum_allowed_price`, then `recommended_price = minimum_allowed_price`
 and `margin_protection_applied = true`.
 
 ### Rule 4: Final Recommendation
 ```
-if (avg_competitor_price * 0.95) >= (cost_price * 1.10)
-  recommendation = avg_competitor_price * 0.95
+
+if (avg*competitor_price * 0.95) >= (cost*price * 1.10)
+recommendation = avg*competitor_price * 0.95
 else
-  recommendation = cost_price * 1.10
+recommendation = cost*price * 1.10
+
 ```
 
 ## Market Position Classification
@@ -1383,15 +1519,17 @@ else
 ## Architecture
 
 ```
-pricing-engine.service.ts    → Pure computation (no DB, no HTTP)
-  ↓ used by
-recommendation.service.ts    → Persists recommendations to DB
-  ↓ exposed via
-pricing-engine.router.ts     → tRPC endpoints
-  ↓ consumed by
-PricingRecommendationWidget  → React dashboard component
-PricingDashboardSummary      → Aggregate stats on Overview page
-MarketPositionBadge          → Per-product position on Products page
+
+pricing-engine.service.ts → Pure computation (no DB, no HTTP)
+↓ used by
+recommendation.service.ts → Persists recommendations to DB
+↓ exposed via
+pricing-engine.router.ts → tRPC endpoints
+↓ consumed by
+PricingRecommendationWidget → React dashboard component
+PricingDashboardSummary → Aggregate stats on Overview page
+MarketPositionBadge → Per-product position on Products page
+
 ```
 
 ## Edge Cases Handled
@@ -1421,6 +1559,7 @@ git commit -m "docs: add strategic undercutting engine design doc"
 ```bash
 cd "D:\PV\shopify price viwer" && pnpm check
 ```
+
 Expected: No type errors
 
 - [ ] **Step 2: Run tests**
@@ -1428,6 +1567,7 @@ Expected: No type errors
 ```bash
 cd "D:\PV\shopify price viwer" && pnpm test
 ```
+
 Expected: All tests PASS
 
 - [ ] **Step 3: Verify dev server starts**
@@ -1435,6 +1575,7 @@ Expected: All tests PASS
 ```bash
 cd "D:\PV\shopify price viwer" && timeout 15 pnpm dev 2>&1 || true
 ```
+
 Expected: Server starts without errors
 
 - [ ] **Step 4: Final commit**

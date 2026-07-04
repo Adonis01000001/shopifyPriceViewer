@@ -17,10 +17,7 @@ async function getFirstUser(): Promise<User | null> {
   try {
     const database = await db.getDb();
     if (!database) return null;
-    const result = await database
-      .select()
-      .from(users)
-      .limit(1);
+    const result = await database.select().from(users).limit(1);
     return result[0] ?? null;
   } catch {
     return null;
@@ -58,7 +55,9 @@ export async function createContext(
   // CRITICAL: Double-gated — bypass is NEVER active in production, regardless of env var.
   if (!user) {
     if (ENV.isProduction && ENV.bypassAuth) {
-      logger.error("bypassAuth was set to true in production — ignoring. Remove VITE_BYPASS_AUTH from production env.");
+      logger.error(
+        "bypassAuth was set to true in production — ignoring. Remove VITE_BYPASS_AUTH from production env."
+      );
     } else if (ENV.bypassAuth) {
       user = createDevUser();
     }

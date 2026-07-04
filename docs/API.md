@@ -11,6 +11,7 @@ http://localhost:8000/api/v1
 All endpoints (except `/auth/register` and `/auth/login`) require authentication via JWT token.
 
 Include the token in the `Authorization` header:
+
 ```
 Authorization: Bearer <token>
 ```
@@ -20,6 +21,7 @@ Authorization: Bearer <token>
 ### Authentication
 
 #### Register User
+
 ```
 POST /auth/register
 Content-Type: application/json
@@ -48,6 +50,7 @@ Response: 200 OK
 ```
 
 #### Login User
+
 ```
 POST /auth/login
 Content-Type: application/json
@@ -66,6 +69,7 @@ Response: 200 OK
 ```
 
 #### Shopify OAuth Callback
+
 ```
 GET /auth/shopify/callback?code=<code>&shop=<shop>
 
@@ -79,6 +83,7 @@ Response: 200 OK
 ### Products
 
 #### Create Product
+
 ```
 POST /products
 Content-Type: application/json
@@ -116,6 +121,7 @@ Response: 200 OK
 ```
 
 #### Get Product
+
 ```
 GET /products/{product_id}
 Authorization: Bearer <token>
@@ -130,6 +136,7 @@ Response: 200 OK
 ```
 
 #### List Store Products
+
 ```
 GET /products/store/{store_id}?skip=0&limit=100
 Authorization: Bearer <token>
@@ -145,6 +152,7 @@ Response: 200 OK
 ```
 
 #### Update Product
+
 ```
 PUT /products/{product_id}
 Content-Type: application/json
@@ -167,6 +175,7 @@ Response: 200 OK
 ```
 
 #### Delete Product
+
 ```
 DELETE /products/{product_id}
 Authorization: Bearer <token>
@@ -178,6 +187,7 @@ Response: 200 OK
 ```
 
 #### Track Product
+
 ```
 POST /products/{product_id}/track
 Authorization: Bearer <token>
@@ -190,6 +200,7 @@ Response: 200 OK
 ```
 
 #### Untrack Product
+
 ```
 POST /products/{product_id}/untrack
 Authorization: Bearer <token>
@@ -202,6 +213,7 @@ Response: 200 OK
 ```
 
 #### Add Competitor Product
+
 ```
 POST /products/{product_id}/competitors
 Content-Type: application/json
@@ -235,6 +247,7 @@ Response: 200 OK
 ```
 
 #### Get Competitor Products
+
 ```
 GET /products/{product_id}/competitors
 Authorization: Bearer <token>
@@ -254,6 +267,7 @@ Response: 200 OK
 ### Alerts
 
 #### Create Alert
+
 ```
 POST /alerts
 Content-Type: application/json
@@ -289,6 +303,7 @@ Response: 200 OK
 ```
 
 #### Get Alert
+
 ```
 GET /alerts/{alert_id}
 Authorization: Bearer <token>
@@ -302,6 +317,7 @@ Response: 200 OK
 ```
 
 #### List User Alerts
+
 ```
 GET /alerts/user/{user_id}
 Authorization: Bearer <token>
@@ -317,6 +333,7 @@ Response: 200 OK
 ```
 
 #### Update Alert
+
 ```
 PUT /alerts/{alert_id}
 Content-Type: application/json
@@ -337,6 +354,7 @@ Response: 200 OK
 ```
 
 #### Delete Alert
+
 ```
 DELETE /alerts/{alert_id}
 Authorization: Bearer <token>
@@ -348,6 +366,7 @@ Response: 200 OK
 ```
 
 #### Activate Alert
+
 ```
 POST /alerts/{alert_id}/activate
 Authorization: Bearer <token>
@@ -360,6 +379,7 @@ Response: 200 OK
 ```
 
 #### Deactivate Alert
+
 ```
 POST /alerts/{alert_id}/deactivate
 Authorization: Bearer <token>
@@ -374,6 +394,7 @@ Response: 200 OK
 ### Recommendations
 
 #### Get Recommendation
+
 ```
 GET /recommendations/{recommendation_id}
 Authorization: Bearer <token>
@@ -398,6 +419,7 @@ Response: 200 OK
 ```
 
 #### List Product Recommendations
+
 ```
 GET /recommendations/product/{product_id}
 Authorization: Bearer <token>
@@ -414,6 +436,7 @@ Response: 200 OK
 ```
 
 #### Get Latest Recommendation
+
 ```
 GET /recommendations/product/{product_id}/latest
 Authorization: Bearer <token>
@@ -428,6 +451,7 @@ Response: 200 OK
 ```
 
 #### Calculate Recommendation
+
 ```
 POST /recommendations/{product_id}/calculate
 Authorization: Bearer <token>
@@ -442,6 +466,7 @@ Response: 200 OK
 ```
 
 #### Implement Recommendation
+
 ```
 POST /recommendations/{recommendation_id}/implement
 Authorization: Bearer <token>
@@ -454,6 +479,7 @@ Response: 200 OK
 ```
 
 #### Get High Confidence Recommendations
+
 ```
 GET /recommendations/high-confidence/list?min_confidence=0.7
 Authorization: Bearer <token>
@@ -471,6 +497,7 @@ Response: 200 OK
 ## Error Responses
 
 ### 400 Bad Request
+
 ```json
 {
   "detail": "Invalid request data"
@@ -478,6 +505,7 @@ Response: 200 OK
 ```
 
 ### 401 Unauthorized
+
 ```json
 {
   "detail": "Invalid credentials"
@@ -485,6 +513,7 @@ Response: 200 OK
 ```
 
 ### 404 Not Found
+
 ```json
 {
   "detail": "Resource not found"
@@ -492,6 +521,7 @@ Response: 200 OK
 ```
 
 ### 500 Internal Server Error
+
 ```json
 {
   "detail": "Internal server error"
@@ -505,6 +535,7 @@ Currently no rate limiting is implemented. This should be added for production.
 ## Pagination
 
 List endpoints support pagination via query parameters:
+
 - `skip`: Number of items to skip (default: 0)
 - `limit`: Number of items to return (default: 100, max: 1000)
 
@@ -519,6 +550,7 @@ Filtering can be implemented by adding filter parameters to list endpoints.
 ## Webhooks
 
 Webhooks for real-time events can be implemented for:
+
 - Price changes
 - Alert triggers
 - Recommendation updates
@@ -537,6 +569,7 @@ The API uses URL-based versioning (`/api/v1`). Future versions will be available
 ## CORS
 
 CORS is enabled for the following origins:
+
 - http://localhost:3000
 - http://localhost:8000
 

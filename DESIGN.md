@@ -12,24 +12,25 @@ Scene: a Shopify merchant glancing at pricing data on a 15-inch laptop, often in
 
 ### Palette (OKLCH)
 
-| Role | Light | Dark | Usage |
-|------|-------|------|-------|
-| Background | `oklch(0.985 0.003 250)` | `oklch(0.09 0.015 250)` | Page background |
-| Foreground | `oklch(0.15 0.015 250)` | `oklch(0.92 0.005 250)` | Body text |
-| Card | `oklch(1 0 0)` | `oklch(0.13 0.012 250)` | Card surfaces |
-| Muted | `oklch(0.94 0.005 250)` | `oklch(0.18 0.01 250)` | Secondary backgrounds |
-| Muted fg | `oklch(0.55 0.01 250)` | `oklch(0.55 0.008 250)` | Secondary text |
-| Border | `oklch(0.9 0.005 250)` | `oklch(0.22 0.01 250)` | Dividers, card borders |
-| **Primary** | `oklch(0.55 0.15 175)` | `oklch(0.65 0.15 175)` | Accent teal — CTAs, active states, AI badges |
-| Primary fg | `oklch(0.99 0 0)` | `oklch(0.06 0.01 250)` | Text on primary |
-| Destructive | `oklch(0.58 0.24 27)` | `oklch(0.65 0.2 25)` | Errors, delete actions |
-| Chart 1 | `oklch(0.55 0.15 175)` | `oklch(0.65 0.15 175)` | Teal — primary data |
-| Chart 2 | `oklch(0.6 0.12 260)` | `oklch(0.6 0.12 260)` | Blue — competitor |
-| Chart 3 | `oklch(0.55 0.1 300)` | `oklch(0.55 0.1 300)` | Purple — recommendations |
-| Chart 4 | `oklch(0.7 0.15 55)` | `oklch(0.7 0.15 55)` | Gold — alerts/warnings |
-| Chart 5 | `oklch(0.5 0.18 27)` | `oklch(0.6 0.18 25)` | Red — destructive/danger |
+| Role        | Light                    | Dark                    | Usage                                        |
+| ----------- | ------------------------ | ----------------------- | -------------------------------------------- |
+| Background  | `oklch(0.985 0.003 250)` | `oklch(0.09 0.015 250)` | Page background                              |
+| Foreground  | `oklch(0.15 0.015 250)`  | `oklch(0.92 0.005 250)` | Body text                                    |
+| Card        | `oklch(1 0 0)`           | `oklch(0.13 0.012 250)` | Card surfaces                                |
+| Muted       | `oklch(0.94 0.005 250)`  | `oklch(0.18 0.01 250)`  | Secondary backgrounds                        |
+| Muted fg    | `oklch(0.55 0.01 250)`   | `oklch(0.55 0.008 250)` | Secondary text                               |
+| Border      | `oklch(0.9 0.005 250)`   | `oklch(0.22 0.01 250)`  | Dividers, card borders                       |
+| **Primary** | `oklch(0.55 0.15 175)`   | `oklch(0.65 0.15 175)`  | Accent teal — CTAs, active states, AI badges |
+| Primary fg  | `oklch(0.99 0 0)`        | `oklch(0.06 0.01 250)`  | Text on primary                              |
+| Destructive | `oklch(0.58 0.24 27)`    | `oklch(0.65 0.2 25)`    | Errors, delete actions                       |
+| Chart 1     | `oklch(0.55 0.15 175)`   | `oklch(0.65 0.15 175)`  | Teal — primary data                          |
+| Chart 2     | `oklch(0.6 0.12 260)`    | `oklch(0.6 0.12 260)`   | Blue — competitor                            |
+| Chart 3     | `oklch(0.55 0.1 300)`    | `oklch(0.55 0.1 300)`   | Purple — recommendations                     |
+| Chart 4     | `oklch(0.7 0.15 55)`     | `oklch(0.7 0.15 55)`    | Gold — alerts/warnings                       |
+| Chart 5     | `oklch(0.5 0.18 27)`     | `oklch(0.6 0.18 25)`    | Red — destructive/danger                     |
 
 ### Glow effects
+
 - `--glow-primary`: `0 0 20px oklch(0.65 0.15 175 / 0.3)` — used sparingly on key metrics
 - `--glow-accent`: `0 0 15px oklch(0.65 0.15 175 / 0.15)` — subtle card hover
 
@@ -53,21 +54,25 @@ Scene: a Shopify merchant glancing at pricing data on a 15-inch laptop, often in
 ## Components
 
 ### Data display
+
 - `.data-value` — monospace, tabular-nums, for prices/scores/metrics
 - Price changes: teal for favorable, red for unfavorable, with directional arrow icon
 - Confidence scores: shown as percentage with subtle progress bar
 
 ### Charts (Recharts)
+
 - Dark tooltip: `oklch(0.13 0.012 250)` background + `oklch(0.22 0.01 250)` border
 - Grid lines: `oklch(0.22 0.01 250)` — visible but not competing with data
 - Tooltips: always show source + timestamp
 
 ### Alerts
+
 - Severity: color-coded border-left (not full background tint)
 - Critical: red, High: gold, Medium: teal, Low: muted
 - Unread: subtle dot indicator, not bold text
 
 ### Buttons
+
 - Primary: filled teal, white text
 - Secondary: muted background, foreground text
 - Ghost: transparent, hover reveals border

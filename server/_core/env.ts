@@ -10,11 +10,18 @@ export const ENV = {
   // JWT Authentication — MUST be set in production; throws if missing.
   jwtSecret: (() => {
     const s = process.env.JWT_SECRET ?? "change-me-in-production";
-    if (process.env.NODE_ENV === "production" && s === "change-me-in-production") {
-      throw new Error("FATAL: JWT_SECRET must be set to a secure value in production");
+    if (
+      process.env.NODE_ENV === "production" &&
+      s === "change-me-in-production"
+    ) {
+      throw new Error(
+        "FATAL: JWT_SECRET must be set to a secure value in production"
+      );
     }
     if (process.env.NODE_ENV === "production" && s.length < 32) {
-      throw new Error("FATAL: JWT_SECRET must be at least 32 characters in production");
+      throw new Error(
+        "FATAL: JWT_SECRET must be at least 32 characters in production"
+      );
     }
     return s;
   })(),
@@ -26,7 +33,8 @@ export const ENV = {
   shopifyApiKey: process.env.SHOPIFY_API_KEY ?? "",
   shopifyApiSecret: process.env.SHOPIFY_API_SECRET ?? "",
   shopifyAppUrl: process.env.SHOPIFY_APP_URL ?? "http://localhost:3000",
-  shopifyScopes: process.env.SHOPIFY_SCOPES ?? "read_products,read_orders,write_products",
+  shopifyScopes:
+    process.env.SHOPIFY_SCOPES ?? "read_products,read_orders,write_products",
 
   // Application
   isProduction: process.env.NODE_ENV === "production",
@@ -41,7 +49,8 @@ export const ENV = {
 
   // Firecrawl — web scraping API (primary scraper, falls back to Playwright)
   firecrawlApiKey: process.env.FIRECRAWL_API_KEY ?? "",
-  firecrawlBaseUrl: process.env.FIRECRAWL_BASE_URL ?? "https://api.firecrawl.dev",
+  firecrawlBaseUrl:
+    process.env.FIRECRAWL_BASE_URL ?? "https://api.firecrawl.dev",
 
   // Encryption key salt for PBKDF2 — generate with: node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
   encryptionKeySalt: process.env.ENCRYPTION_KEY_SALT ?? "",
@@ -57,8 +66,13 @@ export const ENV = {
   openaiModel: process.env.OPENAI_MODEL ?? "gpt-4o-mini",
 
   // Price Monitoring
-  monitoringIntervalHours: parseInt(process.env.MONITORING_INTERVAL_HOURS ?? "1", 10),
-  matchConfidenceThreshold: parseFloat(process.env.MATCH_CONFIDENCE_THRESHOLD ?? "0.85"),
+  monitoringIntervalHours: parseInt(
+    process.env.MONITORING_INTERVAL_HOURS ?? "1",
+    10
+  ),
+  matchConfidenceThreshold: parseFloat(
+    process.env.MATCH_CONFIDENCE_THRESHOLD ?? "0.85"
+  ),
   maxConcurrentScrapes: parseInt(process.env.MAX_CONCURRENT_SCRAPES ?? "5", 10),
 };
 

@@ -5,6 +5,7 @@ Complete setup instructions for the Shopify Price Intelligence platform.
 ## Quick Start
 
 ### Prerequisites
+
 - Node.js 22.13.0 or higher
 - Python 3.11 or higher
 - pnpm (or npm)
@@ -19,6 +20,7 @@ cd shopify-price-intelligence
 ### 2. Backend Setup
 
 #### Step 1: Create Virtual Environment
+
 ```bash
 cd backend
 python3.11 -m venv venv
@@ -26,11 +28,13 @@ source venv/bin/activate  # On Windows: venv\Scripts\activate
 ```
 
 #### Step 2: Install Dependencies
+
 ```bash
 pip install -r requirements.txt
 ```
 
 #### Step 3: Configure Environment
+
 Create a `.env` file in the backend directory:
 
 ```env
@@ -59,11 +63,13 @@ DEBUG=True
 ```
 
 #### Step 4: Initialize Database
+
 ```bash
 alembic upgrade head
 ```
 
 #### Step 5: Start Backend Server
+
 ```bash
 python main.py
 ```
@@ -74,12 +80,14 @@ API documentation: `http://localhost:8000/docs`
 ### 3. Frontend Setup
 
 #### Step 1: Install Dependencies
+
 ```bash
 cd frontend
 pnpm install
 ```
 
 #### Step 2: Configure Environment
+
 Create a `.env.local` file in the frontend directory:
 
 ```env
@@ -88,6 +96,7 @@ NEXT_PUBLIC_SHOPIFY_API_KEY=your_shopify_api_key
 ```
 
 #### Step 3: Start Development Server
+
 ```bash
 pnpm dev
 ```
@@ -119,6 +128,7 @@ The frontend will be available at `http://localhost:3000`
 ### 3. Configure OAuth Redirect URI
 
 1. In your Shopify app settings, set the OAuth redirect URI to:
+
    ```
    http://localhost:3000/api/auth/callback
    ```
@@ -133,6 +143,7 @@ The frontend will be available at `http://localhost:3000`
 ### Using SQLite (Development)
 
 SQLite is configured by default. The database file will be created automatically at:
+
 ```
 backend/shopify_price_intelligence.db
 ```
@@ -141,6 +152,7 @@ backend/shopify_price_intelligence.db
 
 1. Create a SQL Server database
 2. Update the `DATABASE_URL` in `.env`:
+
    ```
    DATABASE_URL=mssql+pyodbc://username:password@server/database?driver=ODBC+Driver+17+for+SQL+Server
    ```
@@ -177,8 +189,9 @@ curl http://localhost:8000/health
 ```
 
 Expected response:
+
 ```json
-{"status": "ok", "service": "Shopify Price Intelligence API"}
+{ "status": "ok", "service": "Shopify Price Intelligence API" }
 ```
 
 ### Frontend Check
@@ -190,6 +203,7 @@ Open `http://localhost:3000` in your browser. You should see the landing page.
 ### Issue: "ModuleNotFoundError: No module named 'app'"
 
 **Solution**: Make sure you're running the backend from the `backend` directory:
+
 ```bash
 cd backend
 python main.py
@@ -198,6 +212,7 @@ python main.py
 ### Issue: "Cannot find module 'recharts'"
 
 **Solution**: Reinstall frontend dependencies:
+
 ```bash
 cd frontend
 pnpm install
@@ -210,6 +225,7 @@ pnpm install
 ### Issue: CORS errors when connecting frontend to backend
 
 **Solution**: Verify the `FRONTEND_URL` in backend `.env` matches your frontend URL:
+
 ```env
 FRONTEND_URL=http://localhost:3000
 ```
@@ -219,6 +235,7 @@ FRONTEND_URL=http://localhost:3000
 ### Making Database Changes
 
 1. Create a migration:
+
    ```bash
    cd backend
    alembic revision --autogenerate -m "Description of changes"
@@ -256,6 +273,7 @@ FRONTEND_URL=http://localhost:3000
 ### Frontend Deployment
 
 1. Build the frontend:
+
    ```bash
    cd frontend
    pnpm build
@@ -283,6 +301,7 @@ FRONTEND_URL=http://localhost:3000
 ### Database Backups
 
 For SQLite (development):
+
 ```bash
 cp backend/shopify_price_intelligence.db backend/shopify_price_intelligence.db.backup
 ```
@@ -293,6 +312,7 @@ Use SQL Server's built-in backup tools or your hosting provider's backup service
 ### Clearing Cache
 
 If you encounter issues, clear browser cache:
+
 1. Open DevTools (F12)
 2. Right-click the refresh button
 3. Select "Empty cache and hard refresh"
@@ -300,6 +320,7 @@ If you encounter issues, clear browser cache:
 ## Support
 
 For issues or questions:
+
 1. Check the main README.md
 2. Review API documentation at `http://localhost:8000/docs`
 3. Check browser console for frontend errors
