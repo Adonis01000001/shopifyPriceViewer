@@ -11,6 +11,7 @@ import Alerts from "./pages/dashboard/Alerts";
 import Competitors from "./pages/dashboard/Competitors";
 import Analytics from "./pages/dashboard/Analytics";
 import PriceScout from "./pages/dashboard/PriceScout";
+import Settings from "./pages/dashboard/Settings";
 
 import Auth from "./pages/Auth";
 import { trpc } from "@/lib/trpc";
@@ -56,7 +57,7 @@ function AuthGuard({ children }: { children: React.ReactNode }) {
 function App() {
   return (
     <ErrorBoundary>
-      <ThemeProvider defaultTheme="light">
+      <ThemeProvider defaultTheme="dark">
         <TooltipProvider>
           <Toaster position="top-right" richColors />
           <Switch>
@@ -71,6 +72,7 @@ function App() {
                     <Route path="/alerts" component={Alerts} />
                     <Route path="/competitors" component={Competitors} />
                     <Route path="/analytics" component={Analytics} />
+                    <Route path="/settings" component={Settings} />
                     <Route component={NotFound} />
                   </Switch>
                 </DashboardLayout>

@@ -38,13 +38,6 @@ export const ENV = {
 
   // Application
   isProduction: process.env.NODE_ENV === "production",
-
-  // Legacy — TODO: remove after full migration off OAuth portal
-  appId: process.env.VITE_APP_ID ?? "",
-  oAuthServerUrl: process.env.OAUTH_SERVER_URL ?? "",
-  ownerOpenId: process.env.OWNER_OPEN_ID ?? "",
-  forgeApiUrl: process.env.BUILT_IN_FORGE_API_URL ?? "",
-  forgeApiKey: process.env.BUILT_IN_FORGE_API_KEY ?? "",
   bypassAuth: process.env.VITE_BYPASS_AUTH === "true",
 
   // Firecrawl — web scraping API (primary scraper, falls back to Playwright)

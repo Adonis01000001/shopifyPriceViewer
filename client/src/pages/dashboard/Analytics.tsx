@@ -13,11 +13,15 @@ import {
   YAxis,
 } from "recharts";
 import { trpc } from "@/lib/trpc";
-import { TrendingUp, Target, Zap, BarChart3 } from "lucide-react";
+import { Empty, EmptyHeader, EmptyTitle, EmptyDescription, EmptyMedia } from "@/components/ui/empty";
+import { PageSkeleton } from "@/components/dashboard/PageSkeleton";
+import { TrendingUp, Target, Zap, BarChart3, BarChart4 } from "lucide-react";
 import { useMemo } from "react";
 
 export default function Analytics() {
-  const { data: products } = trpc.products.list.useQuery();
+  const { data: products, isLoading } = trpc.products.list.useQuery();
+
+  if (isLoading) return <PageSkeleton />;
   const { data: productStats } = trpc.products.stats.useQuery();
   const { data: recStats } = trpc.recommendations.stats.useQuery();
   const { data: competitorStats } = trpc.competitors.stats.useQuery();
@@ -78,6 +82,32 @@ export default function Analytics() {
   const totalProducts = productStats?.total ?? 0;
   const aiRecs = recStats?.total ?? 0;
   const totalSavings = recStats?.totalSavings ?? 0;
+
+  if (allProducts.length === 0) {
+    return (
+      <div className="space-y-6">
+        <div className="flex flex-col gap-1">
+          <h2 className="text-2xl font-extrabold text-primary">
+            Analytics & Reports
+          </h2>
+          <p className="text-muted-foreground text-sm">
+            Analytics will be available once you have products and data
+            flowing.
+          </p>
+        </div>
+        <Empty>
+          <EmptyMedia variant="icon"><BarChart4 className="h-6 w-6" /></EmptyMedia>
+          <EmptyHeader>
+            <EmptyTitle>No data yet</EmptyTitle>
+            <EmptyDescription>
+              Add products and connect competitors to unlock pricing analytics,
+              margin reports, and market positioning insights.
+            </EmptyDescription>
+          </EmptyHeader>
+        </Empty>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">

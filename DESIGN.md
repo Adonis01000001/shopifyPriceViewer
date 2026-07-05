@@ -8,31 +8,24 @@ Scene: a Shopify merchant glancing at pricing data on a 15-inch laptop, often in
 
 ## Color Strategy
 
-**Restrained** — tinted neutrals + one teal accent at <=10% of surface area. The teal signals "action" and "AI" without screaming.
+**Restrained** — tinted neutrals + one rose accent at <=10% of surface area. The rose signals "action" and "AI" without screaming. Based on Material 3 rose seed color (`#ba005c` / `#ffb1c5`).
 
-### Palette (OKLCH)
+### Palette
 
-| Role        | Light                    | Dark                    | Usage                                        |
-| ----------- | ------------------------ | ----------------------- | -------------------------------------------- |
-| Background  | `oklch(0.985 0.003 250)` | `oklch(0.09 0.015 250)` | Page background                              |
-| Foreground  | `oklch(0.15 0.015 250)`  | `oklch(0.92 0.005 250)` | Body text                                    |
-| Card        | `oklch(1 0 0)`           | `oklch(0.13 0.012 250)` | Card surfaces                                |
-| Muted       | `oklch(0.94 0.005 250)`  | `oklch(0.18 0.01 250)`  | Secondary backgrounds                        |
-| Muted fg    | `oklch(0.55 0.01 250)`   | `oklch(0.55 0.008 250)` | Secondary text                               |
-| Border      | `oklch(0.9 0.005 250)`   | `oklch(0.22 0.01 250)`  | Dividers, card borders                       |
-| **Primary** | `oklch(0.55 0.15 175)`   | `oklch(0.65 0.15 175)`  | Accent teal — CTAs, active states, AI badges |
-| Primary fg  | `oklch(0.99 0 0)`        | `oklch(0.06 0.01 250)`  | Text on primary                              |
-| Destructive | `oklch(0.58 0.24 27)`    | `oklch(0.65 0.2 25)`    | Errors, delete actions                       |
-| Chart 1     | `oklch(0.55 0.15 175)`   | `oklch(0.65 0.15 175)`  | Teal — primary data                          |
-| Chart 2     | `oklch(0.6 0.12 260)`    | `oklch(0.6 0.12 260)`   | Blue — competitor                            |
-| Chart 3     | `oklch(0.55 0.1 300)`    | `oklch(0.55 0.1 300)`   | Purple — recommendations                     |
-| Chart 4     | `oklch(0.7 0.15 55)`     | `oklch(0.7 0.15 55)`    | Gold — alerts/warnings                       |
-| Chart 5     | `oklch(0.5 0.18 27)`     | `oklch(0.6 0.18 25)`    | Red — destructive/danger                     |
+| Role        | Light       | Dark        | Usage                                        |
+| ----------- | ----------- | ----------- | -------------------------------------------- |
+| Primary     | `#ba005c`   | `#ffb1c5`   | Accent rose — CTAs, active states, AI badges |
+| Background  | `#fff5f8`   | `#1f0e13`   | Page background                              |
+| Surface     | `#ecd9de`   | `#2d1a1f`   | Card surfaces                                |
+| On Surface  | `#2d1a1f`   | `#feeef3`   | Body text                                    |
+| Tertiary    | `#21a732`   | `#63e063`   | Positive / success — price drops, gains      |
+| Error       | `#dc2626`   | `#ffb4ab`   | Errors, delete actions                       |
+| Outline     | `#ab8790`   | `#c49aa8`   | Card borders, dividers                       |
 
 ### Glow effects
 
-- `--glow-primary`: `0 0 20px oklch(0.65 0.15 175 / 0.3)` — used sparingly on key metrics
-- `--glow-accent`: `0 0 15px oklch(0.65 0.15 175 / 0.15)` — subtle card hover
+- `--glow-primary`: `0 0 20px rgba(255, 177, 197, 0.3)` — used sparingly on key metrics
+- `--glow-accent`: `0 0 15px rgba(255, 177, 197, 0.15)` — subtle card hover
 
 ## Typography
 

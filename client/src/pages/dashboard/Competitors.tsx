@@ -30,6 +30,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { trpc } from "@/lib/trpc";
+import { Empty, EmptyHeader, EmptyTitle, EmptyDescription, EmptyMedia, EmptyContent } from "@/components/ui/empty";
 import {
   AlertCircle,
   ArrowRight,
@@ -1278,10 +1279,27 @@ export default function Competitors() {
             </div>
           ))
         ) : (
-          <div className="col-span-4 glass-card p-8 text-center text-muted-foreground">
-            <Globe className="h-10 w-10 mx-auto mb-3 opacity-30" />
-            <p className="text-sm font-medium">No competitors yet</p>
-            <p className="text-xs">Add a competitor or import a CSV</p>
+          <div className="col-span-4">
+            <Empty>
+              <EmptyMedia variant="icon"><Globe className="h-6 w-6" /></EmptyMedia>
+              <EmptyHeader>
+                <EmptyTitle>No competitors yet</EmptyTitle>
+                <EmptyDescription>
+                  Add your first competitor to start comparing prices and
+                  discovering market insights.
+                </EmptyDescription>
+              </EmptyHeader>
+              <EmptyContent>
+                <Button
+                  size="sm"
+                  className="bg-primary text-primary-foreground text-xs"
+                  onClick={() => setDialogOpen(true)}
+                >
+                  <Plus className="h-3.5 w-3.5 mr-1.5" />
+                  Add Competitor
+                </Button>
+              </EmptyContent>
+            </Empty>
           </div>
         )}
       </div>

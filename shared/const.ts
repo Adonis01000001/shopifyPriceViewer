@@ -1,4 +1,5 @@
 export const COOKIE_NAME = "app_session_id";
+export const REFRESH_COOKIE_NAME = "app_refresh";
 export const ONE_YEAR_MS = 1000 * 60 * 60 * 24 * 365;
 export const SESSION_EXPIRY_MS = 1000 * 60 * 60 * 24; // 24 hours for sessions
 export const REFRESH_TOKEN_EXPIRY_MS = 1000 * 60 * 60 * 24 * 30; // 30 days

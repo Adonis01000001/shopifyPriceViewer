@@ -89,7 +89,7 @@ export const users = pgTable(
   },
   t => ({
     openIdIdx: uniqueIndex("users_open_id_idx").on(t.openId),
-    emailIdx: index("users_email_idx").on(t.email),
+    emailIdx: uniqueIndex("users_email_idx").on(t.email),
   })
 );
 

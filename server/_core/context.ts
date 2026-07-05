@@ -1,8 +1,5 @@
 import type { CreateExpressContextOptions } from "@trpc/server/adapters/express";
-import { eq } from "drizzle-orm";
 import type { User } from "../../drizzle/schema";
-import { users } from "../../drizzle/schema";
-import * as db from "../db";
 import { ENV } from "./env";
 import { sdk } from "./sdk";
 import { logger } from "./logger";
@@ -12,17 +9,6 @@ export type TrpcContext = {
   res: CreateExpressContextOptions["res"];
   user: User | null;
 };
-
-async function getFirstUser(): Promise<User | null> {
-  try {
-    const database = await db.getDb();
-    if (!database) return null;
-    const result = await database.select().from(users).limit(1);
-    return result[0] ?? null;
-  } catch {
-    return null;
-  }
-}
 
 function createDevUser(): User {
   return {

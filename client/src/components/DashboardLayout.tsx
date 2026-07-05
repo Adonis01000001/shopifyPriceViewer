@@ -44,12 +44,14 @@ import {
   Check,
   Globe,
   Shield,
+  Settings as SettingsIcon,
 } from "lucide-react";
 import { CSSProperties, useEffect, useRef, useState, useCallback } from "react";
 import { useLocation } from "wouter";
 import type { User } from "@shared/types";
 import { trpc } from "@/lib/trpc";
 import { DashboardLayoutSkeleton } from "./DashboardLayoutSkeleton";
+import OnboardingWizard from "./dashboard/OnboardingWizard";
 import { useTheme } from "@/contexts/ThemeContext";
 import Papa from "papaparse";
 import { toast } from "sonner";
@@ -61,7 +63,7 @@ const menuItems = [
   { icon: Users, label: "Competitors", path: "/competitors", adminOnly: false },
   { icon: BarChart3, label: "Analytics", path: "/analytics", adminOnly: false },
   { icon: Bell, label: "Alerts", path: "/alerts", adminOnly: false },
-
+  { icon: SettingsIcon, label: "Settings", path: "/settings", adminOnly: false },
 ];
 
 const SIDEBAR_WIDTH_KEY = "sidebar-width";
@@ -85,6 +87,31 @@ export default function DashboardLayout({
     localStorage.setItem(SIDEBAR_WIDTH_KEY, sidebarWidth.toString());
   }, [sidebarWidth]);
 
+  const { data: products } = trpc.products.list.useQuery(undefined, { enabled: !!user });
+  const { data: stores } = trpc.shopify.listStores.useQuery(undefined, { enabled: !!user });
+  const [onboardingOpen, setOnboardingOpen] = useState(() => {
+    if (!user || isLoading) return false;
+    const dismissed = localStorage.getItem("onboarding-dismissed");
+    const hasProducts = (products?.length ?? 0) > 0;
+    const hasStores = (stores?.length ?? 0) > 0;
+    return !dismissed && !hasProducts && !hasStores;
+  });
+
+  useEffect(() => {
+    if (!user || isLoading) return;
+    const dismissed = localStorage.getItem("onboarding-dismissed");
+    const hasProducts = (products?.length ?? 0) > 0;
+    const hasStores = (stores?.length ?? 0) > 0;
+    if (!dismissed && !hasProducts && !hasStores) {
+      setOnboardingOpen(true);
+    }
+  }, [user, isLoading, products, stores]);
+
+  const handleOnboardingComplete = () => {
+    localStorage.setItem("onboarding-dismissed", "true");
+    setOnboardingOpen(false);
+  };
+
   if (isLoading) return <DashboardLayoutSkeleton />;
   if (!user) return null;
 
@@ -92,6 +119,14 @@ export default function DashboardLayout({
     <SidebarProvider
       style={{ "--sidebar-width": `${sidebarWidth}px` } as CSSProperties}
     >
+      <OnboardingWizard
+        open={onboardingOpen}
+        onOpenChange={(open) => {
+          setOnboardingOpen(open);
+          if (!open) localStorage.setItem("onboarding-dismissed", "true");
+        }}
+        onComplete={handleOnboardingComplete}
+      />
       <DashboardLayoutContent user={user} setSidebarWidth={setSidebarWidth}>
         {children}
       </DashboardLayoutContent>

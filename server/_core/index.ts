@@ -7,8 +7,7 @@ import { createServer } from "http";
 import net from "net";
 import { createExpressMiddleware } from "@trpc/server/adapters/express";
 import { registerOAuthRoutes } from "./oauth";
-import { registerStorageProxy } from "./storageProxy";
-import { apiLimiter, shopifyLimiter, scrapeLimiter } from "./rate-limit";
+import { apiLimiter, authLimiter, shopifyLimiter, scrapeLimiter } from "./rate-limit";
 import { doubleCsrfProtection } from "./csrf";
 import { logger } from "./logger";
 import { ENV } from "./env";
@@ -65,12 +64,16 @@ async function startServer() {
   app.use("/api/shopify/connect", shopifyLimiter);
   app.use("/api/shopify/callback", shopifyLimiter);
 
+  // Auth rate limiting (brute force protection)
+  app.use("/api/trpc/auth.login", authLimiter);
+  app.use("/api/trpc/auth.register", authLimiter);
+
   // Scrape rate limiting (tRPC mutation endpoint)
   app.use("/api/trpc/competitors.scrapeProducts", scrapeLimiter);
 
-  // Body parsers
-  app.use(express.json({ limit: "50mb" }));
-  app.use(express.urlencoded({ limit: "50mb", extended: true }));
+  // Body parsers — 1MB limit (largest legitimate payload ~250KB for product sync)
+  app.use(express.json({ limit: "1mb" }));
+  app.use(express.urlencoded({ limit: "1mb", extended: true }));
 
   // Cookie parser — required for CSRF double-submit cookie pattern
   app.use(cookieParser());
@@ -80,7 +83,6 @@ async function startServer() {
   app.use("/api/shopify/", doubleCsrfProtection);
   app.use("/api/oauth/", doubleCsrfProtection);
 
-  registerStorageProxy(app);
   registerOAuthRoutes(app);
 
   // tRPC API

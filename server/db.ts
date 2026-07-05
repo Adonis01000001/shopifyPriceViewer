@@ -1,5 +1,5 @@
 import { drizzle } from "drizzle-orm/node-postgres";
-import { Pool } from "pg";
+import { Pool, type PoolConfig } from "pg";
 import * as schema from "../drizzle/schema";
 import { dbRelations } from "../drizzle/relations";
 import { logger } from "./_core/logger";
@@ -15,13 +15,17 @@ let _db: ReturnType<typeof drizzle<typeof relationalSchema>> | null = null;
 
 function getPool(): Pool | null {
   if (!_pool && process.env.DATABASE_URL) {
-    _pool = new Pool({
+    const isProduction = process.env.NODE_ENV === "production";
+    const poolConfig: PoolConfig = {
       connectionString: process.env.DATABASE_URL,
       max: 10,
       idleTimeoutMillis: 30000,
       connectionTimeoutMillis: 5000,
-      ssl: false,
-    });
+    };
+    if (isProduction) {
+      poolConfig.ssl = { rejectUnauthorized: true };
+    }
+    _pool = new Pool(poolConfig);
     _pool.on("error", err => {
       logger.error({ err }, "Unexpected database pool error");
     });

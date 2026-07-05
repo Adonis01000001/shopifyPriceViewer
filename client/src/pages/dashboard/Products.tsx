@@ -18,7 +18,9 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { trpc } from "@/lib/trpc";
-import { Download, MoreHorizontal, Search, Plus } from "lucide-react";
+import { Download, MoreHorizontal, Search, Plus, Package, Database } from "lucide-react";
+import { Empty, EmptyHeader, EmptyTitle, EmptyDescription, EmptyMedia, EmptyContent } from "@/components/ui/empty";
+import { PageSkeleton } from "@/components/dashboard/PageSkeleton";
 import AddProductDialog from "./AddProductDialog";
 import {
   DropdownMenu,
@@ -136,8 +138,10 @@ export default function Products() {
   const [categoryFilter, setCategoryFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState("all");
 
-  const { data: allProducts, refetch } = trpc.products.list.useQuery();
+  const { data: allProducts, isLoading, refetch } = trpc.products.list.useQuery();
   const { data: stats } = trpc.products.stats.useQuery();
+
+  if (isLoading) return <PageSkeleton />;
   const updateProductMutation = trpc.products.update.useMutation({
     onSuccess: () => {
       toast.success("Price updated");
@@ -200,6 +204,40 @@ export default function Products() {
     URL.revokeObjectURL(url);
     toast.success(`Exported ${filtered.length} products`);
   }, [filtered]);
+
+  if (products.length === 0) {
+    return (
+      <div className="space-y-6">
+        <div className="flex flex-col gap-1">
+          <h2 className="text-2xl font-extrabold text-primary">
+            Product Inventory
+          </h2>
+          <p className="text-muted-foreground text-sm">
+            No products tracked yet. Start by connecting your Shopify store.
+          </p>
+        </div>
+        <Empty>
+          <EmptyMedia variant="icon"><Package className="h-6 w-6" /></EmptyMedia>
+          <EmptyHeader>
+            <EmptyTitle>No products yet</EmptyTitle>
+            <EmptyDescription>
+              Sync your Shopify catalog to start monitoring prices and tracking
+              competitor movements.
+            </EmptyDescription>
+          </EmptyHeader>
+          <EmptyContent>
+            <a
+              href="/api/shopify/login"
+              className="inline-flex items-center justify-center rounded-lg bg-primary text-primary-foreground text-sm font-medium h-9 px-4 hover:bg-primary/90 transition-colors"
+            >
+              <Database className="h-4 w-4 mr-2" />
+              Connect Shopify Store
+            </a>
+          </EmptyContent>
+        </Empty>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">

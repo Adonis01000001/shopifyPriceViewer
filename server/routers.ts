@@ -187,31 +187,44 @@ export const appRouter = router({
         // 2. Decrypt the access token
         const accessToken = decryptToken(store.accessToken);
 
-        // 3. Fetch products from Shopify Admin API
+        // 3. Fetch ALL products from Shopify Admin API (cursor-based pagination)
         const shopDomain = store.shopDomain;
-        const shopifyUrl = `https://${shopDomain}/admin/api/2024-01/products.json?limit=250`;
-
-        const response = await fetch(shopifyUrl, {
+        const baseUrl = `https://${shopDomain}/admin/api/2025-01/products.json?limit=250`;
+        const allShopifyProducts: any[] = [];
+        let nextUrl: string | null = baseUrl;
+        const fetchOpts = {
           headers: {
             "X-Shopify-Access-Token": accessToken,
             "Content-Type": "application/json",
           },
-          signal: AbortSignal.timeout(30000),
-        });
+        };
 
-        if (!response.ok) {
-          const errText = await response.text().catch(() => "");
-          logger.error(
-            { status: response.status, err: errText },
-            "Shopify sync API error"
-          );
-          throw new Error(`Shopify API error: ${response.status}`);
+        while (nextUrl) {
+          const resp: Response = await fetch(nextUrl, {
+            ...fetchOpts,
+            signal: AbortSignal.timeout(30000),
+          });
+
+          if (!resp.ok) {
+            const errText: string = await resp.text().catch(() => "");
+            logger.error(
+              { status: resp.status, err: errText },
+              "Shopify sync API error"
+            );
+            throw new Error(`Shopify API error: ${resp.status}`);
+          }
+
+          const data: any = await resp.json();
+          const pageProducts: any[] = data.products || [];
+          allShopifyProducts.push(...pageProducts);
+
+          // Parse Link header for cursor-based pagination
+          const linkHeader: string = resp.headers.get("link") || "";
+          const nextMatch: RegExpMatchArray | null = linkHeader.match(/<([^>]+)>;\s*rel="next"/);
+          nextUrl = nextMatch ? nextMatch[1] : null;
         }
 
-        const shopifyData = await response.json();
-        const shopifyProducts: any[] = shopifyData.products || [];
-
-        if (shopifyProducts.length === 0) {
+        if (allShopifyProducts.length === 0) {
           await database
             .update(shopifyStores)
             .set({ lastSyncedAt: new Date(), updatedAt: new Date() })
@@ -220,7 +233,7 @@ export const appRouter = router({
         }
 
         // 4. Map Shopify products to our schema (use first variant for price)
-        const productItems = shopifyProducts.map((sp: any) => {
+        const productItems = allShopifyProducts.map((sp: any) => {
           const variant = sp.variants?.[0];
           return {
             userId: ctx.user!.id,

@@ -9,6 +9,8 @@ import {
 } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { trpc } from "@/lib/trpc";
+import { Empty, EmptyHeader, EmptyTitle, EmptyDescription, EmptyMedia, EmptyContent } from "@/components/ui/empty";
+import { PageSkeleton } from "@/components/dashboard/PageSkeleton";
 import {
   AlertTriangle,
   Bell,
@@ -18,6 +20,7 @@ import {
   TrendingUp,
   ArrowUpDown,
   Zap,
+  ShieldCheck,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useState } from "react";
@@ -119,10 +122,12 @@ export default function Alerts() {
   const [searchQuery, setSearchQuery] = useState("");
   const [activeTab, setActiveTab] = useState("all");
 
-  const { data: alerts } = trpc.alerts.list.useQuery({
+  const { data: alerts, isLoading } = trpc.alerts.list.useQuery({
     unreadOnly: false,
     limit: 100,
   });
+
+  if (isLoading) return <PageSkeleton />;
   const { data: stats } = trpc.alerts.stats.useQuery();
 
   const allAlerts = alerts ?? [];
@@ -142,6 +147,35 @@ export default function Alerts() {
       activeTab === alert.severity;
     return matchesSearch && matchesTab;
   });
+
+  if (allAlerts.length === 0) {
+    return (
+      <div className="space-y-6">
+        <div className="flex flex-col gap-1">
+          <h2 className="text-2xl font-extrabold text-primary">Alerts</h2>
+          <p className="text-muted-foreground text-sm">
+            No alerts yet. Alerts will appear when price changes or threshold
+            breaches are detected.
+          </p>
+        </div>
+        <Empty>
+          <EmptyMedia variant="icon"><ShieldCheck className="h-6 w-6" /></EmptyMedia>
+          <EmptyHeader>
+            <EmptyTitle>All clear</EmptyTitle>
+            <EmptyDescription>
+              You'll receive alerts when competitor prices change, thresholds
+              are breached, or significant market movements are detected.
+            </EmptyDescription>
+          </EmptyHeader>
+          <EmptyContent>
+            <p className="text-[10px] text-muted-foreground/60">
+              Set price alert thresholds in the settings panel.
+            </p>
+          </EmptyContent>
+        </Empty>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">

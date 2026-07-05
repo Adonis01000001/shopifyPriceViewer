@@ -4,17 +4,15 @@ import { eq } from "drizzle-orm";
 import type { InsertUser, User } from "../../../drizzle/schema";
 import { users } from "../../../drizzle/schema";
 import * as db from "../../db";
-import { ENV } from "../env";
 import { logger } from "../logger";
 
 export type SessionPayload = {
   openId: string;
-  appId: string;
   name: string;
 };
 
 function getSessionSecret() {
-  return new TextEncoder().encode(ENV.jwtSecret);
+  return new TextEncoder().encode(process.env.JWT_SECRET ?? "change-me-in-production");
 }
 
 const isNonEmptyString = (value: unknown): value is string =>
@@ -27,7 +25,7 @@ export async function createSessionToken(
   }
 ): Promise<string> {
   return signSession(
-    { openId, appId: ENV.appId, name: options.name || "" },
+    { openId, name: options.name || "" },
     options
   );
 }
@@ -42,7 +40,6 @@ export async function signSession(
   const secretKey = getSessionSecret();
   return new SignJWT({
     openId: payload.openId,
-    appId: payload.appId,
     name: payload.name,
   })
     .setProtectedHeader({ alg: "HS256", typ: "JWT" })
@@ -62,14 +59,14 @@ export async function verifySession(
     const { payload } = await jwtVerify(cookieValue, secretKey, {
       algorithms: ["HS256"],
     });
-    const { openId, appId, name } = payload as Record<string, unknown>;
+    const { openId, name } = payload as Record<string, unknown>;
     if (!isNonEmptyString(openId)) {
       logger.warn(
         "Session verification failed: payload missing required fields"
       );
       return null;
     }
-    return { openId, appId: String(appId ?? ""), name: String(name ?? "") };
+    return { openId, name: String(name ?? "") };
   } catch (error) {
     logger.debug({ err: error }, "Session verification failed");
     return null;
@@ -109,6 +106,22 @@ export async function getUserByOpenId(
     .select()
     .from(users)
     .where(eq(users.openId, openId))
+    .limit(1);
+  return result.length > 0 ? result[0] : undefined;
+}
+
+export async function getUserById(
+  id: string
+): Promise<User | undefined> {
+  const database = await db.getDb();
+  if (!database) {
+    logger.warn("Cannot get user: database not available");
+    return undefined;
+  }
+  const result = await database
+    .select()
+    .from(users)
+    .where(eq(users.id, id))
     .limit(1);
   return result.length > 0 ? result[0] : undefined;
 }
