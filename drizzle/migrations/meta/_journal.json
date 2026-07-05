@@ -43,6 +43,13 @@
       "when": 1782847970102,
       "tag": "0005_polite_butterfly",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1782847970200,
+      "tag": "0006_add_margin_protection",
+      "breakpoints": true
     }
   ]
 }

@@ -14,11 +14,16 @@ export async function createRefreshToken(userId: string): Promise<string> {
   const tokenHash = hashToken(raw);
   const expiresAt = new Date(Date.now() + REFRESH_TOKEN_EXPIRY_MS);
   const database = await requireDb();
-  await database.insert(refreshTokens).values({
-    userId,
-    tokenHash,
-    expiresAt,
-  });
+  try {
+    await database.insert(refreshTokens).values({
+      userId,
+      tokenHash,
+      expiresAt,
+    });
+  } catch (err) {
+    console.error("[createRefreshToken] insert failed for userId=", userId, err);
+    throw err;
+  }
   return raw;
 }
 
