@@ -141,7 +141,6 @@ export default function Products() {
   const { data: allProducts, isLoading, refetch } = trpc.products.list.useQuery();
   const { data: stats } = trpc.products.stats.useQuery();
 
-  if (isLoading) return <PageSkeleton />;
   const updateProductMutation = trpc.products.update.useMutation({
     onSuccess: () => {
       toast.success("Price updated");
@@ -173,13 +172,6 @@ export default function Products() {
     });
   }, [products, searchQuery, categoryFilter, statusFilter]);
 
-  const statusCounts = {
-    optimal: stats?.optimal ?? 0,
-    underpriced: stats?.underpriced ?? 0,
-    overpriced: stats?.overpriced ?? 0,
-    alert: stats?.alert ?? 0,
-  };
-
   const handleExport = useCallback(() => {
     if (!filtered.length) {
       toast.error("No products to export");
@@ -204,6 +196,15 @@ export default function Products() {
     URL.revokeObjectURL(url);
     toast.success(`Exported ${filtered.length} products`);
   }, [filtered]);
+
+  if (isLoading) return <PageSkeleton />;
+
+  const statusCounts = {
+    optimal: stats?.optimal ?? 0,
+    underpriced: stats?.underpriced ?? 0,
+    overpriced: stats?.overpriced ?? 0,
+    alert: stats?.alert ?? 0,
+  };
 
   if (products.length === 0) {
     return (

@@ -20,8 +20,6 @@ import { useMemo } from "react";
 
 export default function Analytics() {
   const { data: products, isLoading } = trpc.products.list.useQuery();
-
-  if (isLoading) return <PageSkeleton />;
   const { data: productStats } = trpc.products.stats.useQuery();
   const { data: recStats } = trpc.recommendations.stats.useQuery();
   const { data: competitorStats } = trpc.competitors.stats.useQuery();
@@ -82,6 +80,8 @@ export default function Analytics() {
   const totalProducts = productStats?.total ?? 0;
   const aiRecs = recStats?.total ?? 0;
   const totalSavings = recStats?.totalSavings ?? 0;
+
+  if (isLoading) return <PageSkeleton />;
 
   if (allProducts.length === 0) {
     return (

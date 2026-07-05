@@ -126,9 +126,9 @@ export default function Alerts() {
     unreadOnly: false,
     limit: 100,
   });
+  const { data: stats } = trpc.alerts.stats.useQuery();
 
   if (isLoading) return <PageSkeleton />;
-  const { data: stats } = trpc.alerts.stats.useQuery();
 
   const allAlerts = alerts ?? [];
   const criticalCount = stats?.critical ?? 0;
