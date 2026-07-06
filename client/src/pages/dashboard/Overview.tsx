@@ -431,14 +431,51 @@ export default function Overview() {
                         </tr>
                       );
                     })
+                  ) : allProducts.length > 0 ? (
+                    allProducts.slice(0, 10).map(product => (
+                      <tr
+                        key={product.id}
+                        className="hover:bg-white/[0.02] transition-colors"
+                      >
+                        <td className="px-5 py-3">
+                          <div className="flex items-center gap-3">
+                            <div className="w-9 h-9 rounded bg-surface-container-highest border border-outline-variant flex items-center justify-center text-xs font-bold text-muted-foreground">
+                              {(product.title ?? "P").charAt(0)}
+                            </div>
+                            <div>
+                              <p className="text-[13px] font-medium">{product.title ?? "Untitled"}</p>
+                              <p className="text-[10px] label-caps text-muted-foreground">{product.sku || product.category || "No SKU"}</p>
+                            </div>
+                          </div>
+                        </td>
+                        <td className="px-5 py-3 font-mono text-[13px] font-medium">
+                          ${Number(product.price).toFixed(2)}
+                        </td>
+                        <td className="px-5 py-3">
+                          <span className="font-mono text-[13px] text-muted-foreground">—</span>
+                        </td>
+                        <td className="px-5 py-3">
+                          <span className="font-mono text-[13px] text-muted-foreground">—</span>
+                        </td>
+                        <td className="px-5 py-3">
+                          <div className="flex justify-end">
+                            <button
+                              className="px-3 py-1 bg-primary/10 text-primary text-[10px] font-bold label-caps rounded hover:bg-primary/20"
+                              onClick={() => window.location.href = `/products`}
+                            >
+                              GENERATE
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))
                   ) : (
                     <tr>
                       <td
                         colSpan={5}
                         className="py-10 text-center text-muted-foreground text-sm"
                       >
-                        No pending pricing insights yet. Scout competitor prices
-                        or generate recommendations to fill this table.
+                        No products yet. Add products to start tracking pricing insights.
                       </td>
                     </tr>
                   )}
@@ -446,7 +483,10 @@ export default function Overview() {
               </table>
             </div>
             <div className="p-3 border-t border-white/[0.04] text-center">
-              <button className="text-primary label-caps text-[11px] hover:underline">
+              <button
+                className="text-primary label-caps text-[11px] hover:underline"
+                onClick={() => window.location.href = "/products"}
+              >
                 VIEW ALL RECOMMENDATIONS
               </button>
             </div>
