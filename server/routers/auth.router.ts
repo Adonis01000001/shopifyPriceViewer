@@ -20,14 +20,14 @@ function getCookieOptions(ctx: { req: any; res: any }) {
 async function setSessionCookies(ctx: { req: any; res: any }, openId: string, name: string) {
   const token = await sdk.createSessionToken(openId, { name });
   const opts = getCookieOptions(ctx);
-  ctx.res.cookie(COOKIE_NAME, token, { ...opts, maxAge: SESSION_EXPIRY_MS / 1000 });
+  ctx.res.cookie(COOKIE_NAME, token, { ...opts, maxAge: SESSION_EXPIRY_MS });
   return token;
 }
 
 async function setRefreshCookie(ctx: { req: any; res: any }, userId: string) {
   const raw = await createRefreshToken(userId);
   const opts = getCookieOptions(ctx);
-  ctx.res.cookie(REFRESH_COOKIE_NAME, raw, { ...opts, maxAge: REFRESH_TOKEN_EXPIRY_MS / 1000, path: "/api/trpc" });
+  ctx.res.cookie(REFRESH_COOKIE_NAME, raw, { ...opts, maxAge: REFRESH_TOKEN_EXPIRY_MS, path: "/api/trpc" });
   return raw;
 }
 
@@ -177,7 +177,7 @@ export const authRouter = router({
     await setSessionCookies(ctx, user.openId!, user.name || "");
     const opts = getCookieOptions(ctx);
     ctx.res.cookie(REFRESH_COOKIE_NAME, result.newRefresh, {
-      ...opts, maxAge: REFRESH_TOKEN_EXPIRY_MS / 1000, path: "/api/trpc",
+      ...opts, maxAge: REFRESH_TOKEN_EXPIRY_MS, path: "/api/trpc",
     });
     return { success: true };
   }),
