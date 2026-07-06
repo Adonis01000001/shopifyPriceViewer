@@ -29,6 +29,5 @@ export const getLoginUrl = (): string => {
   if (import.meta.env.VITE_BYPASS_AUTH === "true") {
     return "/";
   }
-  const apiUrl = import.meta.env.VITE_API_URL || "";
-  return `${apiUrl}/api/v1/shopify/connect`;
+  return "/auth";
 };

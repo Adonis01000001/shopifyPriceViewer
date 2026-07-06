@@ -1,5 +1,5 @@
 import crypto from "crypto";
-import { eq, and, isNull, gt } from "drizzle-orm";
+import { eq, and, isNull, gt, lt } from "drizzle-orm";
 import { REFRESH_TOKEN_EXPIRY_MS } from "@shared/const";
 import { refreshTokens } from "../../../drizzle/schema";
 import { requireDb } from "../db-assert";
@@ -92,6 +92,6 @@ export async function purgeExpiredTokens(): Promise<number> {
   const now = new Date();
   const result = await database
     .delete(refreshTokens)
-    .where(gt(refreshTokens.expiresAt, now));
+    .where(lt(refreshTokens.expiresAt, now));
   return (result as unknown as { rowCount: number }).rowCount ?? 0;
 }
