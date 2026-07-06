@@ -493,6 +493,7 @@ function DashboardLayoutContent({
                   <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                   <input
                     ref={searchInputRef}
+                    name="search"
                     className="bg-surface-container-low border border-outline-variant rounded pl-9 pr-4 py-1.5 text-sm font-mono focus:outline-none focus:border-primary w-64 transition-all placeholder:text-muted-foreground/50"
                     placeholder="Search insights..."
                     value={searchQuery}

@@ -50,6 +50,13 @@
       "when": 1782847970200,
       "tag": "0006_add_margin_protection",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1783343252118,
+      "tag": "0007_little_mimic",
+      "breakpoints": true
     }
   ]
 }

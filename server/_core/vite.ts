@@ -7,10 +7,10 @@ import { createServer as createViteServer } from "vite";
 import viteConfig from "../../vite.config";
 import { logger } from "./logger";
 
-export async function setupVite(app: Express, server: Server) {
+export async function setupVite(app: Express, server: Server, port?: number) {
   const serverOptions = {
     middlewareMode: true,
-    hmr: { server },
+    hmr: { server, port: port ?? 3000 },
     allowedHosts: true as const,
   };
 

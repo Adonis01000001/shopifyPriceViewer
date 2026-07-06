@@ -279,8 +279,10 @@ export default function AddProductDialog({ onSuccess }: Props) {
             <div className="space-y-3">
               <div className="flex gap-3 items-start">
                 <div className="flex-1">
-                  <Label className="text-xs text-muted-foreground">Product Name *</Label>
+                  <Label className="text-xs text-muted-foreground" htmlFor="product-name">Product Name *</Label>
                   <Input
+                    id="product-name"
+                    name="product-name"
                     className="h-9"
                     value={singleName}
                     onChange={e => setSingleName(e.target.value)}
@@ -289,10 +291,12 @@ export default function AddProductDialog({ onSuccess }: Props) {
                   />
                 </div>
                 <div className="w-36 shrink-0">
-                  <Label className="text-xs text-muted-foreground">Price *</Label>
+                  <Label className="text-xs text-muted-foreground" htmlFor="product-price">Price *</Label>
                   <div className="relative">
                     <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground pointer-events-none select-none">$</span>
                     <Input
+                      id="product-price"
+                      name="product-price"
                       className="h-9 font-mono pl-6 text-right"
                       value={singlePrice}
                       onChange={e => setSinglePrice(e.target.value)}
@@ -303,8 +307,10 @@ export default function AddProductDialog({ onSuccess }: Props) {
               </div>
               <div className="flex gap-3 items-start">
                 <div className="flex-1">
-                  <Label className="text-xs text-muted-foreground">SKU</Label>
+                  <Label className="text-xs text-muted-foreground" htmlFor="product-sku">SKU</Label>
                   <Input
+                    id="product-sku"
+                    name="product-sku"
                     className="h-9 font-mono"
                     value={singleSku}
                     onChange={e => setSingleSku(e.target.value)}
@@ -316,8 +322,10 @@ export default function AddProductDialog({ onSuccess }: Props) {
                   </p>
                 </div>
                 <div className="flex-1">
-                  <Label className="text-xs text-muted-foreground">Category</Label>
+                  <Label className="text-xs text-muted-foreground" htmlFor="product-category">Category</Label>
                   <Input
+                    id="product-category"
+                    name="product-category"
                     className="h-9"
                     value={singleCategory}
                     onChange={e => setSingleCategory(e.target.value)}
@@ -326,8 +334,10 @@ export default function AddProductDialog({ onSuccess }: Props) {
                   />
                 </div>
                 <div className="flex-1">
-                  <Label className="text-xs text-muted-foreground">Vendor</Label>
+                  <Label className="text-xs text-muted-foreground" htmlFor="product-vendor">Vendor</Label>
                   <Input
+                    id="product-vendor"
+                    name="product-vendor"
                     className="h-9"
                     value={singleVendor}
                     onChange={e => setSingleVendor(e.target.value)}
@@ -413,6 +423,7 @@ export default function AddProductDialog({ onSuccess }: Props) {
                       </td>
                       <td className="py-2">
                         <Input
+                          name={`bulk-title-${i}`}
                           className="h-8 text-sm"
                           value={p.title}
                           onChange={e =>
@@ -423,6 +434,7 @@ export default function AddProductDialog({ onSuccess }: Props) {
                       </td>
                       <td className="py-2">
                         <Input
+                          name={`bulk-sku-${i}`}
                           className="h-8 text-sm font-mono"
                           value={p.sku}
                           onChange={e =>
@@ -432,6 +444,7 @@ export default function AddProductDialog({ onSuccess }: Props) {
                       </td>
                       <td className="py-2">
                         <Input
+                          name={`bulk-price-${i}`}
                           className="h-8 text-sm font-mono text-right"
                           value={p.price}
                           onChange={e =>
@@ -442,6 +455,7 @@ export default function AddProductDialog({ onSuccess }: Props) {
                       </td>
                       <td className="py-2">
                         <Input
+                          name={`bulk-category-${i}`}
                           className="h-8 text-sm"
                           value={p.category}
                           onChange={e =>
@@ -451,6 +465,7 @@ export default function AddProductDialog({ onSuccess }: Props) {
                       </td>
                       <td className="py-2">
                         <Input
+                          name={`bulk-vendor-${i}`}
                           className="h-8 text-sm"
                           value={p.vendor}
                           onChange={e =>
