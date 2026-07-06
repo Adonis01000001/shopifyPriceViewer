@@ -17,6 +17,97 @@ export function registerOAuthRoutes(app: Express) {
   // ── Shopify OAuth ───────────────────────────────────────────────────────
 
   /**
+   * GET /api/shopify/login
+   *
+   * Entry point for connecting a Shopify store. If the user already has
+   * an active store, redirects to dashboard. Otherwise shows a form to
+   * enter their store domain which then proceeds to the OAuth flow.
+   */
+  app.get("/api/shopify/login", async (req: Request, res: Response) => {
+    const cookies = req.headers.cookie
+      ? new Map(Object.entries(require("cookie").parse(req.headers.cookie)))
+      : new Map();
+    const sessionCookie = cookies.get(COOKIE_NAME);
+    const session = await sdk.verifySession(sessionCookie);
+
+    if (!session) {
+      res.redirect(302, "/auth");
+      return;
+    }
+
+    // Check if user already has a connected store
+    const database = await db.getDb();
+    let hasStore = false;
+    if (database) {
+      const [user] = await database
+        .select({ id: users.id })
+        .from(users)
+        .where(eq(users.openId, session.openId))
+        .limit(1);
+      if (user) {
+        const store = await database.query.shopifyStores.findFirst({
+          where: and(eq(shopifyStores.userId, user.id), eq(shopifyStores.isActive, true)),
+        });
+        hasStore = !!store;
+      }
+    }
+
+    if (hasStore) {
+      res.redirect(302, "/");
+      return;
+    }
+
+    res.setHeader("Content-Type", "text/html; charset=utf-8");
+    res.status(200).send(`<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Connect Shopify Store</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #0f0b2e; color: #e0e0e0; display: flex; align-items: center; justify-content: center; min-height: 100vh; }
+    .card { background: #1a1145; border-radius: 12px; padding: 40px; width: 100%; max-width: 420px; box-shadow: 0 4px 24px rgba(0,0,0,0.3); }
+    h1 { font-size: 20px; margin-bottom: 8px; color: #fff; }
+    p { font-size: 13px; color: #9e9eb8; margin-bottom: 24px; }
+    label { display: block; font-size: 12px; color: #b0b0cc; margin-bottom: 6px; }
+    input { width: 100%; padding: 10px 12px; border-radius: 8px; border: 1px solid #2d2a5e; background: #0f0b2e; color: #e0e0e0; font-size: 14px; outline: none; }
+    input:focus { border-color: #818cf8; }
+    .hint { font-size: 11px; color: #7c7c9e; margin-top: 4px; }
+    button { margin-top: 20px; width: 100%; padding: 10px; border-radius: 8px; border: none; background: #818cf8; color: #fff; font-size: 14px; font-weight: 500; cursor: pointer; }
+    button:hover { background: #6d78e8; }
+    .error { color: #f87171; font-size: 12px; margin-top: 8px; display: none; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>Connect Your Shopify Store</h1>
+    <p>Enter your store domain to connect it to Price Intelligence.</p>
+    <form id="shopify-form">
+      <label for="shop">Store domain</label>
+      <input type="text" id="shop" placeholder="mystore" autofocus />
+      <div class="hint">e.g. mystore.myshopify.com</div>
+      <div class="error" id="error-msg">Please enter a valid shop domain</div>
+      <button type="submit">Connect Store</button>
+    </form>
+  </div>
+  <script>
+    document.getElementById('shopify-form').addEventListener('submit', function(e) {
+      e.preventDefault();
+      const shop = document.getElementById('shop').value.trim().toLowerCase();
+      const domain = shop.includes('.myshopify.com') ? shop : shop + '.myshopify.com';
+      if (domain.length < 15 || !/^[a-z0-9][a-z0-9-]*\\.myshopify\\.com$/.test(domain)) {
+        document.getElementById('error-msg').style.display = 'block';
+        return;
+      }
+      window.location.href = '/api/shopify/connect?shop=' + encodeURIComponent(domain);
+    });
+  </script>
+</body>
+</html>`);
+  });
+
+  /**
    * GET /api/shopify/connect?shop=mystore.myshopify.com
    *
    * Initiates the Shopify OAuth flow by redirecting to Shopify's
