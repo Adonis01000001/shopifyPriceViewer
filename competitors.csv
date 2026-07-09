@@ -1,0 +1,4 @@
+name,domain,description,logoUrl,status,productsTracked,avgPriceDiff,priceIndex,scrapeStatus
+Amazon,amazon.com,"World's largest online marketplace; broad catalog and aggressive dynamic pricing across most consumer categories",https://logo.clearbit.com/amazon.com,active,1240,-2.30,97.70,pending
+Walmart,walmart.com,"Omnichannel retailer with everyday-low-price positioning; strong in groceries, home, and general merchandise",https://logo.clearbit.com/walmart.com,active,980,1.10,101.10,pending
+eBay,ebay.com,"Global auction and fixed-price marketplace; large used and new inventory with high price variance per item",https://logo.clearbit.com/ebay.com,active,750,-0.50,99.50,pending

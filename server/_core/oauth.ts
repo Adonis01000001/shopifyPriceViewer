@@ -1,5 +1,7 @@
 import { COOKIE_NAME } from "@shared/const";
 import type { Express, Request, Response } from "express";
+import * as cookie from "cookie";
+import { randomBytes } from "node:crypto";
 import { getSessionCookieOptions } from "./cookies";
 import { ENV } from "./env";
 import { sdk, encryptToken, isValidShopDomain } from "./sdk";
@@ -25,7 +27,7 @@ export function registerOAuthRoutes(app: Express) {
    */
   app.get("/api/shopify/login", async (req: Request, res: Response) => {
     const cookies = req.headers.cookie
-      ? new Map(Object.entries(require("cookie").parse(req.headers.cookie)))
+      ? new Map(Object.entries(cookie.parse(req.headers.cookie)))
       : new Map();
     const sessionCookie = cookies.get(COOKIE_NAME);
     const session = await sdk.verifySession(sessionCookie);
@@ -133,7 +135,7 @@ export function registerOAuthRoutes(app: Express) {
 
     // Verify user is authenticated via session
     const cookies = req.headers.cookie
-      ? new Map(Object.entries(require("cookie").parse(req.headers.cookie)))
+      ? new Map(Object.entries(cookie.parse(req.headers.cookie)))
       : new Map();
     const sessionCookie = cookies.get(COOKIE_NAME);
     const session = await sdk.verifySession(sessionCookie);
@@ -149,8 +151,7 @@ export function registerOAuthRoutes(app: Express) {
     // SECURITY (S5146): do not interpolate the raw `shop` query param into the
     // redirect target. Extract the validated shop slug and reconstruct the
     // authority from it, so the redirect URL is derived solely from trusted data.
-    const crypto = require("crypto");
-    const state = crypto.randomBytes(16).toString("hex");
+    const state = randomBytes(16).toString("hex");
     const redirectUri = `${ENV.shopifyAppUrl}/api/shopify/callback`;
 
     const shopSlug = shop.replace(/\.myshopify\.com$/, "");
@@ -309,7 +310,7 @@ export function registerOAuthRoutes(app: Express) {
     }
 
     const cookies = req.headers.cookie
-      ? new Map(Object.entries(require("cookie").parse(req.headers.cookie)))
+      ? new Map(Object.entries(cookie.parse(req.headers.cookie)))
       : new Map();
     const sessionCookie = cookies.get(COOKIE_NAME);
     const session = await sdk.verifySession(sessionCookie);
