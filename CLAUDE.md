@@ -19,6 +19,7 @@ pnpm build            # Vite client build + esbuild bundle of server
 pnpm start            # run the production bundle (dist/index.js)
 pnpm db:push          # drizzle-kit generate && drizzle-kit migrate
 pnpm db:seed          # tsx server/seed.ts
+pnpm db:seed:electronics  # tsx server/seed-electronics.ts (sample electronics catalog)
 ```
 
 Build output: client assets served by Vite (dev) or static files from `dist` (prod); server is a single bundled ESM file.
@@ -63,7 +64,7 @@ Client → **tRPC router procedure** → **service** → **Drizzle ORM** → Pos
 
 ### Service map (server/services)
 
-`product` · `competitor` · `price` · `alert` · `recommendation` · `activity` · `email` · `ai-extraction` · `competitor-discovery` · `exa-search` · `scout` · `scraping` · `pricing-engine` · `price-monitoring` · `cron-scheduler`. The `scraping/` subdirectory contains the scraper adapter layer (Firecrawl primary, Playwright fallback) used by `price-monitoring` and `competitor-discovery`.
+`product` · `competitor` · `price` · `alert` · `recommendation` · `activity` · `email` · `ai-extraction` · `competitor-discovery` · `exa-search` · `scout` · `scraping` · `pricing-engine` · `price-monitoring` · `cron-scheduler`. The `scraping.service.ts` file is the scraper adapter layer (Firecrawl primary, Playwright fallback) used by `price-monitoring` and `competitor-discovery`.
 
 ### Auth (read this carefully)
 
@@ -85,7 +86,7 @@ Authentication entry point is `server/_core/context.ts`: `createContext()` calls
 - **Cron jobs**: `server/services/cron-scheduler.service.ts` is booted from `_core/index.ts` and runs monitoring/discovery loops. Run types land in `cron_runs` and detailed attempts in `scrape_logs`. The cron user has an `openId` prefixed with `cron_` — do not treat it as a normal user.
 - **Shared constants**: `shared/const.ts` holds cookie names, expiry durations, and error code strings. Import from `@shared/const`, don't re-literal them.
 - **Shared Zod schemas**: `shared/validation.ts` holds reusable input schemas (`skuSchema`, `productNameSchema`, `priceSchema`, `normalizeName`). Import from `@shared/validation`, don't re-define them in routers.
-- **Scraping adapter layer**: `server/services/scraping/` wraps Firecrawl (primary) and Playwright (fallback). Use `scraping.service.ts` to dispatch; don't call Firecrawl directly from services.
+- **Scraping adapter layer**: `server/services/scraping.service.ts` wraps Firecrawl (primary) and Playwright (fallback); dispatch through it rather than calling Firecrawl directly from services.
 - **Path aliases**: `@/*` resolves to `client/src/*`, `@shared/*` resolves to `shared/*` (configured in both `tsconfig.json` and `vite.config.ts`).
 - **Seed file**: `server/seed.ts` (not `server/seed.js` or `server/_core/seed.ts`).
 
@@ -108,10 +109,6 @@ React 19 SPA via **Wouter** (not React Router), **TanStack Query** for server st
 - login wall via `AuthGuard` (queries `trpc.auth.me.useQuery`; unauthenticated renders `Auth`)
 
 tRPC client is configured once in `client/src/lib/trpc.ts`; unauthorized responses redirect to login via a QueryCache subscriber. Shared UI primitives live in `client/src/components/ui/` (shadcn); dashboard-specific components in `client/src/components/dashboard/`.
-
-## Stale documentation warning
-
-`docs/BACKEND.md` describes an **older Python/FastAPI/SQLAlchemy architecture** that was never built — the actual backend is Express + TypeScript + Drizzle ORM + PostgreSQL. Do not trust it. The authoritative architecture reference is `docs/ARCHITECTURE.md` (which accurately describes the Express + tRPC + Drizzle stack). When in doubt, read the code — `server/_core/index.ts` is the entry point.
 
 ## Stale documentation warning
 
