@@ -13,7 +13,7 @@ export const skuSchema = z
   .toUpperCase()
   .max(100, "SKU must be 100 characters or fewer")
   .regex(
-    /^[A-Za-z0-9\-_\/]*$/,
+    /^[A-Za-z0-9\-_/]*$/,
     "SKU can only contain letters, numbers, -, _ and /"
   )
   .refine(val => val.length === 0 || val.length >= 1, "SKU cannot be empty if provided")

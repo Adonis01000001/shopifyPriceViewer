@@ -88,7 +88,7 @@ const competitorSchema = z.object({
         ),
       { message: "Enter a valid domain" }
     ),
-  description: z.string().max(500).optional().default(""),
+  description: z.string().max(500).optional(),
   logoUrl: z
     .string()
     .url("Must be a valid URL")

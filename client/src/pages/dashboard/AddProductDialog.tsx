@@ -203,7 +203,7 @@ export default function AddProductDialog({ onSuccess }: Props) {
       setSingleError("Price must be a positive number with up to 2 decimal places");
       return;
     }
-    if (trimmedSku && !/^[A-Za-z0-9\-_\/]+$/.test(trimmedSku)) {
+    if (trimmedSku && !/^[A-Za-z0-9\-_/]+$/.test(trimmedSku)) {
       setSingleError("SKU can only contain letters, numbers, -, _ and /");
       return;
     }

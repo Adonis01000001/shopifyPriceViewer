@@ -242,11 +242,13 @@ function extractStructuredPrice(
   text: string
 ): { value: string; currency: string } | null {
   // 1. JSON-LD schema.org Product/Offer
-  const jsonLdBlocks = [
-    ...text.matchAll(
-      /<script[^>]*type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi
-    ),
-  ];
+  const jsonLdRegex =
+    /<script[^>]*type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi;
+  const jsonLdBlocks: RegExpExecArray[] = [];
+  let jsonLdMatch: RegExpExecArray | null;
+  while ((jsonLdMatch = jsonLdRegex.exec(text)) !== null) {
+    jsonLdBlocks.push(jsonLdMatch);
+  }
   for (const block of jsonLdBlocks) {
     try {
       const parsed = JSON.parse(block[1].trim());
@@ -274,7 +276,7 @@ function extractStructuredPrice(
   const metaPatterns = [
     /<meta[^>]+property=["']product:price:amount["'][^>]+content=["']([\d.,]+)["']/i,
     /<meta[^>]+itemprop=["']price["'][^>]+content=["']([\d.,]+)["']/i,
-    /<span[^>]+itemprop=["']price["'][^>]*>[\s\$€£]*([\d.,]+)/i,
+    /<span[^>]+itemprop=["']price["'][^>]*>[\s$€£]*([\d.,]+)/i,
   ];
   for (const pattern of metaPatterns) {
     const match = text.match(pattern);
@@ -296,9 +298,9 @@ function extractPriceFromText(
   if (structured) return structured;
 
   const patterns = [
-    /[\$€£]\s*([0-9]{1,3}(?:,?[0-9]{3})*(?:\.[0-9]{2})?)/g,
+    /[$€£]\s*([0-9]{1,3}(?:,?[0-9]{3})*(?:\.[0-9]{2})?)/g,
     /(?:USD|EUR|GBP)\s*([0-9]{1,3}(?:,?[0-9]{3})*(?:\.[0-9]{2})?)/gi,
-    /(?:price|Price|PRICE)[\s:]*[\$€£]?\s*([0-9]{1,3}(?:,?[0-9]{3})*(?:\.[0-9]{2})?)/g,
+    /(?:price|Price|PRICE)[\s:]*[$€£]?\s*([0-9]{1,3}(?:,?[0-9]{3})*(?:\.[0-9]{2})?)/g,
   ];
   const currencyMap: Record<string, string> = {
     $: "USD",
@@ -309,9 +311,9 @@ function extractPriceFromText(
     let match: RegExpExecArray | null;
     while ((match = pattern.exec(text)) !== null) {
       const raw = match[0];
-      const currencySymbol = raw.match(/[\$€£]/)?.[0];
+      const currencySymbol = raw.match(/[$€£]/)?.[0];
       const currency = currencyMap[currencySymbol ?? ""] || "USD";
-      let value = match[1].replace(/,/g, "");
+      const value = match[1].replace(/,/g, "");
       const num = parseFloat(value);
       if (!isNaN(num) && num > 0 && num < 100000) {
         return { value: num.toFixed(2), currency };
@@ -835,7 +837,7 @@ export const scoutService = {
     ];
 
     // Step 1: Try structured search first (search + extract in one call)
-    let exaResult = await exaSearchService.structuredSearchProducts(
+    const exaResult = await exaSearchService.structuredSearchProducts(
       baseQuery,
       maxResults
     );

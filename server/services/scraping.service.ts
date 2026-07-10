@@ -527,7 +527,7 @@ export const scrapingService = {
           Object.defineProperty(navigator, "webdriver", {
             get: () => undefined,
           });
-          // @ts-ignore
+          // @ts-expect-error window.chrome doesn't exist in browser type defs
           window.chrome = { runtime: {} };
         });
 
