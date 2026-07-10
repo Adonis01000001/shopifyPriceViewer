@@ -238,9 +238,63 @@ async function scrapeUrlForPrice(
   return null;
 }
 
+function extractStructuredPrice(
+  text: string
+): { value: string; currency: string } | null {
+  // 1. JSON-LD schema.org Product/Offer
+  const jsonLdBlocks = [
+    ...text.matchAll(
+      /<script[^>]*type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi
+    ),
+  ];
+  for (const block of jsonLdBlocks) {
+    try {
+      const parsed = JSON.parse(block[1].trim());
+      const candidates = Array.isArray(parsed) ? parsed : [parsed];
+      for (const item of candidates) {
+        const offers = item?.offers ?? item?.Offers;
+        const offerList = Array.isArray(offers) ? offers : offers ? [offers] : [];
+        for (const offer of offerList) {
+          const price = offer?.price ?? offer?.lowPrice;
+          const currency = offer?.priceCurrency;
+          if (price != null) {
+            const num = parseFloat(String(price));
+            if (!isNaN(num) && num > 0 && num < 1000000) {
+              return { value: num.toFixed(2), currency: currency || "USD" };
+            }
+          }
+        }
+      }
+    } catch {
+      // Not valid JSON, skip
+    }
+  }
+
+  // 2. Open Graph / meta price tags
+  const metaPatterns = [
+    /<meta[^>]+property=["']product:price:amount["'][^>]+content=["']([\d.,]+)["']/i,
+    /<meta[^>]+itemprop=["']price["'][^>]+content=["']([\d.,]+)["']/i,
+    /<span[^>]+itemprop=["']price["'][^>]*>[\s\$€£]*([\d.,]+)/i,
+  ];
+  for (const pattern of metaPatterns) {
+    const match = text.match(pattern);
+    if (match) {
+      const num = parseFloat(match[1].replace(/,/g, ""));
+      if (!isNaN(num) && num > 0 && num < 1000000) {
+        return { value: num.toFixed(2), currency: "USD" };
+      }
+    }
+  }
+
+  return null;
+}
+
 function extractPriceFromText(
   text: string
 ): { value: string; currency: string } | null {
+  const structured = extractStructuredPrice(text);
+  if (structured) return structured;
+
   const patterns = [
     /[\$€£]\s*([0-9]{1,3}(?:,?[0-9]{3})*(?:\.[0-9]{2})?)/g,
     /(?:USD|EUR|GBP)\s*([0-9]{1,3}(?:,?[0-9]{3})*(?:\.[0-9]{2})?)/gi,
