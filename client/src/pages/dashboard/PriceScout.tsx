@@ -1,5 +1,3 @@
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { trpc } from "@/lib/trpc";
 import {
@@ -8,7 +6,6 @@ import {
   TrendingDown,
   TrendingUp,
   Loader2,
-  RefreshCw,
   ExternalLink,
   AlertCircle,
   CheckCircle2,

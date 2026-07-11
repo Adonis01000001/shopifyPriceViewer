@@ -53,6 +53,15 @@ function extractDomain(url: string): string {
   }
 }
 
+function isValidFetchUrl(url: string): boolean {
+  try {
+    const parsed = new URL(url);
+    return parsed.protocol === "https:" || parsed.protocol === "http:";
+  } catch {
+    return false;
+  }
+}
+
 function parsePrice(raw: string): { value: string; currency: string } | null {
   if (!raw) return null;
   const match = raw.match(
@@ -207,6 +216,7 @@ async function scrapeUrlForPrice(
   }
 
   // Fallback: fetch and parse basic HTML
+  if (!isValidFetchUrl(url)) return null;
   try {
     const res = await fetch(url, {
       headers: {

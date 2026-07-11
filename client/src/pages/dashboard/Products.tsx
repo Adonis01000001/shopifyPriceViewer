@@ -18,7 +18,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { trpc } from "@/lib/trpc";
-import { Download, MoreHorizontal, Search, Plus, Package, Database } from "lucide-react";
+import { Download, Search, Package, Database, ExternalLink, Zap, RotateCcw } from "lucide-react";
 import { Empty, EmptyHeader, EmptyTitle, EmptyDescription, EmptyMedia, EmptyContent } from "@/components/ui/empty";
 import { PageSkeleton } from "@/components/dashboard/PageSkeleton";
 import AddProductDialog from "./AddProductDialog";
@@ -30,6 +30,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
 import { useMemo, useState, useCallback } from "react";
+import { useLocation } from "wouter";
 import Papa from "papaparse";
 import { toast } from "sonner";
 
@@ -125,7 +126,7 @@ const statusConfig: Record<string, { label: string; className: string }> = {
   },
   overpriced: {
     label: "Overpriced",
-    className: "bg-[#63e063]/10 text-[#21a732] border border-[#63e063]/20",
+    className: "bg-[#93000a]/15 text-[#ffb4ab] border border-[#93000a]/30",
   },
   alert: {
     label: "Alert",
@@ -134,12 +135,13 @@ const statusConfig: Record<string, { label: string; className: string }> = {
 };
 
 export default function Products() {
+  const [, navigate] = useLocation();
   const [searchQuery, setSearchQuery] = useState("");
   const [categoryFilter, setCategoryFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState("all");
 
-  const { data: allProducts, isLoading, refetch } = trpc.products.list.useQuery();
-  const { data: stats } = trpc.products.stats.useQuery();
+  const { data: allProducts, isLoading, refetch, error } = trpc.products.list.useQuery();
+  const { data: stats, error: statsError } = trpc.products.stats.useQuery();
 
   const updateProductMutation = trpc.products.update.useMutation({
     onSuccess: () => {
@@ -196,6 +198,24 @@ export default function Products() {
     URL.revokeObjectURL(url);
     toast.success(`Exported ${filtered.length} products`);
   }, [filtered]);
+
+  if (error) {
+    return (
+      <div className="space-y-6">
+        <div className="flex flex-col gap-1">
+          <h2 className="text-2xl font-extrabold text-primary">Product Inventory</h2>
+          <p className="text-muted-foreground text-sm">Failed to load products. Please try again.</p>
+        </div>
+        <div className="glass-panel rounded-lg p-12 text-center">
+          <p className="text-[#ffb4ab] text-sm mb-3">{error.message}</p>
+          <Button variant="outline" size="sm" onClick={() => refetch()}>
+            <RotateCcw className="h-3.5 w-3.5 mr-1.5" />
+            Retry
+          </Button>
+        </div>
+      </div>
+    );
+  }
 
   if (isLoading) return <PageSkeleton />;
 
@@ -350,10 +370,10 @@ export default function Products() {
                 <TableHead className="text-right label-caps text-muted-foreground font-normal">
                   Price
                 </TableHead>
-                <TableHead className="text-right label-caps text-muted-foreground font-normal">
+                <TableHead className="text-right label-caps text-muted-foreground font-normal hidden sm:table-cell">
                   Market Low
                 </TableHead>
-                <TableHead className="text-center label-caps text-muted-foreground font-normal">
+                <TableHead className="text-center label-caps text-muted-foreground font-normal hidden sm:table-cell">
                   Delta
                 </TableHead>
                 <TableHead className="text-center label-caps text-muted-foreground font-normal">
@@ -372,14 +392,12 @@ export default function Products() {
                 filtered.map(product => {
                   const status =
                     statusConfig[product.status] ?? statusConfig.optimal;
-                  // TODO: compute from real competitor data once competitor sync is implemented
-                  const hasCompetitorData = false;
                   return (
-                    <tr
+                    <TableRow
                       key={product.id}
                       className="hover:bg-white/[0.02] transition-colors"
                     >
-                      <td className="pl-5 py-3">
+                      <TableCell className="pl-5 py-3">
                         <div className="flex items-center gap-3">
                           <div className="w-8 h-8 rounded bg-surface-container-highest border border-outline-variant flex items-center justify-center text-xs font-bold text-muted-foreground">
                             {product.title.charAt(0)}
@@ -393,22 +411,22 @@ export default function Products() {
                             </p>
                           </div>
                         </div>
-                      </td>
-                      <td className="py-3 font-mono text-[12px] text-muted-foreground text-center">
+                      </TableCell>
+                      <TableCell className="py-3 font-mono text-[12px] text-muted-foreground text-center">
                         {product.sku || "—"}
-                      </td>
-                      <td className="py-3 font-mono text-[13px] font-medium text-right">
+                      </TableCell>
+                      <TableCell className="py-3 font-mono text-[13px] font-medium text-right">
                         ${Number(product.price).toFixed(2)}
-                      </td>
-                      <td className="py-3 font-mono text-[13px] text-muted-foreground text-right">
+                      </TableCell>
+                      <TableCell className="py-3 font-mono text-[13px] text-muted-foreground text-right hidden sm:table-cell">
                         —
-                      </td>
-                      <td className="py-3 text-center">
+                      </TableCell>
+                      <TableCell className="py-3 text-center hidden sm:table-cell">
                         <span className="font-mono text-[12px] text-muted-foreground">
                           —
                         </span>
-                      </td>
-                      <td className="py-3 text-center">
+                      </TableCell>
+                      <TableCell className="py-3 text-center">
                         <span
                           className={cn(
                             "inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-bold label-caps",
@@ -417,57 +435,77 @@ export default function Products() {
                         >
                           {status.label.toUpperCase()}
                         </span>
-                      </td>
-                      <td className="py-3 text-center">
+                      </TableCell>
+                      <TableCell className="py-3 text-center">
                         <MarketPositionBadge productId={product.id} />
-                      </td>
-                      <td className="pr-5 py-3 text-right">
+                      </TableCell>
+                      <TableCell className="pr-5 py-3 text-right">
                         <div className="flex items-center justify-end gap-2 text-muted-foreground">
                           <button
                             className="hover:text-primary transition-colors text-sm"
-                            title="Auto-adjust"
+                            title="Scout prices"
+                            onClick={() => navigate(`/price-scout?productId=${product.id}`)}
                           >
-                            ⚡
+                            <Zap className="h-3.5 w-3.5" />
                           </button>
                           <button
                             className="hover:text-primary transition-colors text-sm"
-                            title="Details"
+                            title="View details"
+                            onClick={() => navigate(`/products?id=${product.id}`)}
                           >
-                            ↗
+                            <ExternalLink className="h-3.5 w-3.5" />
                           </button>
                           <DropdownMenu>
                             <DropdownMenuTrigger asChild>
-                              <button className="hover:text-primary transition-colors text-sm">
+                              <button className="hover:text-primary transition-colors text-sm p-1">
                                 ⋮
                               </button>
                             </DropdownMenuTrigger>
                             <DropdownMenuContent align="end">
                               <DropdownMenuItem
-                                onClick={() => toast.info(product.title)}
+                                onClick={() => navigate(`/price-scout?productId=${product.id}`)}
                               >
-                                View Details
+                                Scout Prices
                               </DropdownMenuItem>
                               <DropdownMenuItem
-                                onClick={() => toast.info("Price history")}
+                                onClick={() => {
+                                  navigator.clipboard.writeText(product.id);
+                                  toast.success("Product ID copied");
+                                }}
                               >
-                                Price History
+                                Copy Product ID
                               </DropdownMenuItem>
                             </DropdownMenuContent>
                           </DropdownMenu>
                         </div>
-                      </td>
-                    </tr>
+                      </TableCell>
+                    </TableRow>
                   );
                 })
               ) : (
-                <tr>
-                  <td
+                <TableRow>
+                  <TableCell
                     colSpan={8}
                     className="py-16 text-center text-muted-foreground"
                   >
-                    No products found
-                  </td>
-                </tr>
+                    <div className="flex flex-col items-center gap-3">
+                      <p>No products match your filters</p>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="border-outline-variant"
+                        onClick={() => {
+                          setSearchQuery("");
+                          setCategoryFilter("all");
+                          setStatusFilter("all");
+                        }}
+                      >
+                        <RotateCcw className="h-3 w-3 mr-1.5" />
+                        Clear Filters
+                      </Button>
+                    </div>
+                  </TableCell>
+                </TableRow>
               )}
             </TableBody>
           </Table>

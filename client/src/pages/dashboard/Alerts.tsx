@@ -24,6 +24,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useState } from "react";
+import { toast } from "sonner";
 
 const severityConfig: Record<string, { label: string; className: string }> = {
   critical: {
@@ -52,10 +53,30 @@ const typeConfig: Record<string, { label: string; icon: typeof TrendingDown }> =
     threshold: { label: "Threshold", icon: Zap },
   };
 
-function AlertRow({ alert }: { alert: any }) {
+function AlertRow({
+  alert,
+  onResolve,
+  isResolving,
+}: {
+  alert: any;
+  onResolve: (id: string) => void;
+  isResolving: boolean;
+}) {
   const severity = severityConfig[alert.severity] ?? severityConfig.medium;
   const type = typeConfig[alert.alertType] ?? typeConfig.threshold;
   const TypeIcon = type.icon;
+  const createdAt = (() => {
+    try {
+      return new Date(alert.createdAt).toLocaleString("en-US", {
+        month: "short",
+        day: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+      });
+    } catch {
+      return "";
+    }
+  })();
 
   return (
     <div
@@ -97,12 +118,7 @@ function AlertRow({ alert }: { alert: any }) {
           {alert.message}
         </p>
         <p className="text-[10px] label-caps text-muted-foreground/60 mt-1.5">
-          {new Date(alert.createdAt).toLocaleString("en-US", {
-            month: "short",
-            day: "numeric",
-            hour: "2-digit",
-            minute: "2-digit",
-          })}
+          {createdAt}
         </p>
       </div>
       {!alert.isResolved && (
@@ -110,6 +126,8 @@ function AlertRow({ alert }: { alert: any }) {
           variant="outline"
           size="sm"
           className="shrink-0 text-[11px] border-outline-variant"
+          onClick={() => onResolve(alert.id)}
+          disabled={isResolving}
         >
           Resolve
         </Button>
@@ -119,14 +137,37 @@ function AlertRow({ alert }: { alert: any }) {
 }
 
 export default function Alerts() {
+  const utils = trpc.useUtils();
   const [searchQuery, setSearchQuery] = useState("");
   const [activeTab, setActiveTab] = useState("all");
 
-  const { data: alerts, isLoading } = trpc.alerts.list.useQuery({
+  const { data: alerts, isLoading, error } = trpc.alerts.list.useQuery({
     unreadOnly: false,
     limit: 100,
   });
   const { data: stats } = trpc.alerts.stats.useQuery();
+
+  const resolveMutation = trpc.alerts.markRead.useMutation({
+    onSuccess: () => {
+      utils.alerts.list.invalidate();
+      utils.alerts.stats.invalidate();
+    },
+    onError: () => toast.error("Failed to resolve alert"),
+  });
+
+  if (error) {
+    return (
+      <div className="space-y-6">
+        <div className="flex flex-col gap-1">
+          <h2 className="text-2xl font-extrabold text-primary">Alerts</h2>
+          <p className="text-muted-foreground text-sm">Failed to load alerts.</p>
+        </div>
+        <div className="glass-panel rounded-lg p-12 text-center">
+          <p className="text-[#ffb4ab] text-sm">{error.message}</p>
+        </div>
+      </div>
+    );
+  }
 
   if (isLoading) return <PageSkeleton />;
 
@@ -266,7 +307,12 @@ export default function Alerts() {
             <TabsContent value={activeTab} className="space-y-3 mt-4">
               {filteredAlerts.length > 0 ? (
                 filteredAlerts.map(alert => (
-                  <AlertRow key={alert.id} alert={alert} />
+                  <AlertRow
+                    key={alert.id}
+                    alert={alert}
+                    onResolve={id => resolveMutation.mutate({ id })}
+                    isResolving={resolveMutation.isPending}
+                  />
                 ))
               ) : (
                 <div className="flex flex-col items-center justify-center py-12 text-muted-foreground">

@@ -119,6 +119,15 @@ export default function Overview() {
     },
   });
 
+  const generateRecommendation = trpc.recommendations.generate.useMutation({
+    onSuccess: () => {
+      utils.recommendations.list.invalidate();
+      utils.recommendations.listAll.invalidate();
+      toast.success("Recommendation generated");
+    },
+    onError: (err) => toast.error(err.message || "Failed to generate"),
+  });
+
   // Fetch feed data for each competitor
   const competitorList = competitors ?? [];
   const feedQueries = trpc.useQueries(t =>
@@ -460,10 +469,11 @@ export default function Overview() {
                         <td className="px-5 py-3">
                           <div className="flex justify-end">
                             <button
-                              className="px-3 py-1 bg-primary/10 text-primary text-[10px] font-bold label-caps rounded hover:bg-primary/20"
-                              onClick={() => window.location.href = `/products`}
+                              className="px-3 py-1 bg-primary/10 text-primary text-[10px] font-bold label-caps rounded hover:bg-primary/20 disabled:opacity-50"
+                              onClick={() => generateRecommendation.mutate({ productId: product.id })}
+                              disabled={generateRecommendation.isPending}
                             >
-                              GENERATE
+                              {generateRecommendation.isPending ? "..." : "GENERATE"}
                             </button>
                           </div>
                         </td>

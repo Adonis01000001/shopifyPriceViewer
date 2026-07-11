@@ -51,7 +51,7 @@ async function startServer() {
   app.use(
     cors({
       origin: ENV.isProduction
-        ? (process.env.ALLOWED_ORIGINS?.split(",") ?? [])
+        ? (process.env.ALLOWED_ORIGINS?.split(",").filter(Boolean) ?? [])
         : true,
       credentials: true,
       methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
@@ -70,6 +70,7 @@ async function startServer() {
 
   // Scrape rate limiting (tRPC mutation endpoint)
   app.use("/api/trpc/competitors.scrapeProducts", scrapeLimiter);
+  app.use("/api/trpc/scout", scrapeLimiter);
 
   // Body parsers — 1MB limit (largest legitimate payload ~250KB for product sync)
   app.use(express.json({ limit: "1mb" }));
@@ -94,7 +95,7 @@ async function startServer() {
     })
   );
 
-  const preferredPort = parseInt(process.env.PORT || "3000");
+  const preferredPort = Number(process.env.PORT) || 3000;
   const port = await findAvailablePort(preferredPort);
 
   if (port !== preferredPort) {
@@ -119,7 +120,11 @@ async function startServer() {
   });
 
   // Start cron scheduler for price monitoring & competitor discovery
-  cronScheduler.start();
+  try {
+    cronScheduler.start();
+  } catch (err) {
+    logger.error({ err }, "Failed to start cron scheduler");
+  }
 }
 
 startServer().catch(err => {
