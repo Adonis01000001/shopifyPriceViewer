@@ -12,6 +12,7 @@ import Alerts from "./pages/dashboard/Alerts";
 import Competitors from "./pages/dashboard/Competitors";
 import Analytics from "./pages/dashboard/Analytics";
 import PriceScout from "./pages/dashboard/PriceScout";
+import PathOfWisdom from "./pages/dashboard/PathOfWisdom";
 import Settings from "./pages/dashboard/Settings";
 
 import Auth from "./pages/Auth";
@@ -71,6 +72,7 @@ function App() {
                     <Route path="/products" component={Products} />
                     <Route path="/products/:id" component={ProductDetail} />
                     <Route path="/scout" component={PriceScout} />
+                    <Route path="/wisdom" component={PathOfWisdom} />
                     <Route path="/alerts" component={Alerts} />
                     <Route path="/competitors" component={Competitors} />
                     <Route path="/analytics" component={Analytics} />
