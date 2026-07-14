@@ -55,6 +55,7 @@ import OnboardingWizard from "./dashboard/OnboardingWizard";
 import { useTheme } from "@/contexts/ThemeContext";
 import Papa from "papaparse";
 import { toast } from "sonner";
+import { useRealtimeNotifications } from "@/hooks/use-realtime-notifications";
 
 const menuItems = [
   { icon: LayoutDashboard, label: "Overview", path: "/", adminOnly: false },
@@ -152,6 +153,7 @@ function DashboardLayoutContent({
   const sidebarRef = useRef<HTMLDivElement>(null);
   const isMobile = useIsMobile();
   const { theme, toggleTheme, switchable } = useTheme();
+  useRealtimeNotifications();
 
   // ── Search state ──
   const [searchQuery, setSearchQuery] = useState("");
@@ -258,13 +260,10 @@ function DashboardLayoutContent({
   const [notifOpen, setNotifOpen] = useState(false);
   const notifContainerRef = useRef<HTMLDivElement>(null);
 
-  const { data: alertStats } = trpc.alerts.stats.useQuery(undefined, {
-    refetchInterval: 30000,
-  });
+  const { data: alertStats } = trpc.alerts.stats.useQuery();
   const { data: unreadAlerts, refetch: refetchAlerts } =
     trpc.alerts.list.useQuery(
-      { unreadOnly: true, limit: 10 },
-      { refetchInterval: 30000 }
+      { unreadOnly: true, limit: 10 }
     );
 
   const markReadMutation = trpc.alerts.markRead.useMutation({

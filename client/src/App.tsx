@@ -7,6 +7,7 @@ import ErrorBoundary from "./components/ErrorBoundary";
 import { ThemeProvider } from "./contexts/ThemeContext";
 import Overview from "./pages/dashboard/Overview";
 import Products from "./pages/dashboard/Products";
+import ProductDetail from "./pages/dashboard/ProductDetail";
 import Alerts from "./pages/dashboard/Alerts";
 import Competitors from "./pages/dashboard/Competitors";
 import Analytics from "./pages/dashboard/Analytics";
@@ -68,6 +69,7 @@ function App() {
                   <Switch>
                     <Route path="/" component={Overview} />
                     <Route path="/products" component={Products} />
+                    <Route path="/products/:id" component={ProductDetail} />
                     <Route path="/scout" component={PriceScout} />
                     <Route path="/alerts" component={Alerts} />
                     <Route path="/competitors" component={Competitors} />

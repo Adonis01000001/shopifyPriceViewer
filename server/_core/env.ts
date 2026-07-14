@@ -58,6 +58,13 @@ export const ENV = {
   openaiApiKey: process.env.OPENAI_API_KEY ?? "",
   openaiModel: process.env.OPENAI_MODEL ?? "gpt-4o-mini",
 
+  // OpenRouter — alternative LLM provider (OpenAI-compatible, free models available)
+  openrouterApiKey: process.env.OPENROUTER_API_KEY ?? "",
+  openrouterBaseUrl:
+    process.env.OPENROUTER_BASE_URL ?? "https://openrouter.ai/api/v1",
+  openrouterModel:
+    process.env.OPENROUTER_MODEL ?? "mistralai/mistral-7b-instruct:free",
+
   // Price Monitoring
   monitoringIntervalHours: parseInt(
     process.env.MONITORING_INTERVAL_HOURS ?? "1",

@@ -71,6 +71,10 @@ export type InvokeParams = {
   output_schema?: OutputSchema;
   responseFormat?: ResponseFormat;
   response_format?: ResponseFormat;
+  /** Override API base URL (e.g., OpenRouter endpoint) */
+  baseUrl?: string;
+  /** Override API key (e.g., OpenRouter key) */
+  apiKey?: string;
 };
 
 export type ToolCall = {
@@ -214,12 +218,22 @@ const normalizeToolChoice = (
   return toolChoice;
 };
 
-const resolveApiUrl = () => "https://api.openai.com/v1/chat/completions";
-
-const assertApiKey = () => {
-  if (!ENV.openaiApiKey) {
-    throw new Error("OPENAI_API_KEY is not configured");
+const resolveApiUrl = (overrideBaseUrl?: string) => {
+  if (overrideBaseUrl) {
+    const base = overrideBaseUrl.replace(/\/+$/, "");
+    return `${base}/chat/completions`;
   }
+  return "https://api.openai.com/v1/chat/completions";
+};
+
+const assertApiKey = (overrideKey?: string) => {
+  const key = overrideKey || ENV.openaiApiKey;
+  if (!key) {
+    throw new Error(
+      "No API key configured. Set OPENAI_API_KEY or OPENROUTER_API_KEY."
+    );
+  }
+  return key;
 };
 
 const normalizeResponseFormat = ({
@@ -268,7 +282,7 @@ const normalizeResponseFormat = ({
 };
 
 export async function invokeLLM(params: InvokeParams): Promise<InvokeResult> {
-  assertApiKey();
+  const apiKey = assertApiKey(params.apiKey);
 
   const {
     messages,
@@ -279,10 +293,15 @@ export async function invokeLLM(params: InvokeParams): Promise<InvokeResult> {
     output_schema,
     responseFormat,
     response_format,
+    baseUrl,
   } = params;
 
+  const model = baseUrl
+    ? ENV.openrouterModel
+    : "gemini-2.5-flash";
+
   const payload: Record<string, unknown> = {
-    model: "gemini-2.5-flash",
+    model,
     messages: messages.map(normalizeMessage),
   };
 
@@ -299,9 +318,10 @@ export async function invokeLLM(params: InvokeParams): Promise<InvokeResult> {
   }
 
   payload.max_tokens = 32768;
-  payload.thinking = {
-    budget_tokens: 128,
-  };
+
+  if (!baseUrl) {
+    payload.thinking = { budget_tokens: 128 };
+  }
 
   const normalizedResponseFormat = normalizeResponseFormat({
     responseFormat,
@@ -314,12 +334,19 @@ export async function invokeLLM(params: InvokeParams): Promise<InvokeResult> {
     payload.response_format = normalizedResponseFormat;
   }
 
-  const response = await fetch(resolveApiUrl(), {
+  const headers: Record<string, string> = {
+    "content-type": "application/json",
+    authorization: `Bearer ${apiKey}`,
+  };
+
+  if (baseUrl) {
+    headers["HTTP-Referer"] = "http://localhost:3000";
+    headers["X-Title"] = "Shopify Price Intelligence";
+  }
+
+  const response = await fetch(resolveApiUrl(baseUrl), {
     method: "POST",
-    headers: {
-      "content-type": "application/json",
-      authorization: `Bearer ${ENV.openaiApiKey}`,
-    },
+    headers,
     body: JSON.stringify(payload),
   });
 

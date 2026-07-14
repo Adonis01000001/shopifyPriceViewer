@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useLocation } from "wouter";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
+import { DottedSurface } from "@/components/ui/dotted-surface";
 import { TypewriterEffectSmooth } from "@/components/ui/typewriter-effect";
 import "./auth.css";
 
@@ -51,7 +52,7 @@ export default function Auth() {
   };
 
   return (
-    <div className="auth-page">
+    <DottedSurface className="auth-page">
       {/* Gradient mesh background */}
       <div className="auth-bg">
         <div className="auth-bg-orb auth-bg-orb--1" />
@@ -339,6 +340,6 @@ export default function Auth() {
           </div>
         </div>
       </div>
-    </div>
+    </DottedSurface>
   );
 }

@@ -71,6 +71,16 @@ function roundToTwoDecimals(value: number): number {
   return Math.round(value * 100) / 100;
 }
 
+// Integer-cents helpers: keep money math on whole numbers to avoid the
+// `Math.round(dollars * 100)` float trap (e.g. 1.005 → 1.00).
+function dollarsToCents(value: number): number {
+  return Math.round(value * 100);
+}
+
+function centsToDollars(cents: number): number {
+  return cents / 100;
+}
+
 // ─── Core Calculations ───────────────────────────────────────────────────────
 
 export function calculateAverageCompetitorPrice(
@@ -78,8 +88,8 @@ export function calculateAverageCompetitorPrice(
 ): number | null {
   const valid = filterValidPrices(prices);
   if (valid.length === 0) return null;
-  const sum = valid.reduce((a, b) => a + b, 0);
-  return roundToTwoDecimals(sum / valid.length);
+  const totalCents = valid.reduce((a, p) => a + dollarsToCents(p), 0);
+  return centsToDollars(Math.round(totalCents / valid.length));
 }
 
 export function calculateRecommendedPrice(
@@ -152,30 +162,32 @@ export function classifyMarketPosition(
     };
   }
 
-  const diff = merchantPrice - avgCompetitorPrice;
-  const diffPercent = roundToTwoDecimals((diff / avgCompetitorPrice) * 100);
-  const absDiff = Math.abs(diff);
-  const threshold = avgCompetitorPrice * COMPETITIVE_THRESHOLD;
+  const merchCents = dollarsToCents(merchantPrice);
+  const avgCents = dollarsToCents(avgCompetitorPrice);
+  const diffCents = merchCents - avgCents;
+  const diffPercent = (diffCents / avgCents) * 100;
+  const absDiffCents = Math.abs(diffCents);
+  const thresholdCents = Math.round(avgCents * COMPETITIVE_THRESHOLD);
 
-  if (absDiff <= threshold) {
+  if (absDiffCents <= thresholdCents) {
     return {
       status: "COMPETITIVE",
       color: "blue",
       label: "Competitive",
       meaning: "You are competitively priced.",
-      priceDiff: roundToTwoDecimals(diff),
-      priceDiffPercent: diffPercent,
+      priceDiff: centsToDollars(diffCents),
+      priceDiffPercent: roundToTwoDecimals(diffPercent),
     };
   }
 
-  if (merchantPrice < avgCompetitorPrice) {
+  if (merchCents < avgCents) {
     return {
       status: "LEADING",
       color: "green",
       label: "Leading Market",
       meaning: "You are currently leading the market.",
-      priceDiff: roundToTwoDecimals(diff),
-      priceDiffPercent: diffPercent,
+      priceDiff: centsToDollars(diffCents),
+      priceDiffPercent: roundToTwoDecimals(diffPercent),
     };
   }
 
@@ -184,8 +196,8 @@ export function classifyMarketPosition(
     color: "red",
     label: "Overpriced",
     meaning: "You are likely losing sales to competitors.",
-    priceDiff: roundToTwoDecimals(diff),
-    priceDiffPercent: diffPercent,
+    priceDiff: centsToDollars(diffCents),
+    priceDiffPercent: roundToTwoDecimals(diffPercent),
   };
 }
 

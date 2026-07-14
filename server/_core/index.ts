@@ -15,6 +15,9 @@ import { appRouter } from "../routers";
 import { createContext } from "./context";
 import { serveStatic, setupVite } from "./vite";
 import { cronScheduler } from "../services/cron-scheduler.service";
+import { notificationBroadcaster } from "../services/notification-broadcaster";
+import type { BroadcastEvent } from "../services/notification-broadcaster";
+import { sdk } from "./sdk";
 
 function isPortAvailable(port: number): Promise<boolean> {
   return new Promise(resolve => {
@@ -85,6 +88,39 @@ async function startServer() {
   app.use("/api/oauth/", doubleCsrfProtection);
 
   registerOAuthRoutes(app);
+
+  // SSE — real-time notification stream
+  app.get("/api/notifications/stream", async (req, res) => {
+    try {
+      const user = await sdk.authenticateRequest(req);
+      res.writeHead(200, {
+        "Content-Type": "text/event-stream",
+        "Cache-Control": "no-cache",
+        Connection: "keep-alive",
+        "X-Accel-Buffering": "no",
+      });
+
+      const sendEvent = (event: BroadcastEvent) => {
+        if (event.userId === user.id) {
+          res.write(`event: ${event.type}\ndata: ${JSON.stringify(event.payload)}\n\n`);
+        }
+      };
+
+      const unsubscribe = notificationBroadcaster.subscribe(sendEvent);
+
+      const keepalive = setInterval(() => {
+        res.write(": keepalive\n\n");
+      }, 30000);
+
+      req.on("close", () => {
+        unsubscribe();
+        clearInterval(keepalive);
+      });
+    } catch {
+      res.writeHead(401, { "Content-Type": "text/plain" });
+      res.end("Unauthorized");
+    }
+  });
 
   // tRPC API
   app.use(

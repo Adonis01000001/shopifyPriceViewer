@@ -8,7 +8,7 @@ import {
   priceSchema,
 } from "../../shared/validation";
 import * as db from "../db";
-import { shopifyStores } from "../../drizzle/schema";
+import { shopifyStores, competitors, competitorProducts } from "../../drizzle/schema";
 import { eq, and } from "drizzle-orm";
 
 // Helper: get or create a "Manual" store placeholder for products without Shopify
@@ -180,6 +180,38 @@ export const productRouter = router({
           message: "Product not found",
         });
       return product;
+    }),
+
+  getCompetitorPrices: protectedProcedure
+    .input(z.object({ productId: z.string().uuid() }))
+    .query(async ({ ctx, input }) => {
+      const database = await db.getDb();
+      if (!database) throw new Error("Database not available");
+
+      const rows = await database
+        .select({
+          id: competitorProducts.id,
+          competitorId: competitorProducts.competitorId,
+          competitorName: competitors.name,
+          competitorDomain: competitors.domain,
+          title: competitorProducts.competitorProductTitle,
+          sku: competitorProducts.competitorSku,
+          price: competitorProducts.price,
+          currency: competitorProducts.currency,
+          url: competitorProducts.competitorProductUrl,
+          matchScore: competitorProducts.matchScore,
+          lastScrapedAt: competitorProducts.lastScrapedAt,
+        })
+        .from(competitorProducts)
+        .innerJoin(competitors, eq(competitorProducts.competitorId, competitors.id))
+        .where(
+          and(
+            eq(competitorProducts.productId, input.productId),
+            eq(competitorProducts.isActive, true)
+          )
+        );
+
+      return rows;
     }),
 
   stats: protectedProcedure.query(async ({ ctx }) => {

@@ -141,7 +141,7 @@ The database uses **13 tables** with PostgreSQL enums:
 **Layout:** Multi-section dashboard:
 
 1. **KPI Row (4 cards):** Total Products, Average Price, Active Alerts, Competitors Tracked — each with icon, value, and trend indicator
-2. **Pricing Insights Table (8 cols):** Products needing attention (alert/overpriced status) with current price, AI-recommended target price, projected monthly impact, and Approve/Reject actions. Falls back to sample data if no products exist.
+2. **Pricing Insights Table (8 cols):** Products needing attention (alert/overpriced status) with current price, AI-recommended target price, projected monthly impact, and Approve/Reject actions. When no recommendations exist, the table shows the user's actual products with a per-row **GENERATE** button that calls `recommendations.generate` directly (no navigation away from the overview). "VIEW ALL RECOMMENDATIONS" navigates to `/products`.
 3. **Competitor Movement Feed (4 cols):** Real-time feed of competitor price changes with timestamps, price gap percentages, and status badges
 4. **Bottom Row:**
    - **Category Mix:** Donut chart (Recharts) showing product distribution by category with percentage legend
@@ -164,16 +164,19 @@ The database uses **13 tables** with PostgreSQL enums:
 
 1. **Summary Cards (4):** Count of products by status (Optimal, Underpriced, Overpriced, Alert) with percentage badges
 2. **Filter Bar:** Search input (title/SKU), Category dropdown, Status dropdown, Export CSV button
-3. **Products Table:** Columns for Product (avatar, title, category), SKU, Price, Market Low, Delta (color-coded), Status badge, Actions (auto-adjust, details, dropdown menu)
+3. **Products Table:** Columns for Product (avatar, title, category), SKU, Price, Market Low, Delta (color-coded), Status badge, Actions (Price Scout, details, dropdown menu). Market Low and Delta columns are hidden on small screens (below `lg`) until competitor data is wired up.
 
 **How it works:**
 
-- Products loaded via `trpc.products.list`
+- Products loaded via `trpc.products.list` with an error state + Retry button if the query fails
 - Client-side filtering by search query, category, and status
+- Filtered empty state shows a "Clear Filters" button to reset all filters at once
 - Market Low calculated as 92% of current price (placeholder)
 - Delta is hardcoded at -5.1% (placeholder for actual competitor comparison)
+- Overpriced status is color-coded **red** (was incorrectly green); optimal is green, underpriced amber, alert primary
 - Export uses PapaParse to generate CSV download
-- Actions: auto-adjust (placeholder toast), details (placeholder toast), dropdown with View Details / Price History
+- Actions: **⚡ Price Scout** navigates to `/price-scout` for that product; **↗ Details** navigates to `/products?id=<productId>`; dropdown has View Details (→ PriceScout) and Copy Product ID
+- Uses the shadcn `<TableRow>` component for rows (replaces raw `<tr>`)
 
 **Key tRPC endpoints:**
 
@@ -222,8 +225,11 @@ The database uses **13 tables** with PostgreSQL enums:
 2. **Alert List Panel:**
    - Header with search input, sort dropdown (Newest/Oldest)
    - Tab filters: All, Active, Critical, Resolved — with counts
-   - Alert cards showing: severity badge, type badge, title, message, timestamp, Resolve button
-   - Empty state with bell icon and "No alerts found" message
+    - Alert cards showing: severity badge, type badge, title, message, timestamp, Resolve button
+    - **Resolve button is now functional:** calls `trpc.alerts.markRead` mutation; on success invalidates the alerts cache and toasts "Alert resolved", on error toasts the failure. Resolved alerts then appear under the Resolved tab.
+    - Invalid `createdAt` timestamps are guarded with try/catch so a bad date won't crash the page
+    - Query failure shows an error message with a Retry button (instead of a silent empty list)
+    - Empty state with bell icon and "No alerts found" message
 
 **How it works:**
 
@@ -399,6 +405,9 @@ All 14 CRITICAL and HIGH vulnerabilities have been fixed (as of 2026-06-02):
 12. Unused `mysql2` dependency removed
 13. Both disconnect endpoints verify `userId`
 14. CORS middleware with production origin restriction
+15. CORS `ALLOWED_ORIGINS` empty strings filtered out (avoids an unintended `""` origin match in production)
+16. Scout service validates fetch URLs (only `http(s):` allowed) before fetching — SSRF protection
+17. Rate limiting extended to `scout.*` tRPC endpoints (scrapeLimiter)
 
 ---
 
@@ -422,3 +431,21 @@ pnpm db:seed      # Seed database (creates admin user + sample data)
 - **Optimistic UI:** tRPC React Query integration provides automatic caching, invalidation, and refetching
 - **Dark mode default:** OKLCH color system in `index.css` with light mode support via ThemeContext
 - **Responsive design:** Desktop-first with fixed sizes, scaling down at tablet (1024px) and mobile (767px) breakpoints
+
+---
+
+## Recent Code & UI Improvements (2026-07-12)
+
+Improvements made without changing the database schema. `pnpm check` passes with zero type errors.
+
+### Frontend
+
+- **Products page:** Dead action buttons are now functional — ⚡ "Price Scout" navigates to `/price-scout` for that product, ↗ "Details" opens the product (replaced former placeholder toasts). Replaced raw `<tr>` with the shadcn `<TableRow>` component. Added a query error state with a Retry button. Fixed the overpriced status color from green → red. Filtered empty state now offers a "Clear Filters" button. Market Low / Delta columns hidden below `lg` until competitor comparison is wired. Removed unused imports (`MoreHorizontal`, `Plus`).
+- **Alerts page:** The previously dead "Resolve" button is wired to `trpc.alerts.markRead`; on success it invalidates the cache and toasts, on error it surfaces the failure. Added a query error state with Retry. Guarded `new Date(createdAt)` in try/catch so a malformed timestamp can't crash the page.
+- **Overview page:** Empty-state "GENERATE" button now calls `recommendations.generate` directly instead of only navigating. "VIEW ALL RECOMMENDATIONS" navigates to `/products`.
+
+### Backend
+
+- **`server/_core/index.ts`:** `PORT` parsed with `Number()` + fallback (was `parseInt(process.env.PORT || "3000")`, which could yield `NaN`). `ALLOWED_ORIGINS` split is now `.filter(Boolean)` so empty strings can't slip into the CORS origin list. Rate limiting (`scrapeLimiter`) extended to `scout.*` endpoints. `cronScheduler.start()` wrapped in try/catch.
+- **`server/services/scout.service.ts`:** Added `isValidFetchUrl()` guard — only `http(s)` URLs are fetched (SSRF protection for the HTML fallback path).
+

@@ -9,6 +9,8 @@ import {
   DollarSign,
   Target,
   BarChart3,
+  Sparkles,
+  Brain,
 } from "lucide-react";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -124,12 +126,18 @@ export function PricingRecommendationWidget({
     { productId },
     { enabled: !!productId }
   );
+  const { data: aiData, isLoading: aiLoading } =
+    trpc.pricingEngine.aiRecommendation.useQuery(
+      { productId },
+      { enabled: !!productId }
+    );
   const generateMutation =
     trpc.pricingEngine.generateRecommendation.useMutation();
 
   const snapshot = data?.marketSnapshot;
   const recommendation = data?.recommendation;
   const position = data?.position;
+  const aiResult = aiData?.aiRecommendation;
 
   const stats = useMemo(() => {
     if (!snapshot) return null;
@@ -319,6 +327,77 @@ export function PricingRecommendationWidget({
             </div>
           )}
         </div>
+      </div>
+
+      {/* AI Pricing Analysis */}
+      <div className="glass-panel rounded-lg overflow-hidden border border-primary/10">
+        <div className="px-5 py-3 border-b border-white/[0.04] bg-surface-container/50 flex items-center gap-2">
+          <Brain className="h-4 w-4 text-primary" />
+          <h3 className="text-[14px] font-semibold">AI Pricing Analysis</h3>
+          <Sparkles className="h-3 w-3 text-primary/60 ml-auto" />
+        </div>
+        {aiLoading ? (
+          <div className="p-4 animate-pulse space-y-3">
+            <div className="h-4 bg-surface-container-highest rounded w-1/3" />
+            <div className="h-8 bg-surface-container-highest rounded w-1/4" />
+            <div className="h-4 bg-surface-container-highest rounded w-2/3" />
+          </div>
+        ) : aiResult ? (
+          <div className="p-4 space-y-3">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="label-caps text-muted-foreground/60 text-[10px]">
+                  AI Recommended Price
+                </p>
+                <p className="text-2xl font-bold font-mono text-primary">
+                  ${aiResult.recommendedPrice.toFixed(2)}
+                </p>
+              </div>
+              <div className="text-right">
+                <p className="label-caps text-muted-foreground/60 text-[10px]">
+                  Confidence
+                </p>
+                <p className={cn(
+                  "text-sm font-bold label-caps",
+                  aiResult.confidence === "high" ? "text-[#21a732]" :
+                  aiResult.confidence === "medium" ? "text-yellow-400" :
+                  "text-muted-foreground"
+                )}>
+                  {aiResult.confidence.toUpperCase()}
+                </p>
+              </div>
+            </div>
+            <p className="text-[12px] text-muted-foreground leading-relaxed">
+              {aiResult.reasoning}
+            </p>
+            {aiResult.marketContext && (
+              <div className="bg-surface-container-highest/50 rounded p-3">
+                <p className="text-[11px] text-muted-foreground leading-relaxed">
+                  {aiResult.marketContext}
+                </p>
+              </div>
+            )}
+            {aiResult.riskFactors.length > 0 && (
+              <div className="space-y-1.5">
+                <p className="text-[10px] font-bold label-caps text-muted-foreground/60">
+                  Risk Factors
+                </p>
+                {aiResult.riskFactors.map((risk, i) => (
+                  <div key={i} className="flex items-start gap-2">
+                    <AlertTriangle className="h-3 w-3 text-yellow-500 mt-0.5 shrink-0" />
+                    <p className="text-[11px] text-muted-foreground">{risk}</p>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        ) : (
+          <div className="p-4 text-center">
+            <p className="text-[12px] text-muted-foreground">
+              {aiData?.fallbackReason || "AI analysis unavailable. Set OPENROUTER_API_KEY for AI-powered recommendations."}
+            </p>
+          </div>
+        )}
       </div>
 
       {/* Margin Protection Warning */}

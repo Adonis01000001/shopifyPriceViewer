@@ -17,6 +17,7 @@ import {
 } from "../../drizzle/schema";
 import { aiExtractionService } from "./ai-extraction.service";
 import { recommendationService } from "./recommendation.service";
+import { notificationBroadcaster } from "./notification-broadcaster";
 import { logger } from "../_core/logger";
 import { ENV } from "../_core/env";
 
@@ -348,6 +349,17 @@ export const priceMonitoringService = {
                   change.changeType === "price_decrease" ? "below" : "above",
               });
 
+              notificationBroadcaster.broadcast({
+                type: "alert_created",
+                userId: competitor.userId,
+                payload: {
+                  alertType,
+                  severity,
+                  title: `${change.changeType === "price_decrease" ? "Price Drop" : "Price Increase"} Detected`,
+                  message: timelineEvent,
+                },
+              });
+
               // G3 — Threshold alert: check user's notification preferences
               try {
                 const prefs = await database
@@ -377,6 +389,17 @@ export const priceMonitoringService = {
                         change.changeType === "price_decrease"
                           ? "below"
                           : "above",
+                    });
+
+                    notificationBroadcaster.broadcast({
+                      type: "alert_created",
+                      userId: competitor.userId,
+                      payload: {
+                        alertType: "threshold",
+                        severity,
+                        title: `Threshold ${change.changeType === "price_decrease" ? "Drop" : "Increase"} Exceeded`,
+                        message: `${product.title} ${change.changeType === "price_decrease" ? "dropped" : "rose"} ${Math.abs(change.priceDiffPercent).toFixed(1)}% at ${competitor.name}, exceeding your ${thresholdPct}% threshold.`,
+                      },
                     });
                   }
                 }

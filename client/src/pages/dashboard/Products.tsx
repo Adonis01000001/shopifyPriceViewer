@@ -451,7 +451,7 @@ export default function Products() {
                           <button
                             className="hover:text-primary transition-colors text-sm"
                             title="View details"
-                            onClick={() => navigate(`/products?id=${product.id}`)}
+                            onClick={() => navigate(`/products/${product.id}`)}
                           >
                             <ExternalLink className="h-3.5 w-3.5" />
                           </button>

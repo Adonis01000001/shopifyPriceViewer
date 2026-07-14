@@ -1,6 +1,7 @@
 import { eq, and, desc, sql } from "drizzle-orm";
 import { requireDb } from "../_core/db-assert";
 import { alerts, type Alert, type InsertAlert } from "../../drizzle/schema";
+import { notificationBroadcaster } from "./notification-broadcaster";
 
 export const alertService = {
   async getByUserId(
@@ -51,7 +52,13 @@ export const alertService = {
   async create(data: InsertAlert): Promise<Alert> {
     const database = await requireDb();
     const result = await database.insert(alerts).values(data).returning();
-    return result[0];
+    const alert = result[0];
+    notificationBroadcaster.broadcast({
+      type: "alert_created",
+      userId: alert.userId,
+      payload: alert,
+    });
+    return alert;
   },
 
   async markRead(userId: string, alertId: string): Promise<Alert | undefined> {
@@ -61,7 +68,15 @@ export const alertService = {
       .set({ isRead: true, updatedAt: new Date() })
       .where(and(eq(alerts.id, alertId), eq(alerts.userId, userId)))
       .returning();
-    return result[0];
+    const alert = result[0];
+    if (alert) {
+      notificationBroadcaster.broadcast({
+        type: "alert_updated",
+        userId,
+        payload: alert,
+      });
+    }
+    return alert;
   },
 
   async markAllRead(userId: string): Promise<number> {
@@ -71,7 +86,15 @@ export const alertService = {
       .set({ isRead: true, updatedAt: new Date() })
       .where(and(eq(alerts.userId, userId), eq(alerts.isRead, false)))
       .returning();
-    return result.length;
+    const count = result.length;
+    if (count > 0) {
+      notificationBroadcaster.broadcast({
+        type: "alert_updated",
+        userId,
+        payload: { count, isRead: true },
+      });
+    }
+    return count;
   },
 
   async resolve(userId: string, alertId: string): Promise<Alert | undefined> {
@@ -86,7 +109,15 @@ export const alertService = {
       })
       .where(and(eq(alerts.id, alertId), eq(alerts.userId, userId)))
       .returning();
-    return result[0];
+    const alert = result[0];
+    if (alert) {
+      notificationBroadcaster.broadcast({
+        type: "alert_updated",
+        userId,
+        payload: alert,
+      });
+    }
+    return alert;
   },
 
   async delete(userId: string, alertId: string): Promise<void> {
@@ -94,6 +125,11 @@ export const alertService = {
     await database
       .delete(alerts)
       .where(and(eq(alerts.id, alertId), eq(alerts.userId, userId)));
+    notificationBroadcaster.broadcast({
+      type: "alert_deleted",
+      userId,
+      payload: { id: alertId },
+    });
   },
 
   async getStats(userId: string) {

@@ -25,6 +25,7 @@ import {
 import { cn } from "@/lib/utils";
 import { useState } from "react";
 import { toast } from "sonner";
+import { useRealtimeNotifications } from "@/hooks/use-realtime-notifications";
 
 const severityConfig: Record<string, { label: string; className: string }> = {
   critical: {
@@ -138,6 +139,7 @@ function AlertRow({
 
 export default function Alerts() {
   const utils = trpc.useUtils();
+  useRealtimeNotifications();
   const [searchQuery, setSearchQuery] = useState("");
   const [activeTab, setActiveTab] = useState("all");
 

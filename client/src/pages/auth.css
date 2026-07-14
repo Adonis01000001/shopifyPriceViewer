@@ -10,7 +10,7 @@
   align-items: center;
   justify-content: center;
   overflow: hidden;
-  background: var(--color-surface-dim);
+  background: transparent;
   font-family: var(--font-sans);
 }
 
@@ -143,8 +143,6 @@
     0 0 0 1px rgba(255, 177, 197, 0.04),
     0 20px 60px -15px rgba(0, 0, 0, 0.4),
     0 0 80px -20px rgba(186, 0, 92, 0.08);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
 }
 
 /* ── Left branding panel — glass ─────────────────────── */
@@ -161,8 +159,6 @@
     rgba(255, 177, 197, 0.03) 100%
   );
   border-right: 1px solid rgba(255, 177, 197, 0.05);
-  backdrop-filter: blur(30px);
-  -webkit-backdrop-filter: blur(30px);
 }
 
 .auth-branding::before {
@@ -293,8 +289,6 @@
   justify-content: center;
   padding: 4rem;
   background: rgba(40, 22, 27, 0.5);
-  backdrop-filter: blur(30px);
-  -webkit-backdrop-filter: blur(30px);
 }
 
 .auth-form-wrapper {
@@ -380,8 +374,6 @@
   outline: none;
   transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
   font-family: inherit;
-  backdrop-filter: blur(4px);
-  -webkit-backdrop-filter: blur(4px);
 }
 
 .auth-input::placeholder {
