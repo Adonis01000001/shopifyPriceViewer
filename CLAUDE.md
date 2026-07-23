@@ -11,6 +11,8 @@ Full-stack TypeScript SaaS price-intelligence platform. Users connect Shopify st
 ```bash
 pnpm dev              # Express + Vite dev server (server/_core/index.ts, port 3000; auto-falls back to 3001–3019 if busy)
 pnpm check            # tsc --noEmit
+pnpm typecheck        # alias for check
+pnpm lint             # eslint .
 pnpm test             # vitest run (all)
 pnpm test -- -t "name" --run   # run a single test by name
 pnpm test -- <path> --run      # run one test file
@@ -62,12 +64,13 @@ Client → **tRPC router procedure** → **service** → **Drizzle ORM** → Pos
 - `intelligence` (`intelligence.router.ts`) — competitor discovery (SerpAPI + Firecrawl)
 - `pricingEngine` (`pricing-engine.router.ts`) — pricing recommendation engine
 - `scout` (`scout.router.ts`) — search-driven competitor scouting
+- `wisdom` (`wisdom.router.ts`) — AI portfolio analysis (`analyze` query → `wisdom.service.ts#analyzePortfolio`)
 - `system` (`_core/systemRouter.ts`) — health/version/heartbeat
 - `shopify` (inlined in `routers.ts`) — listStores/connect/disconnect/syncProducts
 
 ### Service map (server/services)
 
-`product` · `competitor` · `price` · `alert` · `recommendation` · `activity` · `email` · `ai-extraction` · `competitor-discovery` · `exa-search` · `scout` · `scraping` · `pricing-engine` · `price-monitoring` · `cron-scheduler`. The `scraping.service.ts` file is the scraper adapter layer (Firecrawl primary, Playwright fallback) used by `price-monitoring` and `competitor-discovery`.
+`product` · `competitor` · `price` · `alert` · `recommendation` · `activity` · `email` · `ai-extraction` · `competitor-discovery` · `exa-search` · `scout` · `scraping` · `pricing-engine` · `price-monitoring` · `cron-scheduler` · `ai-recommendation` · `wisdom` · `notification-broadcaster`. The `scraping.service.ts` file is the scraper adapter layer (Firecrawl primary, Playwright fallback) used by `price-monitoring` and `competitor-discovery`.
 
 ### Auth (read this carefully)
 
@@ -90,6 +93,7 @@ Authentication entry point is `server/_core/context.ts`: `createContext()` calls
 - **Shared constants**: `shared/const.ts` holds cookie names, expiry durations, and error code strings. Import from `@shared/const`, don't re-literal them.
 - **Shared Zod schemas**: `shared/validation.ts` holds reusable input schemas (`skuSchema`, `productNameSchema`, `priceSchema`, `normalizeName`). Import from `@shared/validation`, don't re-define them in routers.
 - **Scraping adapter layer**: `server/services/scraping.service.ts` wraps Firecrawl (primary) and Playwright (fallback); dispatch through it rather than calling Firecrawl directly from services.
+- **LLM call path**: every AI feature routes through `invokeLLM()` in `server/_core/llm.ts` — it is the single abstraction over the provider SDK (OpenAI/OpenRouter per env). `ai-recommendation.service.ts` and `wisdom.service.ts` build prompts and call it; do not instantiate a provider client directly from a service.
 - **Path aliases**: `@/*` resolves to `client/src/*`, `@shared/*` resolves to `shared/*` (configured in both `tsconfig.json` and `vite.config.ts`). `vite.config.ts` also defines `@assets` → `attached_assets`, but that alias is **Vite-only** (absent from `tsconfig.json`), so it works at dev/build time but not under `tsc --noEmit`.
 - **Seed file**: `server/seed.ts` (not `server/seed.js` or `server/_core/seed.ts`).
 
@@ -103,15 +107,28 @@ React 19 SPA via **Wouter** (not React Router), **TanStack Query** for server st
 
 - `/` → `Overview` (dashboard)
 - `/products` → `Products`
-- `/products/new` → `AddProductDialog`
+- `/products/:id` → `ProductDetail`
+- `/scout` → `PriceScout`
+- `/wisdom` → `PathOfWisdom` (AI portfolio analysis)
 - `/competitors` → `Competitors`
 - `/alerts` → `Alerts`
 - `/analytics` → `Analytics`
-- `/scout` → `PriceScout`
-- `/admin` → `Admin` (admin-only)
-- login wall via `AuthGuard` (queries `trpc.auth.me.useQuery`; unauthenticated renders `Auth`)
+- `/settings` → `Settings`
+- login wall via `AuthGuard` (queries `trpc.auth.me.useQuery`; unauthenticated renders `Auth`). Admin gating is role-based inside `DashboardLayout.tsx` (`user?.role === 'admin'` filters `adminOnly` nav items) — there is **no** `/admin` route or `Admin` page component; correct the doc if you assumed one.
 
 tRPC client is configured once in `client/src/lib/trpc.ts`; unauthorized responses redirect to login via a QueryCache subscriber. Shared UI primitives live in `client/src/components/ui/` (shadcn); dashboard-specific components in `client/src/components/dashboard/`.
+
+### Test structure
+
+- Unit/integration tests live in `server/services/__tests__/` (e.g., `pricing-engine.test.ts`, `product.test.ts`).
+- Run with `pnpm test` (vitest). The DB-backed product tests need a test database — they fail locally with "Database connection unavailable" (not a regression).
+- `server/auth.logout.test.ts` tests the logout flow.
+- No client-side tests yet.
+- Pinned values in `pricing-engine.test.ts`: 95, 110, 95.04, 100.33 — refactors must preserve these.
+
+### Ongoing improvement plan
+
+See `docs/IMPROVEMENT-PLAN.md` for the phased, DB-untouchable roadmap (security hardening, tests, N+1 fixes, bulk actions, one-click apply, CSV export, UX polish). Phase 1 is in progress as of 2026-07-11.
 
 ## Stale documentation warning
 

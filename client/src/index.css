@@ -47,7 +47,7 @@
 :root {
   --font-sans: "DM Sans", ui-sans-serif, system-ui, sans-serif;
   --font-mono: "JetBrains Mono", ui-monospace, monospace;
-  --radius: 0.25rem;
+  --radius: 0.5rem;
 
   /* Obsidian Intel — Light mode (rose-tinted) */
   --background: #fff5f8;
@@ -182,13 +182,15 @@
   }
   html {
     font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
   }
   body {
     @apply bg-background text-foreground;
     font-feature-settings: "cv02", "cv03", "cv04", "cv11";
-    -webkit-font-smoothing: antialiased;
-    -moz-osx-font-smoothing: grayscale;
   }
+
+  /* Interactive elements cursor */
   button:not(:disabled),
   [role="button"]:not([aria-disabled="true"]),
   [type="button"]:not(:disabled),
@@ -197,23 +199,39 @@
   a[href],
   select:not(:disabled),
   input[type="checkbox"]:not(:disabled),
-  input[type="radio"]:not(:disabled) {
+  input[type="radio"]:not(:disabled),
+  summary {
     @apply cursor-pointer;
   }
 
+  /* Smooth focus transitions */
+  *:focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: 2px;
+    transition: outline-offset 0.15s ease;
+  }
+
+  /* Scrollbar theming */
   ::-webkit-scrollbar {
-    width: 6px;
-    height: 6px;
+    width: 8px;
+    height: 8px;
   }
   ::-webkit-scrollbar-track {
     background: transparent;
   }
   ::-webkit-scrollbar-thumb {
     background: var(--color-outline-variant);
-    border-radius: 3px;
+    border-radius: 4px;
+    border: 2px solid transparent;
+    background-clip: padding-box;
   }
   ::-webkit-scrollbar-thumb:hover {
     background: var(--color-outline);
+    border: 2px solid transparent;
+    background-clip: padding-box;
+  }
+  ::-webkit-scrollbar-corner {
+    background: transparent;
   }
 }
 
@@ -244,32 +262,50 @@
     min-width: 0;
   }
 
+  /* Glass morphism cards */
   .glass-card,
   .glass-panel {
     background: var(--color-surface-container-low);
     border: 1px solid var(--color-outline-variant);
     border-radius: var(--radius-lg, 0.5rem);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+  }
+  .glass-card:hover,
+  .glass-panel:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 24px rgba(186, 0, 92, 0.08);
   }
   html:not(.dark) .glass-card,
   html:not(.dark) .glass-panel {
     background: var(--card);
     border-color: var(--border);
   }
+  html:not(.dark) .glass-card:hover,
+  html:not(.dark) .glass-panel:hover {
+    box-shadow: 0 8px 24px rgba(58, 31, 38, 0.06);
+  }
 
+  /* Data typography */
   .data-value {
     font-family: var(--font-mono);
     font-variant-numeric: tabular-nums;
     letter-spacing: -0.02em;
+    font-feature-settings: "tnum";
   }
 
+  /* Label styling */
   .label-caps {
     font-family: var(--font-mono);
     font-size: 11px;
     font-weight: 700;
     letter-spacing: 0.08em;
     text-transform: uppercase;
+    color: var(--muted-foreground);
   }
 
+  /* Price flash animations */
   .price-flash-green {
     animation: flash-green 2s ease-out;
   }
@@ -280,37 +316,93 @@
     animation: flash-rose 2s ease-out;
   }
   @keyframes flash-green {
-    0% {
-      background-color: rgba(99, 224, 99, 0.15);
-    }
-    100% {
-      background-color: transparent;
-    }
+    0% { background-color: rgba(99, 224, 99, 0.2); }
+    100% { background-color: transparent; }
   }
   @keyframes flash-amber {
-    0% {
-      background-color: rgba(254, 214, 57, 0.2);
-    }
-    100% {
-      background-color: transparent;
-    }
+    0% { background-color: rgba(254, 214, 57, 0.25); }
+    100% { background-color: transparent; }
   }
   @keyframes flash-rose {
-    0% {
-      background-color: rgba(255, 177, 197, 0.15);
-    }
-    100% {
-      background-color: transparent;
-    }
+    0% { background-color: rgba(255, 77, 148, 0.2); }
+    100% { background-color: transparent; }
   }
 
+  /* Button enhancements */
+  .btn,
+  button {
+    transition: all 0.2s ease;
+    position: relative;
+    overflow: hidden;
+  }
+  .btn::after,
+  button::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: currentColor;
+    opacity: 0;
+    transition: opacity 0.2s ease;
+  }
+  .btn:hover::after,
+  button:hover::after {
+    opacity: 0.08;
+  }
+  .btn:active,
+  button:active {
+    transform: scale(0.97);
+  }
+
+  /* Input enhancements */
+  input,
+  textarea,
+  select {
+    transition: border-color 0.2s ease, box-shadow 0.2s ease;
+  }
+  input:focus,
+  textarea:focus,
+  select:focus {
+    border-color: var(--ring);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--ring) 12%, transparent);
+  }
+
+  /* Recharts tooltip theming */
   .recharts-tooltip-wrapper .recharts-default-tooltip {
     background: var(--color-surface-container) !important;
     border: 1px solid var(--color-outline-variant) !important;
     border-radius: var(--radius) !important;
     font-size: 12px !important;
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1) !important;
   }
   .recharts-tooltip-label {
     color: var(--color-on-surface) !important;
+    font-weight: 600 !important;
+  }
+
+  /* Selection theming */
+  ::selection {
+    background: color-mix(in srgb, var(--primary) 25%, transparent);
+    color: var(--foreground);
+  }
+
+  /* Link underline animation */
+  a {
+    text-decoration: none;
+    position: relative;
+  }
+  a::after {
+    content: '';
+    position: absolute;
+    bottom: -1px;
+    left: 0;
+    width: 0;
+    height: 1px;
+    background: currentColor;
+    transition: width 0.3s ease;
+  }
+  a:hover::after {
+    width: 100%;
   }
 }
