@@ -644,6 +644,10 @@ function CompetitorFeed({
   const priceChanges = useMemo(() => {
     const changes: Record<string, "up" | "down" | "new" | "same"> = {};
     for (const cp of products) {
+      if (cp.price == null) {
+        changes[cp.id] = "same";
+        continue;
+      }
       const prev = prevPricesRef.current[cp.id];
       if (!prev) {
         changes[cp.id] = "new";
@@ -764,7 +768,7 @@ function CompetitorFeed({
             {competitorName} — Live Feed
           </h3>
           <p className="text-[11px] text-muted-foreground mt-0.5">
-            {timeline.length} events · {products.length} matched products ·
+            {timeline.length} events · {products.length} products ·
             updates {liveText}
           </p>
         </div>
@@ -804,7 +808,9 @@ function CompetitorFeed({
                         : "text-foreground"
                   )}
                 >
-                  ${Number(cp.price).toFixed(2)}
+                  {cp.price == null
+                    ? "Pending"
+                    : `$${Number(cp.price).toFixed(2)}`}
                 </span>
                 {change === "up" && (
                   <TrendingUp className="h-3 w-3 text-[#ffb4ab]" />
@@ -821,7 +827,7 @@ function CompetitorFeed({
       <div className="grid grid-cols-1 lg:grid-cols-3 divide-y lg:divide-y-0 lg:divide-x divide-outline-variant/20">
         <div className="p-4">
           <h4 className="label-caps text-[10px] text-muted-foreground mb-3 flex items-center gap-1.5">
-            <Package className="h-3 w-3" /> Matched Products ({products.length})
+            <Package className="h-3 w-3" /> Products ({products.length})
           </h4>
           {isLoading ? (
             <div className="space-y-2">
@@ -836,6 +842,7 @@ function CompetitorFeed({
             <div className="space-y-1.5 max-h-[360px] overflow-y-auto">
               {products.map(cp => {
                 const change = priceChanges[cp.id];
+                const isRadarProduct = cp.source === "price-radar";
                 return (
                   <div
                     key={cp.id}
@@ -852,13 +859,15 @@ function CompetitorFeed({
                       <p className="text-[11px] font-medium truncate flex-1 mr-2">
                         {cp.competitorProductTitle || "Untitled"}
                       </p>
-                      <button
-                        className="text-muted-foreground/40 hover:text-[#ffb4ab] transition-colors shrink-0"
-                        onClick={() => setRemoveTarget(cp.id)}
-                        title="Remove"
-                      >
-                        <Trash2 className="h-3 w-3" />
-                      </button>
+                      {!isRadarProduct && (
+                        <button
+                          className="text-muted-foreground/40 hover:text-[#ffb4ab] transition-colors shrink-0"
+                          onClick={() => setRemoveTarget(cp.id)}
+                          title="Remove"
+                        >
+                          <Trash2 className="h-3 w-3" />
+                        </button>
+                      )}
                     </div>
                     <div className="flex justify-between items-center mt-1.5">
                       <div className="flex items-center gap-1">
@@ -909,7 +918,9 @@ function CompetitorFeed({
                                     : "text-foreground"
                               )}
                             >
-                              ${Number(cp.price).toFixed(2)}
+                              {cp.price == null
+                                ? "Price pending"
+                                : `$${Number(cp.price).toFixed(2)}`}
                             </span>
                             {change === "up" && (
                               <TrendingUp className="h-2.5 w-2.5 text-[#ffb4ab]" />
@@ -917,21 +928,25 @@ function CompetitorFeed({
                             {change === "down" && (
                               <TrendingDown className="h-2.5 w-2.5 text-primary" />
                             )}
-                            <button
-                              className="text-muted-foreground/40 hover:text-primary transition-colors ml-0.5"
-                              onClick={() => {
-                                setEditingPrice(cp.id);
-                                setEditValue(cp.price);
-                              }}
-                              title="Edit price"
-                            >
-                              <Pencil className="h-2.5 w-2.5" />
-                            </button>
+                            {!isRadarProduct && (
+                              <button
+                                className="text-muted-foreground/40 hover:text-primary transition-colors ml-0.5"
+                                onClick={() => {
+                                  setEditingPrice(cp.id);
+                                  setEditValue(cp.price);
+                                }}
+                                title="Edit price"
+                              >
+                                <Pencil className="h-2.5 w-2.5" />
+                              </button>
+                            )}
                           </>
                         )}
                       </div>
                       <span className="text-[9px] label-caps text-muted-foreground">
-                        {Math.round((cp.matchScore ?? 0) * 100)}% match
+                        {isRadarProduct
+                          ? "PRICE RADAR"
+                          : `${Math.round((cp.matchScore ?? 0) * 100)}% match`}
                       </span>
                     </div>
                     {cp.competitorProductUrl && (
@@ -950,7 +965,7 @@ function CompetitorFeed({
             </div>
           ) : (
             <p className="text-[11px] text-muted-foreground text-center py-4">
-              No matched products
+              No products
             </p>
           )}
         </div>

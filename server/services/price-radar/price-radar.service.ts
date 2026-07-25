@@ -153,7 +153,6 @@ async function renderBrowser(
   await assertPublicUrl(url);
   const started = Date.now();
   const context = await browser.newContext({
-    userAgent: USER_AGENT,
     javaScriptEnabled: true,
     serviceWorkers: "block",
   });
@@ -408,6 +407,12 @@ export const priceRadarService = {
     const baseUrl = canonicalizeUrl(input.url);
     if (!baseUrl) throw new Error("Invalid source URL");
     await assertPublicUrl(baseUrl);
+    const domain = new URL(baseUrl).hostname;
+    const existing = await priceRadarRepository.getSourceByDomain(
+      input.userId,
+      domain
+    );
+    if (existing) throw new Error("already active: A source for this domain already exists");
     if (
       input.competitorId &&
       !(await priceRadarRepository.assertCompetitorOwnership(
@@ -416,11 +421,18 @@ export const priceRadarService = {
       ))
     )
       throw new Error("Competitor not found");
+    const matchedCompetitor =
+      input.competitorId == null
+        ? await priceRadarRepository.findCompetitorByDomain(
+            input.userId,
+            domain
+          )
+        : null;
     return priceRadarRepository.createSource({
       userId: input.userId,
-      competitorId: input.competitorId,
+      competitorId: input.competitorId ?? matchedCompetitor?.id,
       name: input.name,
-      domain: new URL(baseUrl).hostname,
+      domain,
       baseUrl,
       crawlDelayMs: input.crawlDelayMs ?? DEFAULT_PRICE_RADAR_POLICY.minRequestIntervalMs,
     });

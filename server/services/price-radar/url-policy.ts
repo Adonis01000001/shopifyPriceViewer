@@ -2,6 +2,14 @@ import { lookup } from "node:dns/promises";
 import { isIP } from "node:net";
 import type { PriceRadarPageKind } from "./types";
 
+export function normalizeCompetitorDomain(domain: string): string {
+  return domain
+    .trim()
+    .toLowerCase()
+    .replace(/\.$/, "")
+    .replace(/^www\./, "");
+}
+
 const PRODUCT_HINTS = [
   "/product/",
   "/products/",

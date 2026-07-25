@@ -5,12 +5,18 @@ import {
   extractInternalLinks,
   extractSitemapUrls,
   isAllowedByRobots,
+  normalizeCompetitorDomain,
   parseRobotsTxt,
   shouldCrawlUrl,
 } from "../url-policy";
 import { extractProductData, shouldRenderWithBrowser } from "../extraction";
 
 describe("Price Radar URL policy", () => {
+  it("normalizes competitor domains for source assignment", () => {
+    expect(normalizeCompetitorDomain("www.Amazon.com")).toBe("amazon.com");
+    expect(normalizeCompetitorDomain("EBAY.com.")).toBe("ebay.com");
+  });
+
   it("canonicalizes tracking parameters and fragments", () => {
     expect(
       canonicalizeUrl(
@@ -63,6 +69,86 @@ describe("Price Radar URL policy", () => {
 });
 
 describe("Price Radar extraction", () => {
+  it("uses the configured Amazon.com XPath as the authoritative price", () => {
+    const segments = [
+      ["div", 1],
+      ["div", 1],
+      ["div", 1],
+      ["div", 5],
+      ["div", 1],
+      ["div", 7],
+      ["div", 1],
+      ["div", 1],
+      ["div", 1],
+      ["div", 1],
+      ["div", 1],
+      ["form", 1],
+      ["div", 1],
+      ["div", 1],
+      ["div", 1],
+      ["div", 1],
+      ["div", 3],
+      ["div", 1],
+      ["div", 1],
+      ["div", 1],
+      ["div", 1],
+      ["div", 1],
+      ["span", 1],
+      ["span", 1],
+    ] as const;
+    let body = "MAD249.95";
+    for (const [tagName, index] of Array.from(segments).reverse()) {
+      const precedingSiblings = Array.from(
+        { length: index - 1 },
+        () => `<${tagName}></${tagName}>`
+      ).join("");
+      body = `${precedingSiblings}<${tagName}>${body}</${tagName}>`;
+    }
+    const html = `
+      <html>
+        <head>
+          <script type="application/ld+json">
+            {
+              "@context": "https://schema.org",
+              "@type": "Product",
+              "name": "Amazon Radar Product",
+              "offers": {"price": "1.00", "priceCurrency": "USD"}
+            }
+          </script>
+        </head>
+        <body>${body}</body>
+      </html>`;
+
+    const result = extractProductData(
+      html,
+      "https://www.amazon.com/dp/B000RADAR1"
+    );
+
+    expect(result.product?.price).toBe("249.95");
+    expect(result.product?.currency).toBe("MAD");
+    expect(result.product?.extractionMethod).toContain("amazon-price");
+  });
+
+  it("uses Amazon description for generic titles and requests browser pricing", () => {
+    const html = `
+      <html>
+        <head>
+          <meta property="og:title" content="Amazon">
+          <meta name="description" content="Amazon.com : Amazon Basics USB-C Cable, 6 ft : Electronics">
+        </head>
+        <body>${"content ".repeat(300)}</body>
+      </html>`;
+
+    const result = extractProductData(
+      html,
+      "https://www.amazon.com/dp/B000RADAR2"
+    );
+
+    expect(result.product?.name).toBe("Amazon Basics USB-C Cable, 6 ft");
+    expect(result.product?.price).toBeNull();
+    expect(shouldRenderWithBrowser(html, result)).toBe(true);
+  });
+
   it("extracts and normalizes Schema.org Product data", () => {
     const html = `
       <html><head>

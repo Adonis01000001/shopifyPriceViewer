@@ -19,6 +19,7 @@ import type {
   PriceRadarProduct,
   PriceRadarQueueItem,
 } from "./types";
+import { normalizeCompetitorDomain } from "./url-policy";
 
 export const hashPriceRadarUrl = (url: string): string =>
   createHash("sha256").update(url).digest("hex");
@@ -32,6 +33,19 @@ export const priceRadarRepository = {
       .where(and(eq(competitors.id, competitorId), eq(competitors.userId, userId)))
       .limit(1);
     return !!row;
+  },
+
+  async findCompetitorByDomain(userId: string, domain: string) {
+    const db = await requireDb();
+    const rows = await db
+      .select({ id: competitors.id, domain: competitors.domain })
+      .from(competitors)
+      .where(eq(competitors.userId, userId));
+    const normalizedDomain = normalizeCompetitorDomain(domain);
+    return rows.find(
+      competitor =>
+        normalizeCompetitorDomain(competitor.domain) === normalizedDomain
+    );
   },
 
   async createSource(input: {
@@ -56,6 +70,22 @@ export const priceRadarRepository = {
         and(
           eq(priceRadarSources.id, sourceId),
           eq(priceRadarSources.userId, userId),
+          eq(priceRadarSources.isActive, true)
+        )
+      )
+      .limit(1);
+    return source;
+  },
+
+  async getSourceByDomain(userId: string, domain: string) {
+    const db = await requireDb();
+    const [source] = await db
+      .select()
+      .from(priceRadarSources)
+      .where(
+        and(
+          eq(priceRadarSources.userId, userId),
+          eq(priceRadarSources.domain, domain),
           eq(priceRadarSources.isActive, true)
         )
       )

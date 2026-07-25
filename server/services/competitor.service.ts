@@ -1,4 +1,13 @@
-import { eq, and, desc, sql, ilike, or, inArray } from "drizzle-orm";
+import {
+  eq,
+  and,
+  desc,
+  sql,
+  ilike,
+  or,
+  inArray,
+  isNotNull,
+} from "drizzle-orm";
 import { requireDb } from "../_core/db-assert";
 import {
   competitors,
@@ -6,11 +15,15 @@ import {
   priceHistory,
   scrapeJobs,
   activityLogs,
+  priceRadarProducts,
+  priceRadarSources,
   type Competitor,
   type InsertCompetitor,
   type CompetitorProduct,
   type InsertCompetitorProduct,
 } from "../../drizzle/schema";
+import { resolveProductDisplayName } from "./price-radar/extraction";
+import { normalizeCompetitorDomain } from "./price-radar/url-policy";
 
 export const competitorService = {
   async getByUserId(
@@ -103,16 +116,110 @@ export const competitorService = {
   async getProducts(
     userId: string,
     competitorId: string
-  ): Promise<CompetitorProduct[]> {
+  ) {
     // Verify ownership
     const comp = await this.getById(userId, competitorId);
     if (!comp) return [];
     const database = await requireDb();
-    return database
-      .select()
-      .from(competitorProducts)
-      .where(eq(competitorProducts.competitorId, competitorId))
-      .orderBy(desc(competitorProducts.matchScore));
+    const [matchedProducts, radarProducts] = await Promise.all([
+      database
+        .select()
+        .from(competitorProducts)
+        .where(eq(competitorProducts.competitorId, competitorId))
+        .orderBy(desc(competitorProducts.matchScore)),
+      database
+        .select({
+          id: priceRadarProducts.id,
+          name: priceRadarProducts.name,
+          price: priceRadarProducts.price,
+          currency: priceRadarProducts.currency,
+          previousPrice: priceRadarProducts.previousPrice,
+          productUrl: priceRadarProducts.productUrl,
+          sku: priceRadarProducts.sku,
+          extractionConfidence: priceRadarProducts.extractionConfidence,
+          structuredMetadata: priceRadarProducts.structuredMetadata,
+          firstSeenAt: priceRadarProducts.firstSeenAt,
+          lastSeenAt: priceRadarProducts.lastSeenAt,
+          sourceCompetitorId: priceRadarSources.competitorId,
+          sourceDomain: priceRadarSources.domain,
+        })
+        .from(priceRadarProducts)
+        .innerJoin(
+          priceRadarSources,
+          eq(priceRadarProducts.sourceId, priceRadarSources.id)
+        )
+        .where(
+          and(
+            eq(priceRadarProducts.userId, userId),
+            eq(priceRadarProducts.isActive, true),
+            isNotNull(priceRadarProducts.price)
+          )
+        )
+        .orderBy(desc(priceRadarProducts.lastSeenAt)),
+    ]);
+
+    const competitorDomain = normalizeCompetitorDomain(comp.domain);
+    const matchedUrls = new Set(
+      matchedProducts
+        .map(product => product.competitorProductUrl)
+        .filter((url): url is string => !!url)
+    );
+    const radarRows = radarProducts
+      .filter(
+        product =>
+          product.sourceCompetitorId === competitorId ||
+          normalizeCompetitorDomain(product.sourceDomain) === competitorDomain
+      )
+      .filter(product => !matchedUrls.has(product.productUrl))
+      .flatMap(product => {
+        const metadata =
+          product.structuredMetadata &&
+          typeof product.structuredMetadata === "object"
+            ? (product.structuredMetadata as Record<string, unknown>)
+            : {};
+        const name =
+          resolveProductDisplayName(
+            product.name,
+            product.productUrl,
+            typeof metadata.description === "string"
+              ? metadata.description
+              : null
+          ) ?? product.name;
+        if (
+          competitorDomain === "amazon.com" &&
+          /^Amazon(?:\.com)?$/i.test(name)
+        ) {
+          return [];
+        }
+        return [{
+          id: `price-radar:${product.id}`,
+          competitorId,
+          productId: null,
+          competitorProductUrl: product.productUrl,
+          competitorProductTitle: name,
+          competitorSku: product.sku,
+          price: product.price,
+          currency: product.currency ?? "USD",
+          matchScore: product.extractionConfidence,
+          matchMethod: "price-radar",
+          isVerified: false,
+          isActive: true,
+          previousPrice: product.previousPrice,
+          lastPriceUpdate: product.lastSeenAt,
+          lastScrapedAt: product.lastSeenAt,
+          createdAt: product.firstSeenAt,
+          updatedAt: product.lastSeenAt,
+          source: "price-radar" as const,
+        }];
+      });
+
+    return [
+      ...matchedProducts.map(product => ({
+        ...product,
+        source: "matched" as const,
+      })),
+      ...radarRows,
+    ];
   },
 
   async addProduct(data: InsertCompetitorProduct): Promise<CompetitorProduct> {

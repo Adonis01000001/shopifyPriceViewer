@@ -42,7 +42,7 @@ import {
   Database,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { useState, useCallback, useMemo } from "react";
+import { useState, useCallback, useMemo, useEffect } from "react";
 import { toast } from "sonner";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
@@ -104,21 +104,33 @@ function formatDate(d: string | Date | null | undefined): string {
   });
 }
 
+function formatPrice(
+  value: string | number,
+  currency: string | null | undefined
+): string {
+  return new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: currency || "USD",
+  }).format(Number(value));
+}
+
 function SourceRow({
   source,
   onStartCrawl,
+  onCancelCrawl,
   onDelete,
   crawling,
 }: {
   source: any;
   onStartCrawl: () => void;
+  onCancelCrawl: (jobId: string) => void;
   onDelete: () => void;
   crawling: boolean;
 }) {
   const [showJobs, setShowJobs] = useState(false);
   const { data: jobs } = trpc.priceRadar.history.useQuery(
     { limit: 20 },
-    { enabled: showJobs }
+    { enabled: showJobs, refetchInterval: showJobs ? 3_000 : false }
   );
   const sourceJobs = (jobs ?? []).filter(
     (j: any) => j.sourceId === source.id
@@ -128,6 +140,10 @@ function SourceRow({
   const hasRunning = sourceJobs.some(
     (j: any) => j.status === "running" || j.status === "queued"
   );
+
+  useEffect(() => {
+    if (hasRunning) setShowJobs(true);
+  }, [hasRunning]);
 
   return (
     <div className="glass-panel rounded-lg overflow-hidden">
@@ -207,6 +223,7 @@ function SourceRow({
       {showJobs && sourceJobs.length > 0 && (
         <div className="divide-y divide-outline-variant/20">
           {sourceJobs.map((job: any) => {
+            const isRunning = job.status === "running" || job.status === "queued";
             const jb =
               jobStatusBadge[job.status] ?? {
                 label: job.status.toUpperCase(),
@@ -215,7 +232,7 @@ function SourceRow({
             return (
               <div
                 key={job.id}
-                className="px-5 py-3 flex items-center gap-4 hover:bg-white/[0.02] transition-colors"
+                className="px-5 py-3 flex items-center gap-4 hover:bg-muted/30 transition-colors"
               >
                 <span
                   className={cn(
@@ -239,9 +256,22 @@ function SourceRow({
                     {job.pagesSucceeded} ok / {job.pagesFailed} err
                   </span>
                 </div>
-                <span className="text-[10px] text-muted-foreground shrink-0">
-                  {formatDate(job.createdAt)}
-                </span>
+                <div className="flex items-center gap-2 shrink-0">
+                  {isRunning && (
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="h-7 px-2 text-[10px] text-destructive hover:text-destructive hover:bg-destructive/10"
+                      onClick={() => onCancelCrawl(job.id)}
+                    >
+                      <Square className="mr-1 h-3 w-3" />
+                      Stop
+                    </Button>
+                  )}
+                  <span className="text-[10px] text-muted-foreground shrink-0">
+                    {formatDate(job.createdAt)}
+                  </span>
+                </div>
               </div>
             );
           })}
@@ -292,6 +322,16 @@ export default function PriceRadar() {
     },
     onError: (err) => {
       toast.error(err.message || "Failed to start crawl");
+    },
+  });
+
+  const cancelCrawl = trpc.priceRadar.cancelCrawl.useMutation({
+    onSuccess: () => {
+      toast.success("Crawl cancelled");
+      refetchSources();
+    },
+    onError: (err) => {
+      toast.error(err.message || "Failed to cancel crawl");
     },
   });
 
@@ -492,6 +532,7 @@ export default function PriceRadar() {
               key={source.id}
               source={source}
               onStartCrawl={() => handleStartCrawl(source.id)}
+              onCancelCrawl={(jobId) => cancelCrawl.mutate({ jobId })}
               onDelete={() => setDeleteId(source.id)}
               crawling={crawlingSources.has(source.id)}
             />
@@ -530,11 +571,11 @@ export default function PriceRadar() {
                   {items.map((p: any) => (
                     <div
                       key={p.id}
-                      className="glass-panel rounded-lg px-5 py-3 flex items-center gap-4 hover:bg-white/[0.02] transition-colors"
+                      className="glass-panel rounded-lg px-5 py-3 flex items-center gap-4 hover:bg-muted/30 transition-colors"
                     >
                       <div className="flex-1 min-w-0">
                         <p className="text-[13px] font-medium truncate">
-                          {p.name || p.competitorProductTitle || "Unknown product"}
+                          {p.name || "Unknown product"}
                         </p>
                         <div className="flex items-center gap-3 text-[11px] text-muted-foreground mt-0.5">
                           {p.sku && (
@@ -546,11 +587,11 @@ export default function PriceRadar() {
                       <div className="text-right shrink-0">
                         {p.price ? (
                           <span className="font-mono text-[15px] font-bold">
-                            ${Number(p.price).toFixed(2)}
+                            {formatPrice(p.price, p.currency)}
                           </span>
                         ) : (
                           <span className="text-[11px] text-muted-foreground">
-                            No price
+                            Price pending
                           </span>
                         )}
                         {p.availability && (

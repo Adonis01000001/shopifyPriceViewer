@@ -1,10 +1,12 @@
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
-import { eq, desc } from "drizzle-orm";
+import { and, eq, desc, isNotNull, sql } from "drizzle-orm";
 import { protectedProcedure, router } from "../_core/trpc";
 import { requireDb } from "../_core/db-assert";
-import { competitorProducts, competitors } from "../../drizzle/schema";
+import { priceRadarProducts, priceRadarSources, competitorProducts, competitors } from "../../drizzle/schema";
 import { priceRadarService } from "../services/price-radar/price-radar.service";
+import { resolveProductDisplayName } from "../services/price-radar/extraction";
+import { normalizeCompetitorDomain } from "../services/price-radar/url-policy";
 
 const crawlPolicySchema = z.object({
   maxPages: z.number().int().min(1).max(5_000).optional(),
@@ -136,24 +138,124 @@ export const priceRadarRouter = router({
         })
         .optional()
     )
-    .query(async ({ ctx }) => {
-      const database = await requireDb();
-      const rows = await database
-        .select({
-          id: competitorProducts.id,
-          name: competitorProducts.competitorProductTitle,
-          price: competitorProducts.price,
-          sku: competitorProducts.competitorSku,
-          productUrl: competitorProducts.competitorProductUrl,
-          domain: competitors.domain,
-          isVerified: competitorProducts.isVerified,
-          matchScore: competitorProducts.matchScore,
-        })
-        .from(competitorProducts)
-        .innerJoin(competitors, eq(competitorProducts.competitorId, competitors.id))
-        .where(eq(competitors.userId, ctx.user.id))
-        .orderBy(desc(competitors.domain), desc(competitorProducts.matchScore));
-      return rows;
+    .query(async ({ ctx, input }) => {
+      const db = await requireDb();
+      const limit = input?.limit ?? 50;
+      const offset = input?.offset ?? 0;
+
+      const crawlConditions = [
+        eq(priceRadarProducts.userId, ctx.user.id),
+        eq(priceRadarProducts.isActive, true),
+        isNotNull(priceRadarProducts.price),
+      ];
+      if (input?.sourceId)
+        crawlConditions.push(eq(priceRadarProducts.sourceId, input.sourceId));
+
+      const [crawlProducts, manualProducts] = await Promise.all([
+        db
+          .select({
+            id: priceRadarProducts.id,
+            name: priceRadarProducts.name,
+            price: priceRadarProducts.price,
+            sku: priceRadarProducts.sku,
+            productUrl: priceRadarProducts.productUrl,
+            domain: priceRadarSources.domain,
+            currency: priceRadarProducts.currency,
+            availability: priceRadarProducts.availability,
+            imageUrl: priceRadarProducts.imageUrls,
+            brand: priceRadarProducts.brand,
+            category: priceRadarProducts.category,
+            rating: priceRadarProducts.rating,
+            reviewCount: priceRadarProducts.reviewCount,
+            seller: priceRadarProducts.seller,
+            structuredMetadata: priceRadarProducts.structuredMetadata,
+            extractionConfidence: priceRadarProducts.extractionConfidence,
+            firstSeenAt: priceRadarProducts.firstSeenAt,
+            lastSeenAt: priceRadarProducts.lastSeenAt,
+          })
+          .from(priceRadarProducts)
+          .innerJoin(
+            priceRadarSources,
+            eq(priceRadarProducts.sourceId, priceRadarSources.id)
+          )
+          .where(and(...crawlConditions))
+          .orderBy(desc(priceRadarProducts.lastSeenAt))
+          .limit(limit)
+          .offset(offset),
+        db
+          .select({
+            id: competitorProducts.id,
+            name: competitorProducts.competitorProductTitle,
+            price: competitorProducts.price,
+            sku: competitorProducts.competitorSku,
+            productUrl: competitorProducts.competitorProductUrl,
+            domain: competitors.domain,
+            currency: competitorProducts.currency,
+            availability: sql`NULL::text`,
+            imageUrl: sql`NULL::jsonb`,
+            brand: sql`NULL::text`,
+            category: sql`NULL::text`,
+            rating: sql`NULL::numeric`,
+            reviewCount: sql`NULL::integer`,
+            seller: sql`NULL::text`,
+            extractionConfidence: sql`NULL::numeric`,
+            firstSeenAt: sql`NULL::timestamp`,
+            lastSeenAt: competitorProducts.updatedAt,
+          })
+          .from(competitorProducts)
+          .innerJoin(competitors, eq(competitorProducts.competitorId, competitors.id))
+          .where(eq(competitors.userId, ctx.user.id))
+          .orderBy(desc(competitors.domain))
+          .limit(limit)
+          .offset(offset),
+      ]);
+
+      const merged = new Map<string, any>();
+      for (const product of manualProducts) {
+        const key = `${normalizeCompetitorDomain(product.domain)}-${product.productUrl}`;
+        merged.set(key, product);
+      }
+      for (const product of crawlProducts) {
+        const metadata =
+          product.structuredMetadata &&
+          typeof product.structuredMetadata === "object"
+            ? (product.structuredMetadata as Record<string, unknown>)
+            : {};
+        const normalizedProduct = {
+          ...product,
+          name:
+            resolveProductDisplayName(
+              product.name,
+              product.productUrl,
+              typeof metadata.description === "string"
+                ? metadata.description
+                : null
+            ) ?? product.name,
+        };
+        delete (normalizedProduct as any).structuredMetadata;
+        if (
+          normalizeCompetitorDomain(product.domain) === "amazon.com" &&
+          /^Amazon(?:\.com)?$/i.test(normalizedProduct.name)
+        ) {
+          continue;
+        }
+
+        const key = `${normalizeCompetitorDomain(product.domain)}-${product.productUrl}`;
+        const existing = merged.get(key);
+        merged.set(
+          key,
+          existing
+            ? {
+                ...existing,
+                ...normalizedProduct,
+                name: normalizedProduct.name || existing.name,
+                price: normalizedProduct.price ?? existing.price,
+                currency: normalizedProduct.currency ?? existing.currency,
+              }
+            : normalizedProduct
+        );
+      }
+      return Array.from(merged.values());
     }),
 
   errors: protectedProcedure

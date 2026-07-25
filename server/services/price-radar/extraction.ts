@@ -9,6 +9,32 @@ import {
   extractInternalLinks,
 } from "./url-policy";
 
+const AMAZON_DOT_COM_PRICE_XPATH =
+  "/html/body/div[1]/div[1]/div/div[5]/div[1]/div[7]/div/div[1]/div/div/div/form/div/div/div/div/div[3]/div/div[1]/div/div/div/span[1]/span[1]";
+
+interface HtmlTreeNode {
+  tagName: string;
+  children: HtmlTreeNode[];
+  text: string[];
+}
+
+const VOID_HTML_ELEMENTS = new Set([
+  "area",
+  "base",
+  "br",
+  "col",
+  "embed",
+  "hr",
+  "img",
+  "input",
+  "link",
+  "meta",
+  "param",
+  "source",
+  "track",
+  "wbr",
+]);
+
 function decodeHtml(value: string): string {
   return value
     .replace(/<[^>]+>/g, " ")
@@ -20,6 +46,125 @@ function decodeHtml(value: string): string {
     .replace(/&gt;/gi, ">")
     .replace(/\s+/g, " ")
     .trim();
+}
+
+function isAmazonDotCom(pageUrl: string): boolean {
+  try {
+    const hostname = new URL(pageUrl).hostname.toLowerCase();
+    return hostname === "amazon.com" || hostname.endsWith(".amazon.com");
+  } catch {
+    return false;
+  }
+}
+
+function amazonNameFromDescription(description: string | null): string | null {
+  if (!description) return null;
+  let candidate = description
+    .replace(/^Amazon\.com\s*[:\-]\s*/i, "")
+    .replace(/^Buy\s+/i, "")
+    .replace(/^Shop for the\s+/i, "")
+    .trim();
+
+  const suffixIndex = candidate.search(
+    /\s+(?:at|on)\s+(?:the\s+)?Amazon\b|\s*[-:]\s*Amazon\.com\b/i
+  );
+  if (suffixIndex > 0) candidate = candidate.slice(0, suffixIndex);
+  candidate = candidate.split(/\s+:\s+/)[0]?.trim() ?? "";
+  candidate = candidate.replace(/[.:,\s]+$/, "").trim();
+
+  if (
+    !candidate ||
+    /^Amazon(?:\.com)?$/i.test(candidate) ||
+    /^(?:Online shopping|Shop Amazon)\b/i.test(candidate)
+  ) {
+    return null;
+  }
+  return decodeHtml(candidate);
+}
+
+export function resolveProductDisplayName(
+  name: string | null,
+  pageUrl: string,
+  description: string | null
+): string | null {
+  const normalized = name?.trim() || null;
+  if (
+    !isAmazonDotCom(pageUrl) ||
+    (normalized && !/^Amazon(?:\.com)?$/i.test(normalized))
+  ) {
+    return normalized;
+  }
+  return amazonNameFromDescription(description) ?? normalized;
+}
+
+function textContent(node: HtmlTreeNode): string {
+  return [
+    ...node.text,
+    ...node.children.map(child => textContent(child)),
+  ].join(" ");
+}
+
+/**
+ * Evaluates simple absolute element XPaths without adding a full DOM dependency.
+ * Supported segments use the form `/tag` or `/tag[index]`.
+ */
+function textAtAbsoluteXPath(html: string, xpath: string): string | null {
+  const path = xpath
+    .split("/")
+    .filter(Boolean)
+    .map(segment => {
+      const match = /^([a-z][\w:-]*)(?:\[(\d+)\])?$/i.exec(segment);
+      if (!match) return null;
+      return {
+        tagName: match[1].toLowerCase(),
+        index: Number(match[2] ?? "1"),
+      };
+    });
+  if (!path.length || path.some(segment => segment == null)) return null;
+
+  const root: HtmlTreeNode = { tagName: "#document", children: [], text: [] };
+  const stack = [root];
+  const tagPattern = /<!--[\s\S]*?-->|<![^>]*>|<\/?([a-z][\w:-]*)\b[^>]*>/gi;
+  let cursor = 0;
+
+  for (const match of Array.from(html.matchAll(tagPattern))) {
+    const current = stack[stack.length - 1];
+    if (match.index! > cursor) current.text.push(html.slice(cursor, match.index));
+    cursor = match.index! + match[0].length;
+
+    if (!match[1]) continue;
+    const tagName = match[1].toLowerCase();
+    const isClosing = match[0].startsWith("</");
+    if (isClosing) {
+      for (let index = stack.length - 1; index > 0; index -= 1) {
+        if (stack[index].tagName === tagName) {
+          stack.length = index;
+          break;
+        }
+      }
+      continue;
+    }
+
+    const node: HtmlTreeNode = { tagName, children: [], text: [] };
+    current.children.push(node);
+    if (!VOID_HTML_ELEMENTS.has(tagName) && !match[0].endsWith("/>")) {
+      stack.push(node);
+    }
+  }
+  stack[stack.length - 1].text.push(html.slice(cursor));
+
+  let current = root;
+  for (const segment of path) {
+    if (!segment) return null;
+    const matches = current.children.filter(
+      child => child.tagName === segment.tagName
+    );
+    current = matches[segment.index - 1];
+    if (!current) return null;
+  }
+
+  const value = decodeHtml(textContent(current));
+  return value || null;
 }
 
 function firstMatch(html: string, patterns: RegExp[]): string | null {
@@ -102,6 +247,17 @@ function decimal(value: unknown): string | null {
   return Number.isFinite(amount) && amount >= 0 ? amount.toFixed(2) : null;
 }
 
+function currencyFromPriceText(value: string | null): string | null {
+  if (!value) return null;
+  const code = /^([A-Z]{3})(?=\s*\d)/i.exec(value.trim())?.[1];
+  if (code) return code.toUpperCase();
+  if (value.includes("$")) return "USD";
+  if (value.includes("€")) return "EUR";
+  if (value.includes("£")) return "GBP";
+  if (value.includes("¥")) return "JPY";
+  return null;
+}
+
 function integer(value: unknown): number | null {
   if (value == null) return null;
   const parsed = Number(String(value).replace(/[^\d.-]/g, ""));
@@ -176,11 +332,32 @@ export function extractProductData(
 
   if (jsonLdProduct) methods.push("json-ld");
   const ogTitle = meta(html, "og:title");
+  const description = meta(html, "description") ?? meta(html, "og:description");
   const htmlTitle = firstMatch(html, [/<h1\b[^>]*>([\s\S]*?)<\/h1>/i, /<title\b[^>]*>([\s\S]*?)<\/title>/i]);
-  const name = stringValue(jsonLdProduct?.name) ?? ogTitle ?? htmlTitle;
+  const amazonPageTitle = isAmazonDotCom(pageUrl)
+    ? firstMatch(html, [
+        /<span\b[^>]*id=["']productTitle["'][^>]*>([\s\S]*?)<\/span>/i,
+        /<h1\b[^>]*id=["']title["'][^>]*>([\s\S]*?)<\/h1>/i,
+      ])
+    : null;
+  const rawName =
+    stringValue(jsonLdProduct?.name) ??
+    amazonPageTitle ??
+    ogTitle ??
+    htmlTitle;
+  const name = resolveProductDisplayName(rawName, pageUrl, description);
   if (ogTitle || htmlTitle) methods.push("html-metadata");
 
+  const amazonPriceText = isAmazonDotCom(pageUrl)
+    ? textAtAbsoluteXPath(html, AMAZON_DOT_COM_PRICE_XPATH) ??
+      firstMatch(html, [
+        /<span\b[^>]*id=["'](?:priceblock_ourprice|priceblock_dealprice|price_inside_buybox)["'][^>]*>([\s\S]*?)<\/span>/i,
+        /<span\b[^>]*class=["'][^"']*\ba-price\b[^"']*["'][^>]*>[\s\S]{0,500}?<span\b[^>]*class=["'][^"']*\ba-offscreen\b[^"']*["'][^>]*>([\s\S]*?)<\/span>/i,
+      ])
+    : null;
+  const amazonPrice = decimal(amazonPriceText);
   const price =
+    amazonPrice ??
     decimal(offer.price) ??
     decimal(jsonLdProduct?.price) ??
     decimal(meta(html, "product:price:amount")) ??
@@ -200,9 +377,11 @@ export function extractProductData(
         /\b(?:was|list[-_\s]?price|original[-_\s]?price)\b[^>]{0,100}>\s*([^<]+)/i,
       ])
     );
-  if (price) methods.push("price-fallback");
+  if (amazonPrice) methods.push("amazon-price");
+  else if (price) methods.push("price-fallback");
 
   const currency = (
+    currencyFromPriceText(amazonPriceText) ??
     stringValue(offer.priceCurrency) ??
     meta(html, "product:price:currency") ??
     meta(html, "og:price:currency") ??
@@ -270,7 +449,7 @@ export function extractProductData(
           structuredMetadata: Object.fromEntries(
             [
               ["openGraphTitle", ogTitle],
-              ["description", meta(html, "description") ?? meta(html, "og:description")],
+              ["description", description],
               ["canonical", canonicalUrl],
             ].filter(([, value]) => value != null)
           ),
@@ -293,6 +472,13 @@ export function shouldRenderWithBrowser(
   html: string,
   result: PriceRadarExtractionResult
 ): boolean {
+  if (
+    result.product &&
+    isAmazonDotCom(result.product.productUrl) &&
+    !result.product.price
+  ) {
+    return true;
+  }
   if (result.product?.price) return false;
   return (
     html.length < 1500 ||
