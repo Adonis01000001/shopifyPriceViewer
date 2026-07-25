@@ -947,3 +947,315 @@ export const serpApiScouts = pgTable(
 
 export type SerpApiScout = typeof serpApiScouts.$inferSelect;
 export type InsertSerpApiScout = typeof serpApiScouts.$inferInsert;
+
+// =============================================================================
+// Price Radar — independent competitor web data collection engine
+// =============================================================================
+
+export const priceRadarSources = pgTable(
+  "price_radar_sources",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    competitorId: uuid("competitor_id").references(() => competitors.id, {
+      onDelete: "set null",
+    }),
+    name: varchar("name", { length: 255 }).notNull(),
+    domain: varchar("domain", { length: 255 }).notNull(),
+    baseUrl: text("base_url").notNull(),
+    status: varchar("status", { length: 32 }).default("active").notNull(),
+    crawlDelayMs: integer("crawl_delay_ms").default(300).notNull(),
+    robotsTxt: text("robots_txt"),
+    lastCrawledAt: timestamp("last_crawled_at", { withTimezone: true }),
+    isActive: boolean("is_active").default(true).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  t => ({
+    userIdIdx: index("price_radar_sources_user_id_idx").on(t.userId),
+    competitorIdIdx: index("price_radar_sources_competitor_id_idx").on(
+      t.competitorId
+    ),
+    userDomainIdx: uniqueIndex("price_radar_sources_user_domain_idx").on(
+      t.userId,
+      t.domain
+    ),
+    activeIdx: index("price_radar_sources_active_idx").on(t.userId, t.isActive),
+  })
+);
+
+export const priceRadarJobs = pgTable(
+  "price_radar_jobs",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    sourceId: uuid("source_id")
+      .notNull()
+      .references(() => priceRadarSources.id, { onDelete: "cascade" }),
+    rootUrl: text("root_url").notNull(),
+    status: varchar("status", { length: 32 }).default("queued").notNull(),
+    config: jsonb("config").notNull(),
+    pagesQueued: integer("pages_queued").default(0).notNull(),
+    pagesVisited: integer("pages_visited").default(0).notNull(),
+    pagesSucceeded: integer("pages_succeeded").default(0).notNull(),
+    pagesFailed: integer("pages_failed").default(0).notNull(),
+    productsExtracted: integer("products_extracted").default(0).notNull(),
+    errorMessage: text("error_message"),
+    startedAt: timestamp("started_at", { withTimezone: true }),
+    completedAt: timestamp("completed_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  t => ({
+    userIdIdx: index("price_radar_jobs_user_id_idx").on(t.userId),
+    sourceIdIdx: index("price_radar_jobs_source_id_idx").on(t.sourceId),
+    statusIdx: index("price_radar_jobs_status_idx").on(t.status),
+    createdAtIdx: index("price_radar_jobs_created_at_idx").on(t.createdAt),
+    userCreatedIdx: index("price_radar_jobs_user_created_idx").on(
+      t.userId,
+      t.createdAt
+    ),
+  })
+);
+
+export const priceRadarPages = pgTable(
+  "price_radar_pages",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    sourceId: uuid("source_id")
+      .notNull()
+      .references(() => priceRadarSources.id, { onDelete: "cascade" }),
+    jobId: uuid("job_id")
+      .notNull()
+      .references(() => priceRadarJobs.id, { onDelete: "cascade" }),
+    url: text("url").notNull(),
+    urlHash: varchar("url_hash", { length: 64 }).notNull(),
+    referrerUrl: text("referrer_url"),
+    depth: integer("depth").default(0).notNull(),
+    pageKind: varchar("page_kind", { length: 32 }).default("other").notNull(),
+    status: varchar("status", { length: 32 }).notNull(),
+    httpStatus: integer("http_status"),
+    contentType: varchar("content_type", { length: 255 }),
+    renderMode: varchar("render_mode", { length: 32 }),
+    title: varchar("title", { length: 500 }),
+    responseTimeMs: integer("response_time_ms"),
+    retryCount: integer("retry_count").default(0).notNull(),
+    contentBytes: integer("content_bytes"),
+    metadata: jsonb("metadata"),
+    fetchedAt: timestamp("fetched_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  t => ({
+    jobIdIdx: index("price_radar_pages_job_id_idx").on(t.jobId),
+    sourceIdIdx: index("price_radar_pages_source_id_idx").on(t.sourceId),
+    userIdIdx: index("price_radar_pages_user_id_idx").on(t.userId),
+    statusIdx: index("price_radar_pages_status_idx").on(t.status),
+    jobUrlIdx: uniqueIndex("price_radar_pages_job_url_idx").on(
+      t.jobId,
+      t.urlHash
+    ),
+  })
+);
+
+export const priceRadarProducts = pgTable(
+  "price_radar_products",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    sourceId: uuid("source_id")
+      .notNull()
+      .references(() => priceRadarSources.id, { onDelete: "cascade" }),
+    pageId: uuid("page_id").references(() => priceRadarPages.id, {
+      onDelete: "set null",
+    }),
+    productUrl: text("product_url").notNull(),
+    productUrlHash: varchar("product_url_hash", { length: 64 }).notNull(),
+    name: varchar("name", { length: 500 }).notNull(),
+    brand: varchar("brand", { length: 255 }),
+    price: decimal("price", { precision: 12, scale: 2 }),
+    currency: varchar("currency", { length: 3 }),
+    previousPrice: decimal("previous_price", { precision: 12, scale: 2 }),
+    discountPercent: decimal("discount_percent", { precision: 7, scale: 2 }),
+    imageUrls: jsonb("image_urls").default([]).notNull(),
+    availability: varchar("availability", { length: 32 })
+      .default("unknown")
+      .notNull(),
+    sku: varchar("sku", { length: 128 }),
+    barcode: varchar("barcode", { length: 128 }),
+    gtin: varchar("gtin", { length: 128 }),
+    category: varchar("category", { length: 255 }),
+    rating: doublePrecision("rating"),
+    reviewCount: integer("review_count"),
+    seller: varchar("seller", { length: 255 }),
+    structuredMetadata: jsonb("structured_metadata"),
+    jsonLd: jsonb("json_ld"),
+    extractionMethod: varchar("extraction_method", { length: 128 }),
+    extractionConfidence: doublePrecision("extraction_confidence")
+      .default(0)
+      .notNull(),
+    firstSeenAt: timestamp("first_seen_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    lastSeenAt: timestamp("last_seen_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    isActive: boolean("is_active").default(true).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  t => ({
+    userIdIdx: index("price_radar_products_user_id_idx").on(t.userId),
+    sourceIdIdx: index("price_radar_products_source_id_idx").on(t.sourceId),
+    skuIdx: index("price_radar_products_sku_idx").on(t.sku),
+    gtinIdx: index("price_radar_products_gtin_idx").on(t.gtin),
+    sourceUrlIdx: uniqueIndex("price_radar_products_source_url_idx").on(
+      t.sourceId,
+      t.productUrlHash
+    ),
+  })
+);
+
+export const priceRadarProductAttributes = pgTable(
+  "price_radar_product_attributes",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    productId: uuid("product_id")
+      .notNull()
+      .references(() => priceRadarProducts.id, { onDelete: "cascade" }),
+    name: varchar("name", { length: 128 }).notNull(),
+    value: text("value").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  t => ({
+    productIdIdx: index("price_radar_attributes_product_id_idx").on(t.productId),
+    productNameIdx: uniqueIndex("price_radar_attributes_product_name_idx").on(
+      t.productId,
+      t.name
+    ),
+  })
+);
+
+export const priceRadarPriceSnapshots = pgTable(
+  "price_radar_price_snapshots",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    productId: uuid("product_id")
+      .notNull()
+      .references(() => priceRadarProducts.id, { onDelete: "cascade" }),
+    jobId: uuid("job_id").references(() => priceRadarJobs.id, {
+      onDelete: "set null",
+    }),
+    price: decimal("price", { precision: 12, scale: 2 }),
+    previousPrice: decimal("previous_price", { precision: 12, scale: 2 }),
+    currency: varchar("currency", { length: 3 }),
+    availability: varchar("availability", { length: 32 }),
+    capturedAt: timestamp("captured_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  t => ({
+    productIdIdx: index("price_radar_snapshots_product_id_idx").on(t.productId),
+    capturedAtIdx: index("price_radar_snapshots_captured_at_idx").on(
+      t.capturedAt
+    ),
+  })
+);
+
+export const priceRadarExtractionLogs = pgTable(
+  "price_radar_extraction_logs",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    jobId: uuid("job_id")
+      .notNull()
+      .references(() => priceRadarJobs.id, { onDelete: "cascade" }),
+    pageId: uuid("page_id").references(() => priceRadarPages.id, {
+      onDelete: "set null",
+    }),
+    productId: uuid("product_id").references(() => priceRadarProducts.id, {
+      onDelete: "set null",
+    }),
+    methods: jsonb("methods").default([]).notNull(),
+    warnings: jsonb("warnings").default([]).notNull(),
+    confidence: doublePrecision("confidence").default(0).notNull(),
+    durationMs: integer("duration_ms"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  t => ({
+    jobIdIdx: index("price_radar_extraction_logs_job_id_idx").on(t.jobId),
+    pageIdIdx: index("price_radar_extraction_logs_page_id_idx").on(t.pageId),
+    userIdIdx: index("price_radar_extraction_logs_user_id_idx").on(t.userId),
+  })
+);
+
+export const priceRadarCrawlErrors = pgTable(
+  "price_radar_crawl_errors",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    jobId: uuid("job_id")
+      .notNull()
+      .references(() => priceRadarJobs.id, { onDelete: "cascade" }),
+    pageId: uuid("page_id").references(() => priceRadarPages.id, {
+      onDelete: "set null",
+    }),
+    url: text("url").notNull(),
+    stage: varchar("stage", { length: 64 }).notNull(),
+    code: varchar("code", { length: 64 }),
+    message: text("message").notNull(),
+    retryable: boolean("retryable").default(false).notNull(),
+    retryCount: integer("retry_count").default(0).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  t => ({
+    jobIdIdx: index("price_radar_crawl_errors_job_id_idx").on(t.jobId),
+    userIdIdx: index("price_radar_crawl_errors_user_id_idx").on(t.userId),
+    stageIdx: index("price_radar_crawl_errors_stage_idx").on(t.stage),
+  })
+);
+
+export type PriceRadarSource = typeof priceRadarSources.$inferSelect;
+export type InsertPriceRadarSource = typeof priceRadarSources.$inferInsert;
+export type PriceRadarJob = typeof priceRadarJobs.$inferSelect;
+export type PriceRadarPage = typeof priceRadarPages.$inferSelect;
+export type PriceRadarScrapedProduct = typeof priceRadarProducts.$inferSelect;
+export type PriceRadarCrawlError = typeof priceRadarCrawlErrors.$inferSelect;

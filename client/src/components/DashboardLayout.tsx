@@ -46,6 +46,7 @@ import {
   Brain,
   Shield,
   Settings as SettingsIcon,
+  Radar,
 } from "lucide-react";
 import { CSSProperties, useEffect, useRef, useState, useCallback } from "react";
 import { useLocation } from "wouter";
@@ -63,6 +64,7 @@ const menuItems = [
   { icon: Package, label: "Products", path: "/products", adminOnly: false },
   { icon: Globe, label: "Price Scout", path: "/scout", adminOnly: false },
   { icon: Brain, label: "Path of Wisdom", path: "/wisdom", adminOnly: false },
+  { icon: Radar, label: "Price Radar", path: "/price-radar", adminOnly: false },
   { icon: Users, label: "Competitors", path: "/competitors", adminOnly: false },
   { icon: BarChart3, label: "Analytics", path: "/analytics", adminOnly: false },
   { icon: Bell, label: "Alerts", path: "/alerts", adminOnly: false },

@@ -225,6 +225,7 @@ export const priceMonitoringService = {
               competitorPageContent: pageData.content,
               competitorUrl: url,
               competitorDomain: competitor.domain,
+              competitorId: competitor.id,
             }
           );
 

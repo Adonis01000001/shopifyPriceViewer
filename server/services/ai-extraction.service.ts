@@ -25,6 +25,7 @@ export interface ExtractionInput {
   competitorPageContent: string;
   competitorUrl: string;
   competitorDomain: string;
+  competitorId?: string;
 }
 
 export interface ExtractionResult {
@@ -253,7 +254,7 @@ export const aiExtractionService = {
     const database = await requireDb();
     const insertData: Record<string, unknown> = {
       productId: input.merchantProduct.id,
-      competitorId: "",
+      competitorId: input.competitorId ?? "",
       sourceUrl: input.competitorUrl,
       isMatch: extraction.isMatch,
       confidence: String(extraction.confidence),

@@ -74,6 +74,7 @@ async function startServer() {
   // Scrape rate limiting (tRPC mutation endpoint)
   app.use("/api/trpc/competitors.scrapeProducts", scrapeLimiter);
   app.use("/api/trpc/scout", scrapeLimiter);
+  app.use("/api/trpc/priceRadar.startCrawl", scrapeLimiter);
 
   // Body parsers — 1MB limit (largest legitimate payload ~250KB for product sync)
   app.use(express.json({ limit: "1mb" }));

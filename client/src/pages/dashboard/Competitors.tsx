@@ -51,6 +51,8 @@ import {
   Loader2,
   ExternalLink,
   Wifi,
+  Pencil,
+  Check,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useMemo, useState, useRef, useEffect, useCallback } from "react";
@@ -621,6 +623,17 @@ function CompetitorFeed({
     onError: err => toast.error(err.message || "Failed to remove"),
   });
 
+  const [editingPrice, setEditingPrice] = useState<string | null>(null);
+  const [editValue, setEditValue] = useState("");
+  const updatePriceMutation = trpc.competitors.updateProductPrice.useMutation({
+    onSuccess: (data, vars) => {
+      utils.competitors.feed.invalidate();
+      setEditingPrice(null);
+      toast.success(`Price updated: $${data.previousPrice ?? "?"} → $${data.newPrice}`);
+    },
+    onError: err => toast.error(err.message || "Failed to update price"),
+  });
+
   const priceHistory = feed?.priceHistory ?? [];
   const scrapeJobs = feed?.scrapeJobs ?? [];
   const activityLog = feed?.activityLog ?? [];
@@ -849,23 +862,72 @@ function CompetitorFeed({
                     </div>
                     <div className="flex justify-between items-center mt-1.5">
                       <div className="flex items-center gap-1">
-                        <span
-                          className={cn(
-                            "font-mono text-[11px] font-medium transition-colors",
-                            change === "up"
-                              ? "text-[#ffb4ab]"
-                              : change === "down"
-                                ? "text-primary"
-                                : "text-foreground"
-                          )}
-                        >
-                          ${Number(cp.price).toFixed(2)}
-                        </span>
-                        {change === "up" && (
-                          <TrendingUp className="h-2.5 w-2.5 text-[#ffb4ab]" />
-                        )}
-                        {change === "down" && (
-                          <TrendingDown className="h-2.5 w-2.5 text-primary" />
+                        {editingPrice === cp.id ? (
+                          <div className="flex items-center gap-1">
+                            <span className="text-[9px] text-muted-foreground">$</span>
+                            <input
+                              type="text"
+                              className="w-20 h-6 rounded border border-outline-variant bg-surface-container px-1.5 text-[11px] font-mono font-medium outline-none focus:border-primary"
+                              value={editValue}
+                              onChange={e => setEditValue(e.target.value)}
+                              onKeyDown={e => {
+                                if (e.key === "Enter") {
+                                  const v = editValue.trim();
+                                  if (/^\d+(\.\d{1,2})?$/.test(v)) {
+                                    updatePriceMutation.mutate({ competitorProductId: cp.id, price: v });
+                                  } else {
+                                    toast.error("Enter a valid price (e.g. 19.99)");
+                                  }
+                                }
+                                if (e.key === "Escape") setEditingPrice(null);
+                              }}
+                              autoFocus
+                            />
+                            <button
+                              className="text-primary hover:text-primary/80"
+                              onClick={() => {
+                                const v = editValue.trim();
+                                if (/^\d+(\.\d{1,2})?$/.test(v)) {
+                                  updatePriceMutation.mutate({ competitorProductId: cp.id, price: v });
+                                } else {
+                                  toast.error("Enter a valid price (e.g. 19.99)");
+                                }
+                              }}
+                            >
+                              <Check className="h-3 w-3" />
+                            </button>
+                          </div>
+                        ) : (
+                          <>
+                            <span
+                              className={cn(
+                                "font-mono text-[11px] font-medium transition-colors",
+                                change === "up"
+                                  ? "text-[#ffb4ab]"
+                                  : change === "down"
+                                    ? "text-primary"
+                                    : "text-foreground"
+                              )}
+                            >
+                              ${Number(cp.price).toFixed(2)}
+                            </span>
+                            {change === "up" && (
+                              <TrendingUp className="h-2.5 w-2.5 text-[#ffb4ab]" />
+                            )}
+                            {change === "down" && (
+                              <TrendingDown className="h-2.5 w-2.5 text-primary" />
+                            )}
+                            <button
+                              className="text-muted-foreground/40 hover:text-primary transition-colors ml-0.5"
+                              onClick={() => {
+                                setEditingPrice(cp.id);
+                                setEditValue(cp.price);
+                              }}
+                              title="Edit price"
+                            >
+                              <Pencil className="h-2.5 w-2.5" />
+                            </button>
+                          </>
                         )}
                       </div>
                       <span className="text-[9px] label-caps text-muted-foreground">

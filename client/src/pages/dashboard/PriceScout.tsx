@@ -474,9 +474,9 @@ export default function PriceScout() {
   const [exaAllRunning, setExaAllRunning] = useState(false);
 
   const { data: products, isLoading: productsLoading } =
-    trpc.products.list.useQuery();
+    trpc.products.list.useQuery(undefined, { staleTime: 1000 * 60 * 5 });
   const { data: scoutHistory, isLoading: scoutHistoryLoading } =
-    trpc.scout.getAllScoutHistory.useQuery();
+    trpc.scout.getAllScoutHistory.useQuery(undefined, { staleTime: 1000 * 60 * 5 });
   const scoutMutation = trpc.scout.scoutProduct.useMutation();
   const scoutAllMutation = trpc.scout.scoutAllProducts.useMutation();
   const scoutSerpApiMutation = trpc.scout.scoutProductSerpApi.useMutation();

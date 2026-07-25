@@ -13,6 +13,7 @@ import { intelligenceRouter } from "./routers/intelligence.router";
 import { pricingEngineRouter } from "./routers/pricing-engine.router";
 import { scoutRouter } from "./routers/scout.router";
 import { wisdomRouter } from "./routers/wisdom.router";
+import { priceRadarRouter } from "./routers/price-radar.router";
 import { protectedProcedure } from "./_core/trpc";
 import { z } from "zod";
 import { shopifyStores } from "../drizzle/schema";
@@ -35,6 +36,7 @@ export const appRouter = router({
   pricingEngine: pricingEngineRouter,
   scout: scoutRouter,
   wisdom: wisdomRouter,
+  priceRadar: priceRadarRouter,
 
   // ── Shopify store management (tRPC) ──────────────────────────────────────
   shopify: router({

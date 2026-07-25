@@ -131,6 +131,10 @@ export const competitorService = {
         source: "manual",
       });
     }
+    // Recalculate productsTracked
+    if (data.competitorId) {
+      await this.recalcTrackedCount(data.competitorId);
+    }
     return result[0];
   },
 
@@ -160,7 +164,20 @@ export const competitorService = {
       entityId: competitorProductId,
       detail: `Removed product link from ${comp.name}`,
     });
+    await this.recalcTrackedCount(cp[0].competitorId);
     return true;
+  },
+
+  async recalcTrackedCount(competitorId: string): Promise<void> {
+    const database = await requireDb();
+    const [{ count }] = await database
+      .select({ count: sql<number>`count(*)::int` })
+      .from(competitorProducts)
+      .where(eq(competitorProducts.competitorId, competitorId));
+    await database
+      .update(competitors)
+      .set({ productsTracked: count, updatedAt: new Date() })
+      .where(eq(competitors.id, competitorId));
   },
 
   async updateProduct(

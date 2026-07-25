@@ -78,7 +78,7 @@ const POSITION_LABELS: Record<MarketPositionStatus, string> = {
 function MarketPositionBadge({ productId }: { productId: string }) {
   const { data, isLoading } = trpc.pricingEngine.getMarketPosition.useQuery(
     { productId },
-    { enabled: !!productId }
+    { enabled: !!productId, staleTime: 1000 * 60 * 2 }
   );
 
   if (isLoading) {
@@ -140,8 +140,12 @@ export default function Products() {
   const [categoryFilter, setCategoryFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState("all");
 
-  const { data: allProducts, isLoading, refetch, error } = trpc.products.list.useQuery();
-  const { data: stats, error: statsError } = trpc.products.stats.useQuery();
+  const { data: allProducts, isLoading, refetch, error } = trpc.products.list.useQuery(undefined, {
+    staleTime: 1000 * 60 * 5,
+  });
+  const { data: stats, error: statsError } = trpc.products.stats.useQuery(undefined, {
+    staleTime: 1000 * 60 * 5,
+  });
 
   const updateProductMutation = trpc.products.update.useMutation({
     onSuccess: () => {

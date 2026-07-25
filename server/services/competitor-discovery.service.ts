@@ -1,8 +1,9 @@
-import { eq, and, desc, sql } from "drizzle-orm";
+import { eq, and, desc, sql, inArray } from "drizzle-orm";
 import { Firecrawl } from "firecrawl";
 import { requireDb } from "../_core/db-assert";
 import {
   competitorDiscoveries,
+  competitorProducts,
   competitors,
   products,
   alerts,
@@ -362,7 +363,7 @@ export const competitorDiscoveryService = {
     });
 
     const existingCompetitors = await database
-      .select({ domain: competitors.domain })
+      .select({ id: competitors.id, domain: competitors.domain })
       .from(competitors)
       .where(eq(competitors.userId, userId));
     const knownDomains = new Set<string>(
@@ -462,8 +463,57 @@ export const competitorDiscoveryService = {
       }
     }
 
+    // Auto-link discovered candidates to known competitors
+    const linkedCompetitors = new Set<string>();
+    for (let fi = 0; fi < filtered.length; fi++) {
+      const candidate = filtered[fi];
+      const matchingCompetitor = existingCompetitors.find(
+        (c: any) => c.domain.toLowerCase() === candidate.domain.toLowerCase()
+      );
+      if (!matchingCompetitor) continue;
+      try {
+        await database
+          .insert(competitorProducts)
+          .values({
+            competitorId: matchingCompetitor.id,
+            productId,
+            competitorProductUrl: candidate.url,
+            competitorProductTitle: candidate.title,
+            price: "0.00",
+            currency: "USD",
+            matchScore: candidate.confidence,
+            matchMethod: "automatic",
+            isVerified: false,
+            isActive: true,
+          })
+          .onConflictDoNothing({ target: [competitorProducts.competitorId, competitorProducts.productId] });
+        linkedCompetitors.add(matchingCompetitor.id);
+      } catch (err) {
+        logger.debug({ competitorId: matchingCompetitor.id, productId, err }, "Failed to link discovery");
+      }
+    }
+    // Recalculate productsTracked for each linked competitor
+    if (linkedCompetitors.size > 0) {
+      const compIds = Array.from(linkedCompetitors);
+      for (let ci = 0; ci < compIds.length; ci++) {
+        const competitorId = compIds[ci];
+        try {
+          const [{ count }] = await database
+            .select({ count: sql<number>`count(*)::int` })
+            .from(competitorProducts)
+            .where(eq(competitorProducts.competitorId, competitorId));
+          await database
+            .update(competitors)
+            .set({ productsTracked: count, updatedAt: new Date() })
+            .where(eq(competitors.id, competitorId));
+        } catch {
+          // non-critical
+        }
+      }
+    }
+
     logger.info(
-      { productId, totalFound: allCandidates.length, newCandidates: newCount },
+      { productId, totalFound: allCandidates.length, newCandidates: newCount, autoLinked: linkedCompetitors.size },
       "Competitor discovery completed"
     );
 

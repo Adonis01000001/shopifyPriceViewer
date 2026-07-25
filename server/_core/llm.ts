@@ -223,11 +223,15 @@ const resolveApiUrl = (overrideBaseUrl?: string) => {
     const base = overrideBaseUrl.replace(/\/+$/, "");
     return `${base}/chat/completions`;
   }
-  return "https://api.openai.com/v1/chat/completions";
+  if (ENV.openaiApiKey) {
+    return "https://api.openai.com/v1/chat/completions";
+  }
+  const base = ENV.openrouterBaseUrl.replace(/\/+$/, "");
+  return `${base}/chat/completions`;
 };
 
 const assertApiKey = (overrideKey?: string) => {
-  const key = overrideKey || ENV.openaiApiKey;
+  const key = overrideKey || ENV.openaiApiKey || ENV.openrouterApiKey;
   if (!key) {
     throw new Error(
       "No API key configured. Set OPENAI_API_KEY or OPENROUTER_API_KEY."
@@ -296,7 +300,8 @@ export async function invokeLLM(params: InvokeParams): Promise<InvokeResult> {
     baseUrl,
   } = params;
 
-  const model = baseUrl
+  const useOpenRouter = baseUrl || (!ENV.openaiApiKey && !!ENV.openrouterApiKey);
+  const model = useOpenRouter
     ? ENV.openrouterModel
     : "gemini-2.5-flash";
 
@@ -319,7 +324,7 @@ export async function invokeLLM(params: InvokeParams): Promise<InvokeResult> {
 
   payload.max_tokens = 32768;
 
-  if (!baseUrl) {
+  if (!useOpenRouter) {
     payload.thinking = { budget_tokens: 128 };
   }
 
@@ -339,7 +344,7 @@ export async function invokeLLM(params: InvokeParams): Promise<InvokeResult> {
     authorization: `Bearer ${apiKey}`,
   };
 
-  if (baseUrl) {
+  if (useOpenRouter) {
     headers["HTTP-Referer"] = "http://localhost:3000";
     headers["X-Title"] = "Shopify Price Intelligence";
   }
