@@ -6,7 +6,6 @@ import {
   ilike,
   or,
   inArray,
-  isNotNull,
 } from "drizzle-orm";
 import { requireDb } from "../_core/db-assert";
 import {
@@ -22,8 +21,71 @@ import {
   type CompetitorProduct,
   type InsertCompetitorProduct,
 } from "../../drizzle/schema";
-import { resolveProductDisplayName } from "./price-radar/extraction";
-import { normalizeCompetitorDomain } from "./price-radar/url-policy";
+import {
+  countMergedCompetitorProducts,
+  getVisibleRadarProducts,
+} from "./competitor-product-count";
+
+async function getMergedProductCounts(
+  userId: string,
+  competitorRows: Array<Pick<Competitor, "id" | "domain">>
+): Promise<Map<string, number>> {
+  const counts = new Map<string, number>();
+  if (competitorRows.length === 0) return counts;
+
+  const database = await requireDb();
+  const competitorIds = competitorRows.map(competitor => competitor.id);
+  const [matchedProducts, radarProducts] = await Promise.all([
+    database
+      .select({
+        competitorId: competitorProducts.competitorId,
+        competitorProductUrl: competitorProducts.competitorProductUrl,
+      })
+      .from(competitorProducts)
+      .where(inArray(competitorProducts.competitorId, competitorIds)),
+    database
+      .select({
+        name: priceRadarProducts.name,
+        productUrl: priceRadarProducts.productUrl,
+        structuredMetadata: priceRadarProducts.structuredMetadata,
+        sourceCompetitorId: priceRadarSources.competitorId,
+        sourceDomain: priceRadarSources.domain,
+      })
+      .from(priceRadarProducts)
+      .innerJoin(
+        priceRadarSources,
+        eq(priceRadarProducts.sourceId, priceRadarSources.id)
+      )
+      .where(
+        and(
+          eq(priceRadarProducts.userId, userId),
+          eq(priceRadarProducts.isActive, true)
+        )
+      ),
+  ]);
+
+  const matchedByCompetitor = new Map<
+    string,
+    typeof matchedProducts
+  >();
+  for (const product of matchedProducts) {
+    const rows = matchedByCompetitor.get(product.competitorId) ?? [];
+    rows.push(product);
+    matchedByCompetitor.set(product.competitorId, rows);
+  }
+
+  for (const competitor of competitorRows) {
+    counts.set(
+      competitor.id,
+      countMergedCompetitorProducts(
+        competitor,
+        matchedByCompetitor.get(competitor.id) ?? [],
+        radarProducts
+      )
+    );
+  }
+  return counts;
+}
 
 export const competitorService = {
   async getByUserId(
@@ -33,13 +95,19 @@ export const competitorService = {
     const database = await requireDb();
     const limit = Math.min(options?.limit ?? 50, 200);
     const offset = options?.offset ?? 0;
-    return database
+    const rows = await database
       .select()
       .from(competitors)
       .where(eq(competitors.userId, userId))
       .orderBy(desc(competitors.createdAt))
       .limit(limit)
       .offset(offset);
+    const counts = await getMergedProductCounts(userId, rows);
+    return rows.map(competitor => ({
+      ...competitor,
+      productsTracked:
+        counts.get(competitor.id) ?? competitor.productsTracked,
+    }));
   },
 
   async countByUserId(userId: string): Promise<number> {
@@ -151,52 +219,22 @@ export const competitorService = {
         .where(
           and(
             eq(priceRadarProducts.userId, userId),
-            eq(priceRadarProducts.isActive, true),
-            isNotNull(priceRadarProducts.price)
+            eq(priceRadarProducts.isActive, true)
           )
         )
         .orderBy(desc(priceRadarProducts.lastSeenAt)),
     ]);
 
-    const competitorDomain = normalizeCompetitorDomain(comp.domain);
-    const matchedUrls = new Set(
-      matchedProducts
-        .map(product => product.competitorProductUrl)
-        .filter((url): url is string => !!url)
-    );
-    const radarRows = radarProducts
-      .filter(
-        product =>
-          product.sourceCompetitorId === competitorId ||
-          normalizeCompetitorDomain(product.sourceDomain) === competitorDomain
-      )
-      .filter(product => !matchedUrls.has(product.productUrl))
-      .flatMap(product => {
-        const metadata =
-          product.structuredMetadata &&
-          typeof product.structuredMetadata === "object"
-            ? (product.structuredMetadata as Record<string, unknown>)
-            : {};
-        const name =
-          resolveProductDisplayName(
-            product.name,
-            product.productUrl,
-            typeof metadata.description === "string"
-              ? metadata.description
-              : null
-          ) ?? product.name;
-        if (
-          competitorDomain === "amazon.com" &&
-          /^Amazon(?:\.com)?$/i.test(name)
-        ) {
-          return [];
-        }
-        return [{
+    const radarRows = getVisibleRadarProducts(
+      comp,
+      matchedProducts,
+      radarProducts
+    ).map(({ product, displayName }) => ({
           id: `price-radar:${product.id}`,
           competitorId,
           productId: null,
           competitorProductUrl: product.productUrl,
-          competitorProductTitle: name,
+          competitorProductTitle: displayName,
           competitorSku: product.sku,
           price: product.price,
           currency: product.currency ?? "USD",
@@ -210,8 +248,7 @@ export const competitorService = {
           createdAt: product.firstSeenAt,
           updatedAt: product.lastSeenAt,
           source: "price-radar" as const,
-        }];
-      });
+        }));
 
     return [
       ...matchedProducts.map(product => ({
@@ -305,13 +342,13 @@ export const competitorService = {
     const database = await requireDb();
     const result = await database
       .select({
+        id: competitors.id,
+        domain: competitors.domain,
         status: competitors.status,
-        count: sql<number>`count(*)::int`,
-        productsTracked: sql<number>`coalesce(sum(${competitors.productsTracked}), 0)::int`,
       })
       .from(competitors)
-      .where(eq(competitors.userId, userId))
-      .groupBy(competitors.status);
+      .where(eq(competitors.userId, userId));
+    const counts = await getMergedProductCounts(userId, result);
 
     const stats = {
       total: 0,
@@ -321,11 +358,11 @@ export const competitorService = {
       productsTracked: 0,
     };
     for (const row of result) {
-      stats.total += row.count;
-      stats.productsTracked += row.productsTracked;
-      if (row.status === "active") stats.active = row.count;
-      if (row.status === "inactive") stats.inactive = row.count;
-      if (row.status === "error") stats.error = row.count;
+      stats.total += 1;
+      stats.productsTracked += counts.get(row.id) ?? 0;
+      if (row.status === "active") stats.active += 1;
+      if (row.status === "inactive") stats.inactive += 1;
+      if (row.status === "error") stats.error += 1;
     }
     return stats;
   },
