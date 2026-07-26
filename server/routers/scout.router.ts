@@ -136,6 +136,47 @@ export const scoutRouter = router({
       return scoutService.getScoutHistory(ctx.user!.id, input.productId);
     }),
 
+  // ─── Price Radar Scout (Google direct search for Amazon/eBay/Walmart) ──
+
+  scoutProductPriceRadar: protectedProcedure
+    .input(
+      z.object({
+        productId: z.string().uuid(),
+        maxResults: z.number().min(1).max(20).default(10),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const product = await productService.getById(
+        ctx.user!.id,
+        input.productId
+      );
+      if (!product)
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "Product not found",
+        });
+      return scoutService.scoutProductWithPriceRadar(
+        ctx.user!.id,
+        input.productId,
+        input.maxResults
+      );
+    }),
+
+  scoutAllPriceRadar: protectedProcedure
+    .input(
+      z
+        .object({
+          maxResults: z.number().min(1).max(20).default(10),
+        })
+        .optional()
+    )
+    .mutation(async ({ ctx, input }) => {
+      return scoutService.scoutAllWithPriceRadar(
+        ctx.user!.id,
+        input?.maxResults ?? 10
+      );
+    }),
+
   getAllScoutHistory: protectedProcedure.query(async ({ ctx }) => {
     return scoutService.getAllScoutHistory(ctx.user!.id);
   }),

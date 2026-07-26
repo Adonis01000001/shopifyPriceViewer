@@ -15,6 +15,7 @@ import {
   MessageSquare,
   Database,
   Sparkles,
+  Radio,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useState, useCallback, useEffect } from "react";
@@ -56,6 +57,8 @@ function ProductScoutCard({
   isScoutingSerpApi,
   onScoutExa,
   isScoutingExa,
+  onScoutPriceRadar,
+  isScoutingPriceRadar,
 }: {
   result: ScoutResult;
   onScout: () => void;
@@ -64,6 +67,8 @@ function ProductScoutCard({
   isScoutingSerpApi: boolean;
   onScoutExa: () => void;
   isScoutingExa: boolean;
+  onScoutPriceRadar: () => void;
+  isScoutingPriceRadar: boolean;
 }) {
   const [expanded, setExpanded] = useState(false);
   const [showReviews, setShowReviews] = useState(false);
@@ -223,6 +228,26 @@ function ProductScoutCard({
                 <>
                   <Sparkles className="mr-1.5 h-3 w-3" />
                   Exa
+                </>
+              )}
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-8 border-outline-variant text-[11px]"
+              onClick={onScoutPriceRadar}
+              disabled={isScoutingPriceRadar}
+              title="Price Radar: search Amazon, eBay, and Walmart via Google"
+            >
+              {isScoutingPriceRadar ? (
+                <>
+                  <Loader2 className="mr-1.5 h-3 w-3 animate-spin" />
+                  Radar...
+                </>
+              ) : (
+                <>
+                  <Radio className="mr-1.5 h-3 w-3" />
+                  Radar
                 </>
               )}
             </Button>
@@ -447,12 +472,13 @@ function ProductScoutCard({
         status !== "failed" &&
         !isScouting &&
         !isScoutingSerpApi &&
-        !isScoutingExa && (
+        !isScoutingExa &&
+        !isScoutingPriceRadar && (
           <div className="px-5 py-8 text-center text-muted-foreground">
             <Globe className="h-8 w-8 mx-auto mb-2 opacity-30" />
             <p className="text-[12px]">
-              Click "Scout Web", "SerpAPI", or "Exa" to search for this
-              product's price
+              Click "Scout Web", "SerpAPI", "Exa", or "Radar" to search for
+              this product's price
             </p>
           </div>
         )}
@@ -472,6 +498,8 @@ export default function PriceScout() {
   const [serpAllRunning, setSerpAllRunning] = useState(false);
   const [exaScoutingIds, setExaScoutingIds] = useState<Set<string>>(new Set());
   const [exaAllRunning, setExaAllRunning] = useState(false);
+  const [radarScoutingIds, setRadarScoutingIds] = useState<Set<string>>(new Set());
+  const [radarAllRunning, setRadarAllRunning] = useState(false);
 
   const { data: products, isLoading: productsLoading } =
     trpc.products.list.useQuery(undefined, { staleTime: 1000 * 60 * 5 });
@@ -483,6 +511,8 @@ export default function PriceScout() {
   const scoutAllSerpApiMutation = trpc.scout.scoutAllSerpApi.useMutation();
   const scoutExaMutation = trpc.scout.scoutProductExa.useMutation();
   const scoutAllExaMutation = trpc.scout.scoutAllExa.useMutation();
+  const scoutRadarMutation = trpc.scout.scoutProductPriceRadar.useMutation();
+  const scoutAllRadarMutation = trpc.scout.scoutAllPriceRadar.useMutation();
 
   const handleScoutProduct = useCallback(
     async (productId: string) => {
@@ -637,6 +667,61 @@ export default function PriceScout() {
     [scoutExaMutation]
   );
 
+  const handleScoutPriceRadar = useCallback(
+    async (productId: string) => {
+      setRadarScoutingIds(prev => new Set(prev).add(productId));
+      try {
+        const result = await scoutRadarMutation.mutateAsync({
+          productId,
+          maxResults: 10,
+        });
+        setResults(prev => ({ ...prev, [productId]: result }));
+        if (result.status === "success") {
+          toast.success(
+            `Radar: Found ${result.prices.length} prices for "${result.productTitle.slice(0, 40)}..."`
+          );
+        } else {
+          toast.error(`Radar: ${result.errorMessage ?? "Failed"}`);
+        }
+      } catch (err: any) {
+        toast.error(err.message || "Price Radar scouting failed");
+      } finally {
+        setRadarScoutingIds(prev => {
+          const n = new Set(prev);
+          n.delete(productId);
+          return n;
+        });
+      }
+    },
+    [scoutRadarMutation]
+  );
+
+  const handleScoutAllPriceRadar = useCallback(async () => {
+    setRadarAllRunning(true);
+    try {
+      const allResults = await scoutAllRadarMutation.mutateAsync({
+        maxResults: 10,
+      });
+      const newResults: Record<string, ScoutResult> = {};
+      let totalPrices = 0;
+      for (const r of allResults) {
+        newResults[r.productId] = r;
+        totalPrices += r.prices.length;
+      }
+      setResults(newResults);
+      const successCount = allResults.filter(
+        r => r.status === "success"
+      ).length;
+      toast.success(
+        `Radar: Scouted ${allResults.length} products, found ${totalPrices} prices across ${successCount} products`
+      );
+    } catch (err: any) {
+      toast.error(err.message || "Bulk Radar scouting failed");
+    } finally {
+      setRadarAllRunning(false);
+    }
+  }, [scoutAllRadarMutation]);
+
   const handleScoutAllExa = useCallback(async () => {
     setExaAllRunning(true);
     try {
@@ -764,6 +849,28 @@ export default function PriceScout() {
                 </>
               )}
             </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              className="border-outline-variant"
+              onClick={handleScoutAllPriceRadar}
+              disabled={
+                radarAllRunning || productsLoading || productList.length === 0
+              }
+              title="Price Radar: search Amazon, eBay, and Walmart for all products"
+            >
+              {radarAllRunning ? (
+                <>
+                  <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                  Radar All...
+                </>
+              ) : (
+                <>
+                  <Radio className="mr-1.5 h-3.5 w-3.5" />
+                  Radar All
+                </>
+              )}
+            </Button>
           </div>
         </div>
       </div>
@@ -857,6 +964,8 @@ export default function PriceScout() {
               isScoutingSerpApi={serpScoutingIds.has(product.id)}
               onScoutExa={() => handleScoutExa(product.id)}
               isScoutingExa={exaScoutingIds.has(product.id)}
+              onScoutPriceRadar={() => handleScoutPriceRadar(product.id)}
+              isScoutingPriceRadar={radarScoutingIds.has(product.id)}
             />
           ))}
         </div>
@@ -888,6 +997,11 @@ export default function PriceScout() {
             <p>
               • <strong>Exa</strong> uses neural search to find product pages
               and extract structured pricing data with AI — often in one call
+            </p>
+            <p>
+              • <strong>Price Radar</strong> searches Google directly for each
+              marketplace (Amazon, eBay, Walmart) and extracts prices from the
+              search snippets
             </p>
             <p>
               • <strong>SerpAPI</strong> is used as a fallback search engine if

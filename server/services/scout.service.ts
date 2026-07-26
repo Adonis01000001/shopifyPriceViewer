@@ -1138,4 +1138,140 @@ export const scoutService = {
       })
     );
   },
+
+  // ─── Price Radar Scout (Google direct search) ───────────────────────────
+
+  async scoutProductWithPriceRadar(
+    userId: string,
+    productId: string,
+    maxResults: number = 10
+  ): Promise<ScoutResult> {
+    const database: any = await requireDb();
+
+    const product = await database.query.products.findFirst({
+      where: and(eq(products.id, productId), eq(products.userId, userId)),
+    });
+    if (!product) {
+      return {
+        productId,
+        productTitle: "",
+        productPrice: "0",
+        prices: [],
+        totalFound: 0,
+        searchEngine: "none",
+        status: "failed",
+        errorMessage: "Product not found",
+      };
+    }
+
+    const seenUrls = new Set<string>();
+    const allPrices: ScoutPrice[] = [];
+    let position = 0;
+
+    const marketplaces = [
+      { name: "Amazon", siteQuery: `site:amazon.com ${product.title.slice(0, 100)}` },
+      { name: "eBay", siteQuery: `site:ebay.com ${product.title.slice(0, 100)}` },
+      { name: "Walmart", siteQuery: `site:walmart.com ${product.title.slice(0, 100)}` },
+    ];
+
+    for (const mp of marketplaces) {
+      try {
+        const url = `https://www.google.com/search?q=${encodeURIComponent(mp.siteQuery)}&num=${maxResults + 3}`;
+        const res = await fetch(url, {
+          headers: {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
+            "Accept-Language": "en-US,en;q=0.9",
+          },
+          signal: AbortSignal.timeout(15000),
+        });
+        if (!res.ok) continue;
+        const html = await res.text();
+
+        const resultBlocks = html.match(/<div[^>]*class="[^"]*g[^"]*"[^>]*>[\s\S]*?<\/div>\s*<\/div>\s*<\/div>\s*<\/div>/gi) ?? [];
+        if (resultBlocks.length === 0) continue;
+
+        for (const block of resultBlocks) {
+          await new Promise(r => setTimeout(r, 500));
+
+          const hrefMatch = block.match(/href="(https?:\/\/[^"]+)"/);
+          const titleMatch = block.match(/<h3[^>]*>([\s\S]*?)<\/h3>/);
+          if (!hrefMatch) continue;
+
+          const link = hrefMatch[1];
+          if (!link.startsWith("http") || seenUrls.has(link)) continue;
+          seenUrls.add(link);
+
+          const title = titleMatch ? titleMatch[1].replace(/<[^>]+>/g, "").trim() : product.title;
+          position++;
+
+          const snippetText = block.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ");
+          const price = extractPriceFromText(snippetText);
+
+          allPrices.push({
+            sourceUrl: link,
+            domain: mp.name.toLowerCase(),
+            title,
+            price: price?.value ?? "0",
+            currency: price?.currency ?? "USD",
+            imageUrl: null,
+            position,
+            confidence: price ? 0.7 : 0.3,
+          });
+        }
+      } catch (err) {
+        logger.warn({ mp: mp.name, err }, "Price Radar scout: Google search failed");
+      }
+    }
+
+    return {
+      productId,
+      productTitle: product.title,
+      productPrice: product.price?.toString() ?? "0",
+      prices: allPrices.slice(0, maxResults * 3),
+      totalFound: allPrices.length,
+      searchEngine: "price-radar",
+      status: allPrices.length > 0 ? "success" : "failed",
+      errorMessage: allPrices.length > 0 ? null : "No prices found on Amazon, eBay, or Walmart",
+    };
+  },
+
+  async scoutAllWithPriceRadar(
+    userId: string,
+    maxResults: number = 10
+  ): Promise<ScoutResult[]> {
+    const database = await requireDb();
+    const userProducts = await database
+      .select()
+      .from(products)
+      .where(and(eq(products.userId, userId), eq(products.isActive, true)))
+      .limit(50);
+
+    const results: ScoutResult[] = [];
+    for (const product of userProducts) {
+      try {
+        const result = await this.scoutProductWithPriceRadar(
+          userId,
+          product.id,
+          maxResults
+        );
+        results.push(result);
+      } catch (err) {
+        logger.warn(
+          { productId: product.id, err },
+          "Scout: failed to scout product with Price Radar"
+        );
+        results.push({
+          productId: product.id,
+          productTitle: product.title,
+          productPrice: product.price?.toString() ?? "0",
+          prices: [],
+          totalFound: 0,
+          searchEngine: "none",
+          status: "failed",
+          errorMessage: String(err),
+        });
+      }
+    }
+    return results;
+  },
 };
