@@ -69,6 +69,31 @@ describe("Price Radar URL policy", () => {
 });
 
 describe("Price Radar extraction", () => {
+  function htmlAtAbsoluteXPath(
+    xpath: string,
+    value: string,
+    head: string
+  ): string {
+    const segments = xpath
+      .split("/")
+      .filter(Boolean)
+      .slice(2)
+      .map(segment => {
+        const match = /^([a-z][\w:-]*)(?:\[(\d+)\])?$/i.exec(segment);
+        if (!match) throw new Error(`Invalid test XPath segment: ${segment}`);
+        return [match[1], Number(match[2] ?? "1")] as const;
+      });
+    let body = value;
+    for (const [tagName, index] of Array.from(segments).reverse()) {
+      const precedingSiblings = Array.from(
+        { length: index - 1 },
+        () => `<${tagName}></${tagName}>`
+      ).join("");
+      body = `${precedingSiblings}<${tagName}>${body}</${tagName}>`;
+    }
+    return `<html><head>${head}</head><body>${body}</body></html>`;
+  }
+
   it("uses the configured Amazon.com XPath as the authoritative price", () => {
     const segments = [
       ["div", 1],
@@ -147,6 +172,77 @@ describe("Price Radar extraction", () => {
     expect(result.product?.name).toBe("Amazon Basics USB-C Cable, 6 ft");
     expect(result.product?.price).toBeNull();
     expect(shouldRenderWithBrowser(html, result)).toBe(true);
+  });
+
+  it("uses the configured eBay XPath for product price", () => {
+    const html = htmlAtAbsoluteXPath(
+      "/html/body/div[2]/main/div[1]/div[1]/div[4]/div[2]/div/div/div[3]/div/div/div/span",
+      "US $319.99",
+      `<script type="application/ld+json">
+        {
+          "@context": "https://schema.org",
+          "@type": "Product",
+          "name": "eBay XPath Product",
+          "offers": {"price": "1.00", "priceCurrency": "USD"}
+        }
+      </script>`
+    );
+    const result = extractProductData(
+      html,
+      "https://www.ebay.com/itm/123456789"
+    );
+
+    expect(result.product?.name).toBe("eBay XPath Product");
+    expect(result.product?.price).toBe("319.99");
+    expect(result.product?.currency).toBe("USD");
+    expect(result.product?.extractionMethod).toContain("ebay-price");
+  });
+
+  it("uses a non-price eBay XPath value as the product name", () => {
+    const html = htmlAtAbsoluteXPath(
+      "/html/body/div[2]/main/div[1]/div[1]/div[4]/div[2]/div/div/div[3]/div/div/div/span",
+      "eBay XPath Product Name",
+      `<script type="application/ld+json">
+        {
+          "@context": "https://schema.org",
+          "@type": "Product",
+          "name": "Fallback Product Name",
+          "offers": {"price": "42.50", "priceCurrency": "USD"}
+        }
+      </script>`
+    );
+    const result = extractProductData(
+      html,
+      "https://www.ebay.com/itm/123456789"
+    );
+
+    expect(result.product?.name).toBe("eBay XPath Product Name");
+    expect(result.product?.price).toBe("42.50");
+    expect(result.product?.extractionMethod).toContain("ebay-xpath");
+  });
+
+  it("uses the configured Walmart XPath for product price", () => {
+    const html = htmlAtAbsoluteXPath(
+      "/html/body/div/div/div/div[1]/div/div[1]/main/section/div[2]/div[2]/div/div[3]/div/div[1]/div/div[2]/div/div/div[1]/section/div/span[2]/span[2]/span",
+      "$79.88",
+      `<script type="application/ld+json">
+        {
+          "@context": "https://schema.org",
+          "@type": "Product",
+          "name": "Walmart XPath Product",
+          "offers": {"price": "1.00", "priceCurrency": "USD"}
+        }
+      </script>`
+    );
+    const result = extractProductData(
+      html,
+      "https://www.walmart.com/ip/123456789"
+    );
+
+    expect(result.product?.name).toBe("Walmart XPath Product");
+    expect(result.product?.price).toBe("79.88");
+    expect(result.product?.currency).toBe("USD");
+    expect(result.product?.extractionMethod).toContain("walmart-price");
   });
 
   it("extracts and normalizes Schema.org Product data", () => {

@@ -11,6 +11,10 @@ import {
 
 const AMAZON_DOT_COM_PRICE_XPATH =
   "/html/body/div[1]/div[1]/div/div[5]/div[1]/div[7]/div/div[1]/div/div/div/form/div/div/div/div/div[3]/div/div[1]/div/div/div/span[1]/span[1]";
+const EBAY_DOT_COM_PRODUCT_FIELD_XPATH =
+  "/html/body/div[2]/main/div[1]/div[1]/div[4]/div[2]/div/div/div[3]/div/div/div/span";
+const WALMART_DOT_COM_PRICE_XPATH =
+  "/html/body/div/div/div/div[1]/div/div[1]/main/section/div[2]/div[2]/div/div[3]/div/div[1]/div/div[2]/div/div/div[1]/section/div/span[2]/span[2]/span";
 
 interface HtmlTreeNode {
   tagName: string;
@@ -48,13 +52,25 @@ function decodeHtml(value: string): string {
     .trim();
 }
 
-function isAmazonDotCom(pageUrl: string): boolean {
+function isSiteDomain(pageUrl: string, domain: string): boolean {
   try {
     const hostname = new URL(pageUrl).hostname.toLowerCase();
-    return hostname === "amazon.com" || hostname.endsWith(".amazon.com");
+    return hostname === domain || hostname.endsWith(`.${domain}`);
   } catch {
     return false;
   }
+}
+
+function isAmazonDotCom(pageUrl: string): boolean {
+  return isSiteDomain(pageUrl, "amazon.com");
+}
+
+function isEbayDotCom(pageUrl: string): boolean {
+  return isSiteDomain(pageUrl, "ebay.com");
+}
+
+function isWalmartDotCom(pageUrl: string): boolean {
+  return isSiteDomain(pageUrl, "walmart.com");
 }
 
 function amazonNameFromDescription(description: string | null): string | null {
@@ -165,6 +181,14 @@ function textAtAbsoluteXPath(html: string, xpath: string): string | null {
 
   const value = decodeHtml(textContent(current));
   return value || null;
+}
+
+function looksLikePrice(value: string | null): boolean {
+  if (!value) return false;
+  return (
+    /[$€£¥]|(?:^|\s)(?:USD|EUR|GBP|CAD|AUD|MAD)(?:\s|$)/i.test(value) ||
+    /^\s*\d[\d.,\s]*\s*$/.test(value)
+  );
 }
 
 function firstMatch(html: string, patterns: RegExp[]): string | null {
@@ -340,13 +364,22 @@ export function extractProductData(
         /<h1\b[^>]*id=["']title["'][^>]*>([\s\S]*?)<\/h1>/i,
       ])
     : null;
+  const ebayProductFieldText = isEbayDotCom(pageUrl)
+    ? textAtAbsoluteXPath(html, EBAY_DOT_COM_PRODUCT_FIELD_XPATH)
+    : null;
+  const ebayXPathName =
+    ebayProductFieldText && !looksLikePrice(ebayProductFieldText)
+      ? ebayProductFieldText
+      : null;
   const rawName =
+    ebayXPathName ??
     stringValue(jsonLdProduct?.name) ??
     amazonPageTitle ??
     ogTitle ??
     htmlTitle;
   const name = resolveProductDisplayName(rawName, pageUrl, description);
   if (ogTitle || htmlTitle) methods.push("html-metadata");
+  if (ebayProductFieldText) methods.push("ebay-xpath");
 
   const amazonPriceText = isAmazonDotCom(pageUrl)
     ? textAtAbsoluteXPath(html, AMAZON_DOT_COM_PRICE_XPATH) ??
@@ -355,9 +388,18 @@ export function extractProductData(
         /<span\b[^>]*class=["'][^"']*\ba-price\b[^"']*["'][^>]*>[\s\S]{0,500}?<span\b[^>]*class=["'][^"']*\ba-offscreen\b[^"']*["'][^>]*>([\s\S]*?)<\/span>/i,
       ])
     : null;
-  const amazonPrice = decimal(amazonPriceText);
+  const ebayPriceText =
+    ebayProductFieldText && looksLikePrice(ebayProductFieldText)
+      ? ebayProductFieldText
+      : null;
+  const walmartPriceText = isWalmartDotCom(pageUrl)
+    ? textAtAbsoluteXPath(html, WALMART_DOT_COM_PRICE_XPATH)
+    : null;
+  const sitePriceText =
+    amazonPriceText ?? ebayPriceText ?? walmartPriceText;
+  const sitePrice = decimal(sitePriceText);
   const price =
-    amazonPrice ??
+    sitePrice ??
     decimal(offer.price) ??
     decimal(jsonLdProduct?.price) ??
     decimal(meta(html, "product:price:amount")) ??
@@ -377,11 +419,13 @@ export function extractProductData(
         /\b(?:was|list[-_\s]?price|original[-_\s]?price)\b[^>]{0,100}>\s*([^<]+)/i,
       ])
     );
-  if (amazonPrice) methods.push("amazon-price");
+  if (amazonPriceText && sitePrice) methods.push("amazon-price");
+  else if (ebayPriceText && sitePrice) methods.push("ebay-price");
+  else if (walmartPriceText && sitePrice) methods.push("walmart-price");
   else if (price) methods.push("price-fallback");
 
   const currency = (
-    currencyFromPriceText(amazonPriceText) ??
+    currencyFromPriceText(sitePriceText) ??
     stringValue(offer.priceCurrency) ??
     meta(html, "product:price:currency") ??
     meta(html, "og:price:currency") ??
@@ -474,7 +518,9 @@ export function shouldRenderWithBrowser(
 ): boolean {
   if (
     result.product &&
-    isAmazonDotCom(result.product.productUrl) &&
+    (isAmazonDotCom(result.product.productUrl) ||
+      isEbayDotCom(result.product.productUrl) ||
+      isWalmartDotCom(result.product.productUrl)) &&
     !result.product.price
   ) {
     return true;
