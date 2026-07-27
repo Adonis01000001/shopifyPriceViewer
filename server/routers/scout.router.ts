@@ -2,9 +2,27 @@ import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { protectedProcedure, router } from "../_core/trpc";
 import { scoutService } from "../services/scout.service";
+import { scoopService } from "../services/scoop.service";
 import { productService } from "../services/product.service";
 
 export const scoutRouter = router({
+  scoopSearch: protectedProcedure
+    .input(
+      z.object({
+        query: z.string().trim().min(2).max(240),
+        maxResults: z.number().int().min(1).max(20).default(10),
+        ranking: z
+          .enum(["relevance", "lowest_price", "best_value", "newest"])
+          .default("relevance"),
+      })
+    )
+    .mutation(({ ctx, input }) =>
+      scoopService.search({
+        userId: ctx.user!.id,
+        ...input,
+      })
+    ),
+
   scoutProduct: protectedProcedure
     .input(
       z.object({

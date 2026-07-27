@@ -1,6 +1,9 @@
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { trpc } from "@/lib/trpc";
 import {
+  Bot,
+  Copy,
   Globe,
   Search,
   TrendingDown,
@@ -16,9 +19,16 @@ import {
   Database,
   Sparkles,
   Radio,
+  Store,
+  Truck,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { useState, useCallback, useEffect } from "react";
+import {
+  useState,
+  useCallback,
+  useEffect,
+  type FormEvent,
+} from "react";
 import { toast } from "sonner";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -45,6 +55,386 @@ interface ScoutResult {
   errorMessage: string | null;
   reviews?: Array<{ title: string; snippet: string; url: string }>;
   searchQueries?: string[];
+}
+
+type ScoopRanking =
+  | "relevance"
+  | "lowest_price"
+  | "best_value"
+  | "newest";
+
+interface ScoopProduct {
+  productName: string;
+  brand: string | null;
+  model: string | null;
+  price: string | null;
+  currency: string | null;
+  availability: string | null;
+  seller: string | null;
+  condition: "new" | "refurbished" | "used" | null;
+  shipping: string | null;
+  productUrl: string;
+  imageUrl: string | null;
+  retrievedAt: string;
+  publishedDate: string | null;
+  confidenceScore: number;
+  extractionMethod: string;
+  discoveredBy: string[];
+}
+
+interface ScoopResult {
+  searchQuery: string;
+  summary: string;
+  productsFound: ScoopProduct[];
+  confidenceScore: number;
+  sourcesUsed: Array<{
+    name: string;
+    type: "search_provider" | "product_page";
+    url: string | null;
+  }>;
+  ranking: ScoopRanking;
+  status: "success" | "partial" | "failed";
+  warnings: string[];
+  retrievedAt: string;
+}
+
+function scoopPrice(product: ScoopProduct): string {
+  if (!product.price) return "Price unavailable";
+  return `${product.currency ?? ""} ${product.price}`.trim();
+}
+
+function ScoopPanel() {
+  const [query, setQuery] = useState("");
+  const [ranking, setRanking] = useState<ScoopRanking>("relevance");
+  const [maxResults, setMaxResults] = useState(10);
+  const [result, setResult] = useState<ScoopResult | null>(null);
+  const scoopMutation = trpc.scout.scoopSearch.useMutation();
+
+  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const searchQuery = query.trim();
+    if (searchQuery.length < 2) {
+      toast.error("Enter a product request");
+      return;
+    }
+    try {
+      const nextResult = await scoopMutation.mutateAsync({
+        query: searchQuery,
+        ranking,
+        maxResults,
+      });
+      setResult(nextResult);
+      if (nextResult.productsFound.length > 0) {
+        toast.success(
+          `Scoop found ${nextResult.productsFound.length} product listings`
+        );
+      } else {
+        toast.warning("Scoop found no verified product listings");
+      }
+    } catch (error) {
+      toast.error(
+        error instanceof Error ? error.message : "Scoop search failed"
+      );
+    }
+  };
+
+  const copyJson = async () => {
+    if (!result) return;
+    try {
+      await navigator.clipboard.writeText(JSON.stringify(result, null, 2));
+      toast.success("Scoop JSON copied");
+    } catch {
+      toast.error("Could not copy Scoop JSON");
+    }
+  };
+
+  const statusClass =
+    result?.status === "success"
+      ? "border-[#21a732]/30 bg-[#21a732]/10 text-[#21a732]"
+      : result?.status === "partial"
+        ? "border-amber-500/30 bg-amber-500/10 text-amber-400"
+        : "border-[#93000a]/30 bg-[#93000a]/15 text-[#ffb4ab]";
+
+  return (
+    <section
+      className="glass-panel rounded-lg overflow-hidden border border-primary/20"
+      aria-labelledby="scoop-heading"
+    >
+      <div className="p-5 border-b border-white/[0.04] bg-gradient-to-r from-primary/10 via-surface-container/70 to-transparent">
+        <div className="flex items-start gap-3">
+          <div className="h-10 w-10 rounded-lg bg-primary/15 border border-primary/25 flex items-center justify-center shrink-0">
+            <Bot className="h-5 w-5 text-primary" />
+          </div>
+          <div>
+            <div className="flex items-center gap-2">
+              <h3 id="scoop-heading" className="text-[16px] font-bold">
+                Scoop
+              </h3>
+              <span className="label-caps text-[9px] px-2 py-0.5 rounded-full border border-primary/25 text-primary bg-primary/10">
+                Autonomous discovery
+              </span>
+            </div>
+            <p className="text-[12px] text-muted-foreground mt-1">
+              Describe any product. Scoop searches multiple providers, verifies
+              public product pages, removes duplicates, and returns grounded
+              structured data.
+            </p>
+          </div>
+        </div>
+
+        <form
+          onSubmit={handleSubmit}
+          className="mt-5 grid gap-3 lg:grid-cols-[minmax(0,1fr)_170px_110px_auto]"
+        >
+          <div>
+            <label htmlFor="scoop-query" className="sr-only">
+              Product request
+            </label>
+            <Input
+              id="scoop-query"
+              value={query}
+              onChange={event => setQuery(event.target.value)}
+              placeholder="Example: Sony WH-1000XM5 new, lowest price"
+              maxLength={240}
+              autoComplete="off"
+              className="h-10 bg-surface-container-lowest border-outline-variant"
+            />
+          </div>
+          <div>
+            <label htmlFor="scoop-ranking" className="sr-only">
+              Ranking
+            </label>
+            <select
+              id="scoop-ranking"
+              value={ranking}
+              onChange={event =>
+                setRanking(event.target.value as ScoopRanking)
+              }
+              className="h-10 w-full rounded-md border border-outline-variant bg-surface-container-lowest px-3 text-[12px] text-foreground focus:outline-none focus:ring-2 focus:ring-primary/40"
+            >
+              <option value="relevance">Most relevant</option>
+              <option value="lowest_price">Lowest price</option>
+              <option value="best_value">Best value</option>
+              <option value="newest">Newest</option>
+            </select>
+          </div>
+          <div>
+            <label htmlFor="scoop-limit" className="sr-only">
+              Result limit
+            </label>
+            <select
+              id="scoop-limit"
+              value={maxResults}
+              onChange={event => setMaxResults(Number(event.target.value))}
+              className="h-10 w-full rounded-md border border-outline-variant bg-surface-container-lowest px-3 text-[12px] text-foreground focus:outline-none focus:ring-2 focus:ring-primary/40"
+            >
+              <option value={5}>5 results</option>
+              <option value={10}>10 results</option>
+              <option value={15}>15 results</option>
+              <option value={20}>20 results</option>
+            </select>
+          </div>
+          <Button
+            type="submit"
+            className="h-10 bg-primary text-primary-foreground"
+            disabled={scoopMutation.isPending || query.trim().length < 2}
+          >
+            {scoopMutation.isPending ? (
+              <>
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                Searching...
+              </>
+            ) : (
+              <>
+                <Search className="mr-2 h-4 w-4" />
+                Run Scoop
+              </>
+            )}
+          </Button>
+        </form>
+      </div>
+
+      {scoopMutation.isPending && (
+        <div
+          className="p-8 flex flex-col items-center justify-center text-center"
+          aria-live="polite"
+        >
+          <Loader2 className="h-8 w-8 text-primary animate-spin" />
+          <p className="text-sm font-medium mt-3">Scoop researching web</p>
+          <p className="text-[11px] text-muted-foreground mt-1">
+            Discovering pages, verifying product data, then ranking results.
+          </p>
+        </div>
+      )}
+
+      {!scoopMutation.isPending && !result && (
+        <div className="p-8 text-center text-muted-foreground">
+          <Bot className="h-9 w-9 mx-auto opacity-25" />
+          <p className="text-[12px] mt-2">
+            Product request can include model, condition, retailer, or ranking
+            preference.
+          </p>
+        </div>
+      )}
+
+      {!scoopMutation.isPending && result && (
+        <div className="p-5 space-y-5" aria-live="polite">
+          <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+            <div>
+              <div className="flex items-center gap-2 flex-wrap">
+                <span
+                  className={cn(
+                    "label-caps text-[9px] px-2 py-1 rounded border",
+                    statusClass
+                  )}
+                >
+                  {result.status}
+                </span>
+                <span className="text-[10px] text-muted-foreground font-mono">
+                  {Math.round(result.confidenceScore * 100)}% overall confidence
+                </span>
+              </div>
+              <p className="text-[13px] mt-2">{result.summary}</p>
+              <p className="text-[10px] text-muted-foreground mt-1">
+                Retrieved {new Date(result.retrievedAt).toLocaleString()}
+              </p>
+            </div>
+            <div className="flex gap-2">
+              <span className="h-8 inline-flex items-center px-3 rounded border border-outline-variant text-[10px] text-muted-foreground">
+                {
+                  result.sourcesUsed.filter(
+                    source => source.type === "search_provider"
+                  ).length
+                }{" "}
+                search providers
+              </span>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                className="h-8 border-outline-variant text-[10px]"
+                onClick={copyJson}
+              >
+                <Copy className="h-3 w-3 mr-1.5" />
+                Copy JSON
+              </Button>
+            </div>
+          </div>
+
+          {result.warnings.length > 0 && (
+            <div className="rounded border border-amber-500/20 bg-amber-500/5 p-3">
+              <div className="flex items-center gap-2 text-amber-400 text-[11px] font-medium">
+                <AlertCircle className="h-3.5 w-3.5" />
+                Incomplete information
+              </div>
+              <ul className="mt-2 space-y-1 text-[10px] text-muted-foreground">
+                {result.warnings.slice(0, 5).map(warning => (
+                  <li key={warning}>• {warning}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {result.productsFound.length > 0 ? (
+            <div className="grid gap-3 xl:grid-cols-2">
+              {result.productsFound.map((product, index) => (
+                <article
+                  key={product.productUrl}
+                  className="rounded-lg border border-outline-variant/60 bg-surface-container-low/60 p-4"
+                >
+                  <div className="flex gap-3">
+                    {product.imageUrl ? (
+                      <img
+                        src={product.imageUrl}
+                        alt=""
+                        loading="lazy"
+                        className="h-16 w-16 rounded object-contain bg-white/5 border border-outline-variant shrink-0"
+                      />
+                    ) : (
+                      <div className="h-16 w-16 rounded bg-surface-container-highest border border-outline-variant flex items-center justify-center shrink-0">
+                        <Store className="h-5 w-5 text-muted-foreground/50" />
+                      </div>
+                    )}
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <p className="label-caps text-[9px] text-primary">
+                            #{index + 1} ·{" "}
+                            {product.seller ?? "Seller unavailable"}
+                          </p>
+                          <h4 className="text-[13px] font-semibold leading-snug mt-1 line-clamp-2">
+                            {product.productName}
+                          </h4>
+                        </div>
+                        <span className="font-mono text-[14px] font-bold text-primary whitespace-nowrap">
+                          {scoopPrice(product)}
+                        </span>
+                      </div>
+                      <div className="flex flex-wrap gap-x-3 gap-y-1 mt-2 text-[10px] text-muted-foreground">
+                        {product.brand && <span>Brand: {product.brand}</span>}
+                        {product.model && <span>Model: {product.model}</span>}
+                        {product.condition && (
+                          <span className="capitalize">
+                            Condition: {product.condition}
+                          </span>
+                        )}
+                        {product.availability && (
+                          <span>
+                            Availability:{" "}
+                            {product.availability.replace(/_/g, " ")}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="mt-3 pt-3 border-t border-outline-variant/30 flex flex-wrap items-center justify-between gap-2">
+                    <div className="flex flex-wrap items-center gap-3 text-[9px] text-muted-foreground">
+                      {product.shipping && (
+                        <span className="flex items-center gap-1">
+                          <Truck className="h-3 w-3" />
+                          {product.shipping}
+                        </span>
+                      )}
+                      <span>
+                        {Math.round(product.confidenceScore * 100)}% confidence
+                      </span>
+                      <span>{product.discoveredBy.join(", ")}</span>
+                    </div>
+                    <a
+                      href={product.productUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1 text-[10px] text-primary hover:underline"
+                    >
+                      View source
+                      <ExternalLink className="h-3 w-3" />
+                    </a>
+                  </div>
+                </article>
+              ))}
+            </div>
+          ) : (
+            <div className="py-8 text-center text-muted-foreground">
+              <AlertCircle className="h-8 w-8 mx-auto opacity-30" />
+              <p className="text-[12px] mt-2">
+                No verified product listings found for this request.
+              </p>
+            </div>
+          )}
+
+          <details className="rounded border border-outline-variant/40 bg-surface-container-lowest">
+            <summary className="cursor-pointer px-4 py-3 text-[11px] font-medium">
+              Structured JSON output
+            </summary>
+            <pre className="max-h-96 overflow-auto border-t border-outline-variant/30 p-4 text-[10px] leading-relaxed text-muted-foreground">
+              {JSON.stringify(result, null, 2)}
+            </pre>
+          </details>
+        </div>
+      )}
+    </section>
+  );
 }
 
 // ─── Product Scout Card ──────────────────────────────────────────────────────
@@ -874,6 +1264,8 @@ export default function PriceScout() {
           </div>
         </div>
       </div>
+
+      <ScoopPanel />
 
       {/* Summary bar */}
       {resultCount > 0 && (

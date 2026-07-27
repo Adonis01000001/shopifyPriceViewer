@@ -448,7 +448,7 @@ export default function Products() {
                           <button
                             className="hover:text-primary transition-colors text-sm"
                             title="Scout prices"
-                            onClick={() => navigate(`/price-scout?productId=${product.id}`)}
+                            onClick={() => navigate(`/scout?productId=${product.id}`)}
                           >
                             <Zap className="h-3.5 w-3.5" />
                           </button>
@@ -467,7 +467,7 @@ export default function Products() {
                             </DropdownMenuTrigger>
                             <DropdownMenuContent align="end">
                               <DropdownMenuItem
-                                onClick={() => navigate(`/price-scout?productId=${product.id}`)}
+                                onClick={() => navigate(`/scout?productId=${product.id}`)}
                               >
                                 Scout Prices
                               </DropdownMenuItem>
