@@ -6,6 +6,7 @@ import {
   Bar,
   BarChart,
   CartesianGrid,
+  Cell,
   Legend,
   ResponsiveContainer,
   Tooltip,
@@ -15,7 +16,7 @@ import {
 import { trpc } from "@/lib/trpc";
 import { Empty, EmptyHeader, EmptyTitle, EmptyDescription, EmptyMedia } from "@/components/ui/empty";
 import { PageSkeleton } from "@/components/dashboard/PageSkeleton";
-import { TrendingUp, Target, Zap, BarChart3, BarChart4 } from "lucide-react";
+import { TrendingUp, Target, Zap, BarChart3, BarChart4, ShoppingBag } from "lucide-react";
 import { useMemo } from "react";
 
 export default function Analytics() {
@@ -23,6 +24,7 @@ export default function Analytics() {
   const { data: productStats } = trpc.products.stats.useQuery();
   const { data: recStats } = trpc.recommendations.stats.useQuery();
   const { data: competitorStats } = trpc.competitors.stats.useQuery();
+  const { data: competitorProducts } = trpc.competitors.getProductsForAnalytics.useQuery();
 
   const allProducts = products ?? [];
 
@@ -61,6 +63,29 @@ export default function Analytics() {
       applied,
     }));
   }, [allProducts]);
+
+  const compProductsChart = useMemo(() => {
+    if (!competitorProducts?.length) return [];
+    const sorted = [...competitorProducts]
+      .filter(p => p.price && Number(p.price) > 0)
+      .sort((a, b) => Number(b.price) - Number(a.price))
+      .slice(0, 20);
+    const colorMap: Record<string, string> = {};
+    const colors = ["var(--chart-1)", "var(--chart-2)", "var(--chart-3)", "var(--chart-4)", "var(--chart-5)", "var(--primary)", "#c084fc", "#f97316"];
+    let colorIdx = 0;
+    for (const p of sorted) {
+      if (!colorMap[p.competitorName]) {
+        colorMap[p.competitorName] = colors[colorIdx % colors.length];
+        colorIdx++;
+      }
+    }
+    return sorted.map(p => ({
+      label: (p.productTitle?.length ?? 0) > 40 ? (p.productTitle?.slice(0, 37) ?? "") + "..." : (p.productTitle || "—"),
+      price: Number(p.price),
+      competitor: p.competitorName,
+      fill: colorMap[p.competitorName],
+    }));
+  }, [competitorProducts]);
 
   const compComparison = useMemo(() => {
     const cats: Record<string, { us: number; count: number }> = {};
@@ -390,6 +415,80 @@ export default function Analytics() {
           ) : (
             <div className="flex h-[240px] items-center justify-center text-sm text-muted-foreground">
               No data yet
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Competitor Products & Prices */}
+      <div className="glass-panel rounded-lg overflow-hidden">
+        <div className="px-5 py-4 border-b border-white/[0.04] bg-surface-container/50 flex items-center gap-2">
+          <ShoppingBag className="h-4 w-4 text-primary" />
+          <h3 className="text-[15px] font-semibold">Competitor Products & Prices</h3>
+          {competitorProducts && (
+            <span className="ml-auto text-[11px] text-muted-foreground font-mono">
+              {competitorProducts.length} products
+            </span>
+          )}
+        </div>
+        <div className="p-5">
+          {compProductsChart.length > 0 ? (
+            <ResponsiveContainer width="100%" height={Math.min(compProductsChart.length * 28 + 40, 500)}>
+              <BarChart
+                data={compProductsChart}
+                layout="vertical"
+                margin={{ top: 5, right: 20, left: 120, bottom: 0 }}
+                barSize={16}
+              >
+                <CartesianGrid
+                  strokeDasharray="3 3"
+                  stroke="var(--border)"
+                  opacity={0.5}
+                  horizontal={false}
+                />
+                <XAxis
+                  type="number"
+                  tick={{ fontSize: 11 }}
+                  stroke="var(--muted-foreground)"
+                  tickFormatter={v => `$${v}`}
+                />
+                <YAxis
+                  type="category"
+                  dataKey="label"
+                  tick={{ fontSize: 10 }}
+                  stroke="var(--muted-foreground)"
+                  width={120}
+                  interval={0}
+                />
+                <Tooltip
+                  contentStyle={{
+                    backgroundColor: "var(--card)",
+                    border: "1px solid var(--border)",
+                    borderRadius: "var(--radius)",
+                    fontSize: 12,
+                  }}
+                  formatter={(v: number, _name: string, props: any) => [
+                    `$${v.toFixed(2)}`,
+                    props.payload.competitor,
+                  ]}
+                />
+                <Bar
+                  dataKey="price"
+                  name="Price"
+                  radius={[0, 4, 4, 0]}
+                  isAnimationActive={false}
+                >
+                  {compProductsChart.map((entry, idx) => (
+                    <Cell key={idx} fill={entry.fill} />
+                  ))}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          ) : (
+            <div className="flex h-[200px] items-center justify-center text-sm text-muted-foreground">
+              {competitorProducts && competitorProducts.length === 0
+                ? "No competitor products tracked yet"
+                : "Loading..."}
             </div>
           )}
         </div>

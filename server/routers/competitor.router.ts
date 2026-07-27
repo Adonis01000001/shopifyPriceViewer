@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { eq, and } from "drizzle-orm";
+import { eq, and, sql } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 import { protectedProcedure, router } from "../_core/trpc";
 import { competitorService } from "../services/competitor.service";
@@ -303,4 +303,33 @@ export const competitorRouter = router({
 
       return { success: true, previousPrice: oldPrice, newPrice: input.price };
     }),
+
+  // ── Analytics: all competitor products with prices ─────────────────────────
+  getProductsForAnalytics: protectedProcedure.query(async ({ ctx }) => {
+    const database = await requireDb();
+    const rows = await database
+      .select({
+        competitorId: competitors.id,
+        competitorName: competitors.name,
+        competitorDomain: competitors.domain,
+        price: competitorProducts.price,
+        productTitle: competitorProducts.competitorProductTitle,
+        productId: competitorProducts.productId,
+        currency: competitorProducts.currency,
+        updatedAt: competitorProducts.updatedAt,
+      })
+      .from(competitorProducts)
+      .innerJoin(
+        competitors,
+        eq(competitorProducts.competitorId, competitors.id)
+      )
+      .where(
+        and(
+          eq(competitors.userId, ctx.user!.id),
+          eq(competitorProducts.isActive, true)
+        )
+      )
+      .orderBy(competitors.name);
+    return rows;
+  }),
 });

@@ -29,7 +29,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
-import { useMemo, useState, useCallback } from "react";
+import { useMemo, useState, useCallback, useRef } from "react";
 import { useLocation } from "wouter";
 import Papa from "papaparse";
 import { toast } from "sonner";
@@ -139,6 +139,9 @@ export default function Products() {
   const [searchQuery, setSearchQuery] = useState("");
   const [categoryFilter, setCategoryFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState("all");
+  const [editingPriceId, setEditingPriceId] = useState<string | null>(null);
+  const [editingPriceVal, setEditingPriceVal] = useState("");
+  const priceInputRef = useRef<HTMLInputElement>(null);
 
   const { data: allProducts, isLoading, refetch, error } = trpc.products.list.useQuery(undefined, {
     staleTime: 1000 * 60 * 5,
@@ -150,12 +153,28 @@ export default function Products() {
   const updateProductMutation = trpc.products.update.useMutation({
     onSuccess: () => {
       toast.success("Price updated");
+      setEditingPriceId(null);
       refetch();
     },
     onError: () => {
       toast.error("Failed to update price");
     },
   });
+
+  const startEditing = useCallback((productId: string, currentPrice: string) => {
+    setEditingPriceId(productId);
+    setEditingPriceVal(currentPrice);
+    setTimeout(() => priceInputRef.current?.focus(), 50);
+  }, []);
+
+  const savePrice = useCallback((productId: string) => {
+    const num = parseFloat(editingPriceVal);
+    if (isNaN(num) || num <= 0) {
+      toast.error("Enter a valid price");
+      return;
+    }
+    updateProductMutation.mutate({ id: productId, price: editingPriceVal });
+  }, [editingPriceVal, updateProductMutation]);
 
   const products = allProducts ?? [];
   const categories = useMemo(
@@ -419,8 +438,27 @@ export default function Products() {
                       <TableCell className="py-3 font-mono text-[12px] text-muted-foreground text-center">
                         {product.sku || "—"}
                       </TableCell>
-                      <TableCell className="py-3 font-mono text-[13px] font-medium text-right">
-                        ${Number(product.price).toFixed(2)}
+                      <TableCell className="py-3 text-right">
+                        {editingPriceId === product.id ? (
+                          <Input
+                            ref={priceInputRef}
+                            value={editingPriceVal}
+                            onChange={e => setEditingPriceVal(e.target.value)}
+                            onBlur={() => savePrice(product.id)}
+                            onKeyDown={e => {
+                              if (e.key === "Enter") { e.currentTarget.blur(); }
+                              if (e.key === "Escape") { setEditingPriceId(null); }
+                            }}
+                            className="h-8 w-24 font-mono text-[13px] text-right bg-surface-container border-outline-variant"
+                          />
+                        ) : (
+                          <button
+                            className="font-mono text-[13px] font-medium hover:text-primary transition-colors cursor-text"
+                            onClick={() => startEditing(product.id, product.price)}
+                          >
+                            ${Number(product.price).toFixed(2)}
+                          </button>
+                        )}
                       </TableCell>
                       <TableCell className="py-3 font-mono text-[13px] text-muted-foreground text-right hidden sm:table-cell">
                         —
