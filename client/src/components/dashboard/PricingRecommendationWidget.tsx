@@ -1,4 +1,5 @@
 import { useMemo } from "react";
+import { useLocation } from "wouter";
 import { trpc } from "@/lib/trpc";
 import { cn } from "@/lib/utils";
 import {
@@ -11,6 +12,9 @@ import {
   BarChart3,
   Sparkles,
   Brain,
+  Search,
+  Compass,
+  ArrowRight,
 } from "lucide-react";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -122,6 +126,7 @@ interface PricingRecommendationWidgetProps {
 export function PricingRecommendationWidget({
   productId,
 }: PricingRecommendationWidgetProps) {
+  const [, navigate] = useLocation();
   const { data, isLoading } = trpc.pricingEngine.analyze.useQuery(
     { productId },
     { enabled: !!productId }
@@ -186,49 +191,80 @@ export function PricingRecommendationWidget({
           <BarChart3 className="h-4 w-4 text-primary" />
           <h3 className="text-[14px] font-semibold">Market Snapshot</h3>
         </div>
-        <div className="p-4 grid grid-cols-2 gap-3">
-          <div className="glass-card p-3 rounded">
-            <p className="label-caps text-muted-foreground/60 text-[10px]">
-              Merchant Price
+        {snapshot?.competitorCount && snapshot.competitorCount > 0 ? (
+          <>
+            <div className="p-4 grid grid-cols-2 gap-3">
+              <div className="glass-card p-3 rounded">
+                <p className="label-caps text-muted-foreground/60 text-[10px]">
+                  Merchant Price
+                </p>
+                <p className="text-lg font-bold font-mono mt-1">
+                  ${snapshot.merchantPrice.toFixed(2)}
+                </p>
+              </div>
+              <div className="glass-card p-3 rounded">
+                <p className="label-caps text-muted-foreground/60 text-[10px]">
+                  Avg. Competitor
+                </p>
+                <p className="text-lg font-bold font-mono mt-1">
+                  {stats?.avgCompetitor}
+                </p>
+              </div>
+              <div className="glass-card p-3 rounded">
+                <p className="label-caps text-muted-foreground/60 text-[10px]">
+                  Lowest Competitor
+                </p>
+                <p className="text-sm font-mono mt-1 text-[#21a732]">
+                  {stats?.lowestCompetitor}
+                </p>
+              </div>
+              <div className="glass-card p-3 rounded">
+                <p className="label-caps text-muted-foreground/60 text-[10px]">
+                  Highest Competitor
+                </p>
+                <p className="text-sm font-mono mt-1 text-[#ffb4ab]">
+                  {stats?.highestCompetitor}
+                </p>
+              </div>
+            </div>
+            <div className="px-4 pb-3">
+              <p className="text-[11px] text-muted-foreground">
+                Based on{" "}
+                <span className="font-mono font-medium text-muted-foreground">
+                  {stats?.competitorCount}
+                </span>{" "}
+                competitor price{stats?.competitorCount !== 1 ? "s" : ""}
+              </p>
+            </div>
+          </>
+        ) : (
+          <div className="p-5 text-center space-y-3">
+            <div className="flex justify-center mb-1">
+              <div className="p-2 rounded-full bg-surface-container-highest">
+                <Search className="h-5 w-5 text-muted-foreground" />
+              </div>
+            </div>
+            <p className="text-[13px] font-medium text-muted-foreground">
+              No competitors tracked yet
             </p>
-            <p className="text-lg font-bold font-mono mt-1">
-              ${snapshot?.merchantPrice.toFixed(2)}
+            <p className="text-[11px] text-muted-foreground/60 leading-relaxed max-w-sm mx-auto">
+              Track competitor prices to see how your price of{" "}
+              <span className="font-mono font-medium text-muted-foreground">
+                ${snapshot?.merchantPrice.toFixed(2)}
+              </span>{" "}
+              compares to the market.
             </p>
+            <div className="flex items-center justify-center gap-2 pt-1">
+              <button
+                onClick={() => navigate("/pricescout")}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-primary/10 hover:bg-primary/20 text-primary text-[11px] font-bold label-caps rounded transition-colors"
+              >
+                <Compass className="h-3.5 w-3.5" />
+                Price Scout
+              </button>
+            </div>
           </div>
-          <div className="glass-card p-3 rounded">
-            <p className="label-caps text-muted-foreground/60 text-[10px]">
-              Avg. Competitor
-            </p>
-            <p className="text-lg font-bold font-mono mt-1">
-              {stats?.avgCompetitor}
-            </p>
-          </div>
-          <div className="glass-card p-3 rounded">
-            <p className="label-caps text-muted-foreground/60 text-[10px]">
-              Lowest Competitor
-            </p>
-            <p className="text-sm font-mono mt-1 text-[#21a732]">
-              {stats?.lowestCompetitor}
-            </p>
-          </div>
-          <div className="glass-card p-3 rounded">
-            <p className="label-caps text-muted-foreground/60 text-[10px]">
-              Highest Competitor
-            </p>
-            <p className="text-sm font-mono mt-1 text-[#ffb4ab]">
-              {stats?.highestCompetitor}
-            </p>
-          </div>
-        </div>
-        <div className="px-4 pb-3">
-          <p className="text-[11px] text-muted-foreground">
-            Based on{" "}
-            <span className="font-mono font-medium text-muted-foreground">
-              {stats?.competitorCount}
-            </span>{" "}
-            competitor price{stats?.competitorCount !== 1 ? "s" : ""}
-          </p>
-        </div>
+        )}
       </div>
 
       {/* Recommendation Card */}
@@ -285,10 +321,33 @@ export function PricingRecommendationWidget({
           </div>
         </div>
       ) : (
-        <div className="glass-panel rounded-lg p-4 text-center text-muted-foreground text-sm">
-          <p>
-            No recommendation available. Need at least one competitor price.
-          </p>
+        <div className="glass-panel rounded-lg overflow-hidden">
+          <div className="px-5 py-3 border-b border-white/[0.04] bg-surface-container/50 flex items-center gap-2">
+            <Target className="h-4 w-4 text-muted-foreground" />
+            <h3 className="text-[14px] font-semibold text-muted-foreground">Recommendation</h3>
+          </div>
+          <div className="p-5 text-center space-y-3">
+            <div className="flex justify-center mb-1">
+              <div className="p-2 rounded-full bg-surface-container-highest">
+                <Target className="h-5 w-5 text-muted-foreground" />
+              </div>
+            </div>
+            <p className="text-[13px] font-medium text-muted-foreground">
+              No recommendation yet
+            </p>
+            <p className="text-[11px] text-muted-foreground/60 leading-relaxed max-w-sm mx-auto">
+              Pricing recommendations are generated once competitor prices are tracked. Use Price Scout to find and compare competitor prices.
+            </p>
+            <div className="flex items-center justify-center gap-2 pt-1">
+              <button
+                onClick={() => navigate("/pricescout")}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-primary/10 hover:bg-primary/20 text-primary text-[11px] font-bold label-caps rounded transition-colors"
+              >
+                <Compass className="h-3.5 w-3.5" />
+                Find Competitor Prices
+              </button>
+            </div>
+          </div>
         </div>
       )}
 
@@ -325,6 +384,15 @@ export function PricingRecommendationWidget({
                 {position.priceDiff.toFixed(2)} vs avg competitor
               </span>
             </div>
+          )}
+          {position?.status === "INSUFFICIENT_DATA" && (
+            <button
+              onClick={() => navigate("/pricescout")}
+              className="inline-flex items-center gap-1.5 text-[11px] font-bold label-caps text-primary hover:text-primary/80 transition-colors"
+            >
+              Track competitors to measure position
+              <ArrowRight className="h-3 w-3" />
+            </button>
           )}
         </div>
       </div>
@@ -392,10 +460,37 @@ export function PricingRecommendationWidget({
             )}
           </div>
         ) : (
-          <div className="p-4 text-center">
-            <p className="text-[12px] text-muted-foreground">
-              {aiData?.fallbackReason || "AI analysis unavailable. Set OPENROUTER_API_KEY for AI-powered recommendations."}
+          <div className="p-5 text-center space-y-3">
+            <div className="flex justify-center mb-1">
+              <div className="p-2 rounded-full bg-surface-container-highest">
+                <Sparkles className="h-5 w-5 text-muted-foreground" />
+              </div>
+            </div>
+            <p className="text-[13px] font-medium text-muted-foreground">
+              {aiData?.fallbackReason?.includes("API key")
+                ? "AI analysis not configured"
+                : aiData?.fallbackReason?.includes("Insufficient data")
+                  ? "Not enough data for AI analysis"
+                  : "AI analysis unavailable"}
             </p>
+            <p className="text-[11px] text-muted-foreground/60 leading-relaxed max-w-sm mx-auto">
+              {aiData?.fallbackReason?.includes("API key")
+                ? "Add an OpenRouter or OpenAI API key in Settings to enable AI-powered pricing analysis."
+                : aiData?.fallbackReason?.includes("Insufficient data")
+                  ? "AI analysis requires competitor price data. Use Price Scout to find competitor prices."
+                  : aiData?.fallbackReason
+                    ? aiData.fallbackReason
+                    : "AI analysis requires competitor price data. Track competitors to unlock AI-powered pricing recommendations."}
+            </p>
+            <div className="flex items-center justify-center gap-2 pt-1">
+              <button
+                onClick={() => navigate("/pricescout")}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-primary/10 hover:bg-primary/20 text-primary text-[11px] font-bold label-caps rounded transition-colors"
+              >
+                <Compass className="h-3.5 w-3.5" />
+                Find Competitor Prices
+              </button>
+            </div>
           </div>
         )}
       </div>
