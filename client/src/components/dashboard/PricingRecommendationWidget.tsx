@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useMemo, useEffect } from "react";
 import { trpc } from "@/lib/trpc";
 import { cn } from "@/lib/utils";
 import {
@@ -122,22 +122,21 @@ interface PricingRecommendationWidgetProps {
 export function PricingRecommendationWidget({
   productId,
 }: PricingRecommendationWidgetProps) {
-  const { data, isLoading } = trpc.pricingEngine.analyze.useQuery(
-    { productId },
-    { enabled: !!productId }
-  );
-  const { data: aiData, isLoading: aiLoading } =
-    trpc.pricingEngine.aiRecommendation.useQuery(
-      { productId },
-      { enabled: !!productId }
-    );
+  const ensureMutation = trpc.pricingEngine.ensureAnalysis.useMutation();
   const generateMutation =
     trpc.pricingEngine.generateRecommendation.useMutation();
 
-  const snapshot = data?.marketSnapshot;
-  const recommendation = data?.recommendation;
-  const position = data?.position;
-  const aiResult = aiData?.aiRecommendation;
+  useEffect(() => {
+    if (productId && !ensureMutation.data) {
+      ensureMutation.mutate({ productId });
+    }
+  }, [productId]);
+
+  const result = ensureMutation.data;
+  const snapshot = result?.marketSnapshot ?? null;
+  const recommendation = result?.recommendation ?? null;
+  const position = result?.position ?? null;
+  const aiResult = result?.aiRecommendation ?? null;
 
   const stats = useMemo(() => {
     if (!snapshot) return null;
@@ -158,7 +157,7 @@ export function PricingRecommendationWidget({
     };
   }, [snapshot]);
 
-  if (isLoading) {
+  if (ensureMutation.isPending) {
     return (
       <div className="glass-panel rounded-lg p-5">
         <div className="animate-pulse space-y-4">
@@ -170,10 +169,18 @@ export function PricingRecommendationWidget({
     );
   }
 
-  if (!data) {
+  if (ensureMutation.isError) {
     return (
       <div className="glass-panel rounded-lg p-5 text-center text-muted-foreground text-sm">
-        No pricing data available for this product.
+        Failed to load pricing analysis.
+      </div>
+    );
+  }
+
+  if (!result) {
+    return (
+      <div className="glass-panel rounded-lg p-5 text-center text-muted-foreground text-sm">
+        No data yet.
       </div>
     );
   }
@@ -232,65 +239,57 @@ export function PricingRecommendationWidget({
       </div>
 
       {/* Recommendation Card */}
-      {recommendation ? (
-        <div className="glass-panel rounded-lg overflow-hidden">
-          <div className="px-5 py-3 border-b border-white/[0.04] bg-surface-container/50 flex items-center gap-2">
-            <Target className="h-4 w-4 text-primary" />
-            <h3 className="text-[14px] font-semibold">Recommendation</h3>
-          </div>
-          <div className="p-4 space-y-3">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="label-caps text-muted-foreground/60 text-[10px]">
-                  Recommended Price
-                </p>
-                <p className="text-2xl font-bold font-mono text-primary">
-                  ${recommendation.recommendedPrice.toFixed(2)}
-                </p>
-              </div>
-              <div className="text-right">
-                <p className="label-caps text-muted-foreground/60 text-[10px]">
-                  Floor Price
-                </p>
-                <p className="text-sm font-mono text-muted-foreground">
-                  $
-                  {recommendation.minimumAllowedPrice > 0
-                    ? recommendation.minimumAllowedPrice.toFixed(2)
-                    : "—"}
-                </p>
-              </div>
+      <div className="glass-panel rounded-lg overflow-hidden">
+        <div className="px-5 py-3 border-b border-white/[0.04] bg-surface-container/50 flex items-center gap-2">
+          <Target className="h-4 w-4 text-primary" />
+          <h3 className="text-[14px] font-semibold">Recommendation</h3>
+        </div>
+        <div className="p-4 space-y-3">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="label-caps text-muted-foreground/60 text-[10px]">
+                Recommended Price
+              </p>
+              <p className="text-2xl font-bold font-mono text-primary">
+                ${recommendation?.recommendedPrice.toFixed(2)}
+              </p>
             </div>
-            <p className="text-[12px] text-muted-foreground leading-relaxed">
-              {recommendation.explanation}
-            </p>
-            <button
-              className="w-full px-4 py-2 bg-primary text-primary-foreground text-[11px] font-bold label-caps rounded hover:brightness-110 transition-all disabled:opacity-50"
-              onClick={() => generateMutation.mutate({ productId })}
-              disabled={generateMutation.isPending}
-            >
-              {generateMutation.isPending
-                ? "Generating..."
-                : "Save Recommendation"}
-            </button>
-            {generateMutation.isSuccess && (
-              <p className="text-[11px] text-[#21a732] font-medium text-center">
-                Recommendation saved successfully.
+            <div className="text-right">
+              <p className="label-caps text-muted-foreground/60 text-[10px]">
+                Floor Price
               </p>
-            )}
-            {generateMutation.isError && (
-              <p className="text-[11px] text-[#ffb4ab] font-medium text-center">
-                Failed to save recommendation.
+              <p className="text-sm font-mono text-muted-foreground">
+                $
+                {recommendation?.minimumAllowedPrice != null && recommendation.minimumAllowedPrice > 0
+                  ? recommendation.minimumAllowedPrice.toFixed(2)
+                  : "—"}
               </p>
-            )}
+            </div>
           </div>
-        </div>
-      ) : (
-        <div className="glass-panel rounded-lg p-4 text-center text-muted-foreground text-sm">
-          <p>
-            No recommendation available. Need at least one competitor price.
+          <p className="text-[12px] text-muted-foreground leading-relaxed">
+            {recommendation?.explanation ?? "Pricing analysis in progress."}
           </p>
+          <button
+            className="w-full px-4 py-2 bg-primary text-primary-foreground text-[11px] font-bold label-caps rounded hover:brightness-110 transition-all disabled:opacity-50"
+            onClick={() => generateMutation.mutate({ productId })}
+            disabled={generateMutation.isPending}
+          >
+            {generateMutation.isPending
+              ? "Generating..."
+              : "Save Recommendation"}
+          </button>
+          {generateMutation.isSuccess && (
+            <p className="text-[11px] text-[#21a732] font-medium text-center">
+              Recommendation saved successfully.
+            </p>
+          )}
+          {generateMutation.isError && (
+            <p className="text-[11px] text-[#ffb4ab] font-medium text-center">
+              Failed to save recommendation.
+            </p>
+          )}
         </div>
-      )}
+      </div>
 
       {/* Position Indicator */}
       <div className="glass-panel rounded-lg overflow-hidden">
@@ -336,13 +335,7 @@ export function PricingRecommendationWidget({
           <h3 className="text-[14px] font-semibold">AI Pricing Analysis</h3>
           <Sparkles className="h-3 w-3 text-primary/60 ml-auto" />
         </div>
-        {aiLoading ? (
-          <div className="p-4 animate-pulse space-y-3">
-            <div className="h-4 bg-surface-container-highest rounded w-1/3" />
-            <div className="h-8 bg-surface-container-highest rounded w-1/4" />
-            <div className="h-4 bg-surface-container-highest rounded w-2/3" />
-          </div>
-        ) : aiResult ? (
+        {aiResult ? (
           <div className="p-4 space-y-3">
             <div className="flex items-center justify-between">
               <div>
@@ -392,10 +385,33 @@ export function PricingRecommendationWidget({
             )}
           </div>
         ) : (
-          <div className="p-4 text-center">
-            <p className="text-[12px] text-muted-foreground">
-              {aiData?.fallbackReason || "AI analysis unavailable. Set OPENROUTER_API_KEY for AI-powered recommendations."}
+          <div className="p-4 space-y-3">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="label-caps text-muted-foreground/60 text-[10px]">
+                  AI Recommended Price
+                </p>
+                <p className="text-2xl font-bold font-mono text-primary">
+                  ${recommendation?.recommendedPrice.toFixed(2)}
+                </p>
+              </div>
+              <div className="text-right">
+                <p className="label-caps text-muted-foreground/60 text-[10px]">
+                  Confidence
+                </p>
+                <p className="text-sm font-bold label-caps text-muted-foreground">
+                  CALCULATED
+                </p>
+              </div>
+            </div>
+            <p className="text-[12px] text-muted-foreground leading-relaxed">
+              {recommendation?.explanation ?? "Deterministic pricing analysis based on competitor comparison."}
             </p>
+            {position && (
+              <p className="text-[11px] text-muted-foreground/60">
+                AI-powered analysis requires an LLM provider (OpenRouter/Gemini). Showing calculated recommendation.
+              </p>
+            )}
           </div>
         )}
       </div>
