@@ -263,6 +263,10 @@ export const products = pgTable(
     shopifyProductIdIdx: index("products_shopify_product_id_idx").on(
       t.shopifyProductId
     ),
+    // Required by bulkUpsertProducts' ON CONFLICT (user_id, shopify_product_id)
+    userShopifyProductUniqueIdx: uniqueIndex(
+      "products_user_shopify_product_unique_idx"
+    ).on(t.userId, t.shopifyProductId),
   })
 );
 
