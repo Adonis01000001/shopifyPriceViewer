@@ -257,6 +257,19 @@ export function registerOAuthRoutes(app: Express) {
       // Store in database
       const database = await db.getDb();
       if (database) {
+        // `userId` from the state cookie is the session's openId; resolve it
+        // to the users.id UUID that shopify_stores.user_id references.
+        const [user] = await database
+          .select({ id: users.id })
+          .from(users)
+          .where(eq(users.openId, userId))
+          .limit(1);
+
+        if (!user) {
+          res.status(401).json({ error: "User not found. Please sign in again." });
+          return;
+        }
+
         // Check if store already exists for this user
         const existing = await database.query.shopifyStores.findFirst({
           where: eq(shopifyStores.shopDomain, shop),
@@ -274,7 +287,7 @@ export function registerOAuthRoutes(app: Express) {
             .where(eq(shopifyStores.id, existing.id));
         } else {
           await database.insert(shopifyStores).values({
-            userId,
+            userId: user.id,
             shopDomain: shop,
             accessToken: encryptedToken,
             scopes: ENV.shopifyScopes,
