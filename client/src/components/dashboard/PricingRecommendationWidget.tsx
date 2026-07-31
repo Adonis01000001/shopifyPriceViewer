@@ -122,17 +122,22 @@ interface PricingRecommendationWidgetProps {
 export function PricingRecommendationWidget({
   productId,
 }: PricingRecommendationWidgetProps) {
-  const ensureMutation = trpc.pricingEngine.ensureAnalysis.useMutation();
+  const {
+    data: ensuredAnalysis,
+    isError: hasEnsureError,
+    isPending: isEnsuringAnalysis,
+    mutate: ensureAnalysis,
+  } = trpc.pricingEngine.ensureAnalysis.useMutation();
   const generateMutation =
     trpc.pricingEngine.generateRecommendation.useMutation();
 
   useEffect(() => {
-    if (productId && !ensureMutation.data) {
-      ensureMutation.mutate({ productId });
+    if (productId && !ensuredAnalysis) {
+      ensureAnalysis({ productId });
     }
-  }, [productId]);
+  }, [ensureAnalysis, ensuredAnalysis, productId]);
 
-  const result = ensureMutation.data;
+  const result = ensuredAnalysis;
   const snapshot = result?.marketSnapshot ?? null;
   const recommendation = result?.recommendation ?? null;
   const position = result?.position ?? null;
@@ -157,7 +162,7 @@ export function PricingRecommendationWidget({
     };
   }, [snapshot]);
 
-  if (ensureMutation.isPending) {
+  if (isEnsuringAnalysis) {
     return (
       <div className="glass-panel rounded-lg p-5">
         <div className="animate-pulse space-y-4">
@@ -169,7 +174,7 @@ export function PricingRecommendationWidget({
     );
   }
 
-  if (ensureMutation.isError) {
+  if (hasEnsureError) {
     return (
       <div className="glass-panel rounded-lg p-5 text-center text-muted-foreground text-sm">
         Failed to load pricing analysis.

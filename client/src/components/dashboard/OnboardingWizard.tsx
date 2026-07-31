@@ -43,7 +43,6 @@ export default function OnboardingWizard({ open, onOpenChange, onComplete }: Onb
   const [step, setStep] = useState(0);
   const [completed, setCompleted] = useState<Set<string>>(new Set());
 
-  const utils = trpc.useUtils();
   const syncMutation = trpc.shopify.syncProducts.useMutation({
     onSuccess: (data) => {
       toast.success(data.message || `Synced ${data.synced} products`);
@@ -53,7 +52,6 @@ export default function OnboardingWizard({ open, onOpenChange, onComplete }: Onb
   });
 
   const { data: stores } = trpc.shopify.listStores.useQuery();
-  const hasStore = (stores?.length ?? 0) > 0;
 
   const handleConnectShopify = () => {
     window.open("/api/shopify/login", "_blank");

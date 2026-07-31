@@ -76,7 +76,7 @@ function isWalmartDotCom(pageUrl: string): boolean {
 function amazonNameFromDescription(description: string | null): string | null {
   if (!description) return null;
   let candidate = description
-    .replace(/^Amazon\.com\s*[:\-]\s*/i, "")
+    .replace(/^Amazon\.com\s*[:-]\s*/i, "")
     .replace(/^Buy\s+/i, "")
     .replace(/^Shop for the\s+/i, "")
     .trim();

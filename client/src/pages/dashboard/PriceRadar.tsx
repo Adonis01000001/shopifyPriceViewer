@@ -31,15 +31,12 @@ import {
   Loader2,
   ExternalLink,
   AlertCircle,
-  CheckCircle2,
-  XCircle,
   Clock,
   Package,
   Activity,
   Gauge,
   ChevronDown,
   ChevronUp,
-  Database,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useState, useCallback, useMemo, useEffect } from "react";
@@ -364,7 +361,7 @@ export default function PriceRadar() {
   );
 
   const sourceList = sources ?? [];
-  const productsList = products ?? [];
+  const productsList = useMemo(() => products ?? [], [products]);
   const jobsList = jobs ?? [];
 
   const productsByDomain = useMemo(() => {

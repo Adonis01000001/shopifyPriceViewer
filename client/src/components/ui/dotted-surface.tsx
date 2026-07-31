@@ -19,7 +19,8 @@ export function DottedSurface({ className, children, ...props }: DottedSurfacePr
   } | null>(null);
 
   useEffect(() => {
-    if (!canvasRef.current) return;
+    const canvas = canvasRef.current;
+    if (!canvas) return;
 
     const SEPARATION = 150;
     const AMOUNTX = 40;
@@ -44,7 +45,7 @@ export function DottedSurface({ className, children, ...props }: DottedSurfacePr
     renderer.setSize(window.innerWidth, window.innerHeight);
     renderer.setClearColor(scene.fog.color, 0);
 
-    canvasRef.current.appendChild(renderer.domElement);
+    canvas.appendChild(renderer.domElement);
 
     const positions: number[] = [];
     const colors: number[] = [];
@@ -131,28 +132,23 @@ export function DottedSurface({ className, children, ...props }: DottedSurfacePr
     return () => {
       window.removeEventListener("resize", handleResize);
 
-      if (sceneRef.current) {
-        cancelAnimationFrame(sceneRef.current.animationId);
-
-        sceneRef.current.scene.traverse((object) => {
-          if (object instanceof THREE.Points) {
-            object.geometry.dispose();
-            if (Array.isArray(object.material)) {
-              object.material.forEach((material) => material.dispose());
-            } else {
-              object.material.dispose();
-            }
+      cancelAnimationFrame(animationId);
+      scene.traverse((object) => {
+        if (object instanceof THREE.Points) {
+          object.geometry.dispose();
+          if (Array.isArray(object.material)) {
+            object.material.forEach((material) => material.dispose());
+          } else {
+            object.material.dispose();
           }
-        });
-
-        sceneRef.current.renderer.dispose();
-
-        if (canvasRef.current && sceneRef.current.renderer.domElement) {
-          canvasRef.current.removeChild(
-            sceneRef.current.renderer.domElement,
-          );
         }
+      });
+      renderer.dispose();
+
+      if (renderer.domElement.parentNode === canvas) {
+        canvas.removeChild(renderer.domElement);
       }
+      sceneRef.current = null;
     };
   }, [theme]);
 

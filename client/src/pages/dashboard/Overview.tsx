@@ -1,17 +1,10 @@
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import {
-  Area,
-  AreaChart,
-  CartesianGrid,
   Cell,
-  Legend,
   Pie,
   PieChart,
   ResponsiveContainer,
   Tooltip,
-  XAxis,
-  YAxis,
 } from "recharts";
 import { trpc } from "@/lib/trpc";
 import {
@@ -31,25 +24,6 @@ import { cn } from "@/lib/utils";
 import { useMemo } from "react";
 import { PricingDashboardSummary } from "@/components/dashboard/PricingRecommendationWidget";
 import { toast } from "sonner";
-
-const statusConfig: Record<string, { label: string; className: string }> = {
-  optimal: {
-    label: "Optimal",
-    className: "bg-primary/[0.1] text-primary border border-primary/20",
-  },
-  underpriced: {
-    label: "Underpriced",
-    className: "bg-blue-500/10 text-blue-400 border border-blue-500/20",
-  },
-  overpriced: {
-    label: "Overpriced",
-    className: "bg-[#63e063]/10 text-[#21a732] border border-[#63e063]/20",
-  },
-  alert: {
-    label: "Alert",
-    className: "bg-[#93000a]/20 text-[#ffb4ab] border border-[#93000a]/30",
-  },
-};
 
 const CHART_COLORS = [
   "var(--chart-1)",
@@ -129,7 +103,7 @@ export default function Overview() {
   });
 
   // Fetch feed data for each competitor
-  const competitorList = competitors ?? [];
+  const competitorList = useMemo(() => competitors ?? [], [competitors]);
   const feedQueries = trpc.useQueries(t =>
     competitorList.map(comp =>
       t.competitors.feed({ competitorId: comp.id }, { enabled: !!comp.id })
@@ -203,7 +177,7 @@ export default function Overview() {
     return items.slice(0, 12);
   }, [feedQueries, competitorList]);
 
-  const allProducts = products ?? [];
+  const allProducts = useMemo(() => products ?? [], [products]);
   const productById = useMemo(
     () => new Map(allProducts.map(product => [product.id, product])),
     [allProducts]

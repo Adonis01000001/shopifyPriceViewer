@@ -1,5 +1,3 @@
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -146,7 +144,7 @@ export default function Products() {
   const { data: allProducts, isLoading, refetch, error } = trpc.products.list.useQuery(undefined, {
     staleTime: 1000 * 60 * 5,
   });
-  const { data: stats, error: statsError } = trpc.products.stats.useQuery(undefined, {
+  const { data: stats } = trpc.products.stats.useQuery(undefined, {
     staleTime: 1000 * 60 * 5,
   });
 
@@ -176,7 +174,7 @@ export default function Products() {
     updateProductMutation.mutate({ id: productId, price: editingPriceVal });
   }, [editingPriceVal, updateProductMutation]);
 
-  const products = allProducts ?? [];
+  const products = useMemo(() => allProducts ?? [], [allProducts]);
   const categories = useMemo(
     () =>
       Array.from(

@@ -6,7 +6,7 @@ import { Separator } from "@/components/ui/separator";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { trpc } from "@/lib/trpc";
 import { useTheme } from "@/contexts/ThemeContext";
-import { Settings as SettingsIcon, Store, User, Bell, Palette, LogOut, Globe, Trash2, Loader2 } from "lucide-react";
+import { Store, User, Bell, Palette, LogOut, Globe, Trash2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useState } from "react";
 import { toast } from "sonner";
@@ -28,7 +28,6 @@ export default function Settings() {
   const [email, setEmail] = useState(user?.email ?? "");
 
   const allStores = stores ?? [];
-  const activeStore = allStores.find((s: any) => s.isActive);
 
   return (
     <div className="space-y-6 max-w-3xl">

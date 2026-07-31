@@ -1,4 +1,3 @@
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import {
   Area,
@@ -21,12 +20,10 @@ import { useMemo } from "react";
 
 export default function Analytics() {
   const { data: products, isLoading } = trpc.products.list.useQuery();
-  const { data: productStats } = trpc.products.stats.useQuery();
   const { data: recStats } = trpc.recommendations.stats.useQuery();
-  const { data: competitorStats } = trpc.competitors.stats.useQuery();
   const { data: competitorProducts } = trpc.competitors.getProductsForAnalytics.useQuery();
 
-  const allProducts = products ?? [];
+  const allProducts = useMemo(() => products ?? [], [products]);
 
   const avgMargin = useMemo(() => {
     const withCost = allProducts.filter(
@@ -102,7 +99,6 @@ export default function Analytics() {
     }));
   }, [allProducts]);
 
-  const totalProducts = productStats?.total ?? 0;
   const aiRecs = recStats?.total ?? 0;
   const totalSavings = recStats?.totalSavings ?? 0;
 

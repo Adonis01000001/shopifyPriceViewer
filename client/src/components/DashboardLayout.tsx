@@ -35,7 +35,6 @@ import {
   Store,
   X,
   Loader2,
-  AlertTriangle,
   TrendingDown,
   TrendingUp,
   ArrowUpDown,
@@ -44,7 +43,6 @@ import {
   Check,
   Globe,
   Brain,
-  Shield,
   Settings as SettingsIcon,
   Radar,
 } from "lucide-react";
@@ -282,7 +280,6 @@ function DashboardLayoutContent({
   });
 
   const unreadCount = alertStats?.unread ?? 0;
-  const criticalCount = alertStats?.critical ?? 0;
   const notifItems = unreadAlerts ?? [];
 
   // Severity + type config for notification items

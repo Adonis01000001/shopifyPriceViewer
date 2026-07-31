@@ -12,6 +12,7 @@ export default tseslint.config(
       "drizzle/seed.ts",
       "seed_all.ts",
       "client/public/**",
+      "rapport-pfe/**",
     ],
   },
   js.configs.recommended,
@@ -39,6 +40,12 @@ export default tseslint.config(
   },
   {
     files: ["server/**/*.ts"],
+    languageOptions: {
+      globals: globals.node,
+    },
+  },
+  {
+    files: ["scripts/**/*.{js,mjs,cjs}"],
     languageOptions: {
       globals: globals.node,
     },
