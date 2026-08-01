@@ -263,6 +263,9 @@ export const products = pgTable(
     shopifyProductIdIdx: index("products_shopify_product_id_idx").on(
       t.shopifyProductId
     ),
+    storeShopifyProductUniqueIdx: uniqueIndex(
+      "products_store_shopify_product_unique_idx"
+    ).on(t.storeId, t.shopifyProductId),
   })
 );
 

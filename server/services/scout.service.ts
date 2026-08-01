@@ -8,7 +8,10 @@ import {
 import { desc, eq, and } from "drizzle-orm";
 import { logger } from "../_core/logger";
 import { ENV } from "../_core/env";
-import { exaSearchService } from "./exa-search.service";
+import {
+  exaSearchService,
+  type ExaStructuredProduct,
+} from "./exa-search.service";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -341,16 +344,51 @@ function extractTitleFromMarkdown(md: string): string {
   return "";
 }
 
-function toScoutRows(input: {
-  productId: string;
-  userId: string;
-  searchResults: Array<{
+type ScoutSearchResult = {
+  url: string;
+  title: string;
+  snippet?: string;
+  query?: string;
+  position?: number;
+};
+
+/** Merge structured Exa products with raw search results for persistence. */
+export function mergeExaSearchResults(
+  structuredProducts: ExaStructuredProduct[],
+  rawResults: Array<{
     url: string;
     title: string;
     snippet?: string;
-    query?: string;
-    position?: number;
-  }>;
+  }>
+): ScoutSearchResult[] {
+  const resultsByUrl = new Map<string, ScoutSearchResult>();
+
+  structuredProducts
+    .filter(product => isValidFetchUrl(product.sourceUrl))
+    .forEach((product, index) => {
+      resultsByUrl.set(product.sourceUrl, {
+        url: product.sourceUrl,
+        title: product.title,
+        snippet: [product.sourceName, product.price]
+          .filter(Boolean)
+          .join(" · "),
+        position: index + 1,
+      });
+    });
+
+  rawResults.forEach(result => {
+    if (!resultsByUrl.has(result.url)) {
+      resultsByUrl.set(result.url, result);
+    }
+  });
+
+  return Array.from(resultsByUrl.values());
+}
+
+function toScoutRows(input: {
+  productId: string;
+  userId: string;
+  searchResults: ScoutSearchResult[];
   prices: ScoutPrice[];
   defaultQuery: string;
 }): InsertSerpApiScout[] {
@@ -924,12 +962,19 @@ export const scoutService = {
 
     // Step 4: Persist to database
     try {
-      // Build search results from Exa raw results for storage
-      const allSearchResults = await searchExa(baseQuery, maxResults + 5);
+      // Persist both structured products and raw Exa results. Structured
+      // search can succeed even when a follow-up raw search is empty; using
+      // only the raw response would silently discard the products returned by
+      // the structured extraction.
+      const rawSearchResults = await searchExa(baseQuery, maxResults + 5);
+      const persistedSearchResults = mergeExaSearchResults(
+        exaResult.products,
+        rawSearchResults
+      );
       const rows = toScoutRows({
         productId,
         userId,
-        searchResults: allSearchResults,
+        searchResults: persistedSearchResults,
         prices,
         defaultQuery: baseQuery,
       });

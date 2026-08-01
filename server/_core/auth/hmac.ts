@@ -17,6 +17,8 @@ export function verifyShopifyHmac(
     .update(message)
     .digest("hex");
 
+  if (digest.length !== hmac.length) return false;
+
   return crypto.timingSafeEqual(Buffer.from(digest), Buffer.from(hmac));
 }
 

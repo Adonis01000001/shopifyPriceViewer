@@ -66,6 +66,8 @@ async function startServer() {
   app.use("/api/", apiLimiter);
   app.use("/api/shopify/connect", shopifyLimiter);
   app.use("/api/shopify/callback", shopifyLimiter);
+  app.use("/shopify/connect", shopifyLimiter);
+  app.use("/shopify/start", shopifyLimiter);
 
   // Auth rate limiting (brute force protection)
   app.use("/api/trpc/auth.login", authLimiter);

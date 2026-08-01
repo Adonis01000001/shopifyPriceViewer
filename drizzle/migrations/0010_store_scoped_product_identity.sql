@@ -1,0 +1,1 @@
+CREATE UNIQUE INDEX "products_store_shopify_product_unique_idx" ON "products" USING btree ("store_id","shopify_product_id");

@@ -71,6 +71,13 @@
       "when": 1784917547478,
       "tag": "0009_serious_hellfire_club",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1785603739047,
+      "tag": "0010_store_scoped_product_identity",
+      "breakpoints": true
     }
   ]
 }

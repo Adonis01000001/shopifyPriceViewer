@@ -4,7 +4,12 @@ import * as cookie from "cookie";
 import { randomBytes } from "node:crypto";
 import { getSessionCookieOptions } from "./cookies";
 import { ENV } from "./env";
-import { sdk, encryptToken, isValidShopDomain } from "./sdk";
+import {
+  sdk,
+  encryptToken,
+  isValidShopDomain,
+  verifyShopifyHmac,
+} from "./sdk";
 import * as db from "../db";
 import { eq, and } from "drizzle-orm";
 import { shopifyStores, users } from "../../drizzle/schema";
@@ -85,37 +90,31 @@ export function registerOAuthRoutes(app: Express) {
   <div class="card">
     <h1>Connect Your Shopify Store</h1>
     <p>Enter your store domain to connect it to Price Intelligence.</p>
-    <form id="shopify-form">
+    <form id="shopify-form" action="/shopify/start" method="get">
       <label for="shop">Store domain</label>
-      <input type="text" id="shop" placeholder="mystore" autofocus />
+      <input type="text" id="shop" name="shop" placeholder="mystore" autofocus />
       <div class="hint">e.g. mystore.myshopify.com</div>
       <div class="error" id="error-msg">Please enter a valid shop domain</div>
       <button type="submit">Connect Store</button>
     </form>
   </div>
-  <script>
-    document.getElementById('shopify-form').addEventListener('submit', function(e) {
-      e.preventDefault();
-      const shop = document.getElementById('shop').value.trim().toLowerCase();
-      const domain = shop.includes('.myshopify.com') ? shop : shop + '.myshopify.com';
-      if (domain.length < 15 || !/^[a-z0-9][a-z0-9-]*\\.myshopify\\.com$/.test(domain)) {
-        document.getElementById('error-msg').style.display = 'block';
-        return;
-      }
-      window.location.href = '/api/shopify/connect?shop=' + encodeURIComponent(domain);
-    });
-  </script>
 </body>
 </html>`);
   });
 
   /**
-   * GET /api/shopify/connect?shop=mystore.myshopify.com
+   * GET /shopify/connect?shop=mystore.myshopify.com
    *
    * Initiates the Shopify OAuth flow by redirecting to Shopify's
    * permission grant screen. The user must be authenticated (session cookie).
+   * The /api/shopify/connect alias remains for backwards compatibility with
+   * existing clients and integrations.
    */
-  app.get("/api/shopify/connect", async (req: Request, res: Response) => {
+  const handleShopifyConnect = async (
+    req: Request,
+    res: Response,
+    interactive = false
+  ) => {
     const shop = getQueryParam(req, "shop");
 
     if (!shop || !isValidShopDomain(shop)) {
@@ -147,6 +146,22 @@ export function registerOAuthRoutes(app: Express) {
       return;
     }
 
+    const database = await db.getDb();
+    if (!database) {
+      res.status(503).json({ error: "Database unavailable" });
+      return;
+    }
+
+    const [user] = await database
+      .select({ id: users.id })
+      .from(users)
+      .where(eq(users.openId, session.openId))
+      .limit(1);
+    if (!user) {
+      res.status(401).json({ error: "Authenticated user not found" });
+      return;
+    }
+
     // Build the Shopify OAuth URL.
     // SECURITY (S5146): do not interpolate the raw `shop` query param into the
     // redirect target. Extract the validated shop slug and reconstruct the
@@ -171,7 +186,7 @@ export function registerOAuthRoutes(app: Express) {
     // Store state → user mapping in a temporary cookie for callback verification
     res.cookie(
       "shopify_oauth_state",
-      JSON.stringify({ state, userId: session.openId, shop }),
+      JSON.stringify({ state, userId: user.id, shop }),
       {
         httpOnly: true,
         secure: ENV.isProduction,
@@ -180,8 +195,28 @@ export function registerOAuthRoutes(app: Express) {
       }
     );
 
+    if (interactive) {
+      const safeAuthUrl = authUrl.toString().replace(/&/g, "&amp;");
+      res.status(200).send(`<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>Continue to Shopify</title>
+<style>body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;background:#0f0b2e;color:#e0e0e0;display:flex;align-items:center;justify-content:center;min-height:100vh}.card{background:#1a1145;border-radius:12px;padding:40px;width:100%;max-width:420px;box-shadow:0 4px 24px rgba(0,0,0,.3)}h1{font-size:20px;margin-bottom:8px;color:#fff}p{font-size:13px;color:#b0b0cc;margin-bottom:24px}a{display:block;text-align:center;padding:10px;border-radius:8px;background:#818cf8;color:#fff;text-decoration:none;font-size:14px;font-weight:500}a:hover{background:#6d78e8}</style></head>
+<body><div class="card"><h1>Continue to Shopify</h1><p>Authorize Price Intelligence to access your store.</p><a href="${safeAuthUrl}">Continue</a></div></body></html>`);
+      return;
+    }
+
     res.redirect(302, authUrl.toString());
-  });
+  };
+
+  app.get("/shopify/connect", (req, res) =>
+    handleShopifyConnect(req, res, true)
+  );
+  app.get("/shopify/start", (req, res) =>
+    handleShopifyConnect(req, res, true)
+  );
+  app.get("/api/shopify/connect", (req, res) =>
+    handleShopifyConnect(req, res)
+  );
 
   /**
    * GET /api/shopify/callback?shop=mystore.myshopify.com&code=xxx&state=xxx
@@ -201,6 +236,19 @@ export function registerOAuthRoutes(app: Express) {
 
     if (!isValidShopDomain(shop)) {
       res.status(400).json({ error: "Invalid shop domain" });
+      return;
+    }
+
+    const queryParams: Record<string, string> = {};
+    for (const [key, value] of Object.entries(req.query)) {
+      if (typeof value !== "string") {
+        res.status(400).json({ error: "Invalid OAuth query parameters" });
+        return;
+      }
+      queryParams[key] = value;
+    }
+    if (!verifyShopifyHmac(queryParams)) {
+      res.status(400).json({ error: "Invalid Shopify OAuth signature" });
       return;
     }
 
@@ -263,6 +311,10 @@ export function registerOAuthRoutes(app: Express) {
         });
 
         if (existing) {
+          if (existing.userId !== userId) {
+            res.status(403).json({ error: "Shopify store belongs to another user" });
+            return;
+          }
           await database
             .update(shopifyStores)
             .set({
@@ -271,7 +323,12 @@ export function registerOAuthRoutes(app: Express) {
               isActive: true,
               updatedAt: new Date(),
             })
-            .where(eq(shopifyStores.id, existing.id));
+            .where(
+              and(
+                eq(shopifyStores.id, existing.id),
+                eq(shopifyStores.userId, userId)
+              )
+            );
         } else {
           await database.insert(shopifyStores).values({
             userId,
