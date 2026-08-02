@@ -348,6 +348,44 @@ async function persistScoopSearch(
   });
 }
 
+export interface ScoopCatalogImport {
+  sourceName: string;
+  products: ScoopProduct[];
+}
+
+/** Persist an uploaded catalog through the same transaction as live Scoop results. */
+export async function persistScoopCatalogImport(
+  userId: string,
+  input: ScoopCatalogImport
+): Promise<{ competitors: number; products: number }> {
+  const retrievedAt = new Date().toISOString();
+  const plans = buildScoopCatalogPlan(input.products);
+  const products = plans.reduce((total, plan) => total + plan.products.length, 0);
+  const confidenceScore =
+    input.products.reduce((total, product) => total + product.confidenceScore, 0) /
+    input.products.length;
+
+  await persistScoopSearch(userId, {
+    searchQuery: `JSON import: ${input.sourceName}`,
+    summary: `Imported ${products} competitor product listings from ${input.sourceName}.`,
+    productsFound: input.products,
+    confidenceScore: Number(confidenceScore.toFixed(2)),
+    sourcesUsed: [
+      {
+        name: input.sourceName,
+        type: "search_provider",
+        url: null,
+      },
+    ],
+    ranking: "relevance",
+    status: "success",
+    warnings: [],
+    retrievedAt,
+  });
+
+  return { competitors: plans.length, products };
+}
+
 async function persistScoopSearchSafely(
   userId: string,
   result: ScoopResult

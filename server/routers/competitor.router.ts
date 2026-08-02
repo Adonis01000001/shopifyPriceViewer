@@ -5,6 +5,7 @@ import { protectedProcedure, router } from "../_core/trpc";
 import { competitorService } from "../services/competitor.service";
 import { productService } from "../services/product.service";
 import { scrapingService } from "../services/scraping.service";
+import { persistScoopCatalogImport } from "../services/scoop.service";
 import {
   competitorProducts,
   products,
@@ -107,6 +108,43 @@ export const competitorRouter = router({
       }));
       const result = await competitorService.bulkCreate(rows);
       return { imported: result.length };
+    }),
+
+  importCatalog: protectedProcedure
+    .input(
+      z.object({
+        sourceName: z.string().trim().min(1).max(255),
+        products: z
+          .array(
+            z.object({
+              productName: z.string().trim().min(1).max(500),
+              brand: z.string().trim().max(255).nullable(),
+              model: z.string().trim().max(255).nullable(),
+              price: z.string().trim().max(64).nullable(),
+              currency: z.string().trim().max(10).nullable(),
+              rating: z.number().min(0).max(5).nullable(),
+              reviewCount: z.number().int().min(0).nullable(),
+              availability: z.string().trim().max(64).nullable(),
+              seller: z.string().trim().max(255).nullable(),
+              condition: z
+                .enum(["new", "refurbished", "used"])
+                .nullable(),
+              shipping: z.string().trim().max(500).nullable(),
+              productUrl: z.string().url().max(2_000),
+              imageUrl: z.string().url().max(2_000).nullable(),
+              retrievedAt: z.string().datetime(),
+              publishedDate: z.string().max(64).nullable(),
+              confidenceScore: z.number().min(0).max(1),
+              extractionMethod: z.string().trim().min(1).max(64),
+              discoveredBy: z.array(z.string().max(128)).max(20),
+            })
+          )
+          .min(1)
+          .max(2_000),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      return persistScoopCatalogImport(ctx.user!.id, input);
     }),
 
   update: protectedProcedure

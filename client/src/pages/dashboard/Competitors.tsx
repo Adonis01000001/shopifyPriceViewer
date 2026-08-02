@@ -109,6 +109,171 @@ interface ParsedRow {
   rowNumber: number;
 }
 
+interface JsonCatalogProduct {
+  productName: string;
+  brand: string | null;
+  model: string | null;
+  price: string | null;
+  currency: string | null;
+  rating: number | null;
+  reviewCount: number | null;
+  availability: string | null;
+  seller: string | null;
+  condition: "new" | "refurbished" | "used" | null;
+  shipping: string | null;
+  productUrl: string;
+  imageUrl: string | null;
+  retrievedAt: string;
+  publishedDate: string | null;
+  confidenceScore: number;
+  extractionMethod: string;
+  discoveredBy: string[];
+}
+
+interface JsonImportPreview {
+  sourceName: string;
+  products: JsonCatalogProduct[];
+}
+
+type JsonRecord = Record<string, unknown>;
+
+function asJsonRecord(value: unknown): JsonRecord | null {
+  return value !== null && typeof value === "object" && !Array.isArray(value)
+    ? (value as JsonRecord)
+    : null;
+}
+
+function stringFromJson(record: JsonRecord, keys: string[]): string | null {
+  for (const key of keys) {
+    const value = record[key];
+    if (typeof value === "string" || typeof value === "number") {
+      const normalized = String(value).trim();
+      if (normalized) return normalized;
+    }
+  }
+  return null;
+}
+
+function numberFromJson(record: JsonRecord, keys: string[]): number | null {
+  for (const key of keys) {
+    const value = record[key];
+    const number = typeof value === "number" ? value : Number(value);
+    if (Number.isFinite(number)) return number;
+  }
+  return null;
+}
+
+function urlFromJson(record: JsonRecord, keys: string[]): string | null {
+  const value = stringFromJson(record, keys);
+  if (!value) return null;
+  try {
+    return new URL(value).toString();
+  } catch {
+    return null;
+  }
+}
+
+function isoDateFromJson(record: JsonRecord, keys: string[], fallback: string): string {
+  const value = stringFromJson(record, keys);
+  if (!value) return fallback;
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? fallback : parsed.toISOString();
+}
+
+function conditionFromJson(
+  value: string | null
+): JsonCatalogProduct["condition"] {
+  const normalized = value?.toLowerCase() ?? "";
+  if (normalized.includes("refurb")) return "refurbished";
+  if (normalized.includes("used")) return "used";
+  if (normalized.includes("new")) return "new";
+  return null;
+}
+
+function productFromJson(
+  value: unknown,
+  brandOverride: string | null,
+  retrievedAt: string
+): JsonCatalogProduct | null {
+  const record = asJsonRecord(value);
+  if (!record) return null;
+  const productName = stringFromJson(record, ["productName", "title", "name"]);
+  const productUrl = urlFromJson(record, ["productUrl", "url", "link"]);
+  if (!productName || !productUrl) return null;
+
+  const rating = numberFromJson(record, ["rating", "stars"]);
+  const reviewCount = numberFromJson(record, ["reviewCount", "reviews"]);
+  const confidenceScore = numberFromJson(record, ["confidenceScore"]);
+  const discoveredByValue = record.discoveredBy;
+
+  return {
+    productName,
+    brand:
+      brandOverride ?? stringFromJson(record, ["competitorName", "competitor", "brand"]),
+    model: stringFromJson(record, ["model", "modelNumber"]),
+    price: stringFromJson(record, ["price", "currentPrice", "amount"]),
+    currency: stringFromJson(record, ["currency", "priceCurrency"])?.toUpperCase() ?? null,
+    rating: rating !== null && rating >= 0 && rating <= 5 ? rating : null,
+    reviewCount: reviewCount !== null && reviewCount >= 0 ? Math.trunc(reviewCount) : null,
+    availability: stringFromJson(record, ["availability", "stock"]),
+    seller: stringFromJson(record, ["seller", "retailer", "merchant"]),
+    condition: conditionFromJson(stringFromJson(record, ["condition"])),
+    shipping: stringFromJson(record, ["shipping", "shippingInformation"]),
+    productUrl,
+    imageUrl: urlFromJson(record, ["imageUrl", "image", "thumbnail"]),
+    retrievedAt: isoDateFromJson(record, ["retrievedAt", "dateRetrieved"], retrievedAt),
+    publishedDate: stringFromJson(record, ["publishedDate", "datePublished"]),
+    confidenceScore:
+      confidenceScore !== null && confidenceScore >= 0 && confidenceScore <= 1
+        ? confidenceScore
+        : 0.5,
+    extractionMethod: "json-import",
+    discoveredBy:
+      Array.isArray(discoveredByValue) &&
+      discoveredByValue.every(item => typeof item === "string")
+        ? discoveredByValue.map(item => item.trim()).filter(Boolean).slice(0, 20)
+        : ["JSON import"],
+  };
+}
+
+function parseJsonCatalog(value: unknown): JsonCatalogProduct[] {
+  const root = asJsonRecord(value);
+  const rootBrand = root
+    ? stringFromJson(root, ["brand", "competitorName", "competitor"])
+    : null;
+  const entries = Array.isArray(value)
+    ? value
+    : root && Array.isArray(root.competitors)
+      ? root.competitors
+      : root && Array.isArray(root.products)
+        ? root.products
+        : root
+          ? [root]
+          : [];
+  const retrievedAt = new Date().toISOString();
+  const products: JsonCatalogProduct[] = [];
+
+  for (const entry of entries) {
+    const record = asJsonRecord(entry);
+    if (!record) continue;
+    const parentBrand =
+      stringFromJson(record, ["brand", "competitorName", "competitor", "name"]) ??
+      rootBrand;
+    const nestedProducts = record.products;
+    if (Array.isArray(nestedProducts)) {
+      for (const nestedProduct of nestedProducts) {
+        const parsed = productFromJson(nestedProduct, parentBrand, retrievedAt);
+        if (parsed) products.push(parsed);
+      }
+      continue;
+    }
+    const parsed = productFromJson(entry, rootBrand, retrievedAt);
+    if (parsed) products.push(parsed);
+  }
+
+  return products;
+}
+
 // ─── Scrape tab content ──────────────────────────────────────────────────────
 
 function ScrapeTab({
@@ -1154,6 +1319,13 @@ export default function Competitors() {
     imported: number;
     skipped: number;
   } | null>(null);
+  const [jsonImportPreview, setJsonImportPreview] =
+    useState<JsonImportPreview | null>(null);
+  const [jsonImporting, setJsonImporting] = useState(false);
+  const [jsonImportResult, setJsonImportResult] = useState<{
+    competitors: number;
+    products: number;
+  } | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<{
     id: string;
     name: string;
@@ -1168,6 +1340,7 @@ export default function Competitors() {
     domain: string;
   } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const jsonFileInputRef = useRef<HTMLInputElement>(null);
 
   const { data: competitors } = trpc.competitors.list.useQuery();
   const { data: stats } = trpc.competitors.stats.useQuery();
@@ -1204,6 +1377,19 @@ export default function Competitors() {
     },
     onError: err => toast.error(err.message || "Import failed"),
     onSettled: () => setImporting(false),
+  });
+
+  const importCatalogMutation = trpc.competitors.importCatalog.useMutation({
+    onSuccess: result => {
+      utils.competitors.list.invalidate();
+      utils.competitors.stats.invalidate();
+      setJsonImportResult(result);
+      toast.success(
+        `Imported ${result.products} products across ${result.competitors} competitors`
+      );
+    },
+    onError: error => toast.error(error.message || "JSON catalog import failed"),
+    onSettled: () => setJsonImporting(false),
   });
 
   const form = useForm<CompetitorFormData>({
@@ -1320,6 +1506,44 @@ export default function Competitors() {
     });
   };
 
+  const handleJsonFileSelect = async (
+    e: React.ChangeEvent<HTMLInputElement>
+  ) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.size > 900_000) {
+      toast.error("JSON catalog files must be smaller than 900 KB");
+      if (jsonFileInputRef.current) jsonFileInputRef.current.value = "";
+      return;
+    }
+    setJsonImportResult(null);
+    try {
+      const products = parseJsonCatalog(JSON.parse(await file.text()));
+      if (products.length === 0) {
+        toast.error(
+          "No valid products found. Each product needs a name and product URL."
+        );
+        return;
+      }
+      if (products.length > 500) {
+        toast.error("JSON catalog imports are limited to 500 products per file");
+        return;
+      }
+      setJsonImportPreview({ sourceName: file.name, products });
+    } catch {
+      toast.error("Invalid JSON file");
+    } finally {
+      if (jsonFileInputRef.current) jsonFileInputRef.current.value = "";
+    }
+  };
+
+  const handleConfirmJsonImport = () => {
+    if (!jsonImportPreview) return;
+    setJsonImporting(true);
+    setJsonImportResult(null);
+    importCatalogMutation.mutate(jsonImportPreview);
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col gap-1">
@@ -1339,6 +1563,20 @@ export default function Competitors() {
             aria-label="Search competitor brands"
             className="h-9 border-outline-variant bg-surface-container pl-9"
           />
+        </div>
+        <div className="mt-3 flex flex-wrap items-center gap-3">
+          <Button
+            variant="outline"
+            size="sm"
+            className="border-primary/40 text-primary hover:bg-primary/10"
+            onClick={() => jsonFileInputRef.current?.click()}
+          >
+            <Package className="mr-1.5 h-3.5 w-3.5" />
+            Import JSON Catalog
+          </Button>
+          <span className="text-[11px] text-muted-foreground">
+            Upload competitor products and prices
+          </span>
         </div>
       </div>
 
@@ -1712,6 +1950,13 @@ export default function Competitors() {
           <Upload className="mr-1.5 h-3.5 w-3.5" />
           Import CSV
         </Button>
+        <input
+          ref={jsonFileInputRef}
+          type="file"
+          accept=".json,application/json"
+          className="hidden"
+          onChange={handleJsonFileSelect}
+        />
         <Dialog
           open={dialogOpen}
           onOpenChange={o => {
@@ -1881,6 +2126,105 @@ export default function Competitors() {
                       </>
                     ) : (
                       `Import ${importPreview.filter(r => r.valid).length}`
+                    )}
+                  </Button>
+                </DialogFooter>
+              </>
+            )
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* JSON product catalog preview */}
+      <Dialog
+        open={!!jsonImportPreview}
+        onOpenChange={open => {
+          if (!open) {
+            setJsonImportPreview(null);
+            setJsonImportResult(null);
+          }
+        }}
+      >
+        <DialogContent className="sm:max-w-[720px]">
+          <DialogHeader>
+            <DialogTitle>Import competitor product catalog</DialogTitle>
+            <DialogDescription>
+              {jsonImportResult
+                ? "Catalog imported successfully. Scoop and imported products now share the same competitor feed."
+                : `${jsonImportPreview?.products.length ?? 0} valid products found in ${jsonImportPreview?.sourceName ?? "the JSON file"}.`}
+            </DialogDescription>
+          </DialogHeader>
+          {jsonImportResult ? (
+            <div className="py-4">
+              <div className="flex items-center gap-3 rounded border border-primary/20 bg-primary/5 p-4">
+                <CheckCircle2 className="h-8 w-8 text-primary shrink-0" />
+                <div>
+                  <p className="font-medium text-primary">
+                    Imported {jsonImportResult.products} products
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    Updated {jsonImportResult.competitors} competitor brands.
+                  </p>
+                </div>
+              </div>
+            </div>
+          ) : (
+            jsonImportPreview && (
+              <>
+                <p className="text-xs text-muted-foreground">
+                  Accepted formats: a flat product array or an object with
+                  grouped competitors and their products. Products need a name
+                  and product URL; missing values remain empty.
+                </p>
+                <div className="max-h-[360px] overflow-auto rounded border border-outline-variant">
+                  <Table>
+                    <TableHeader>
+                      <TableRow className="label-caps text-muted-foreground">
+                        <TableHead>Product</TableHead>
+                        <TableHead>Competitor</TableHead>
+                        <TableHead className="text-right">Price</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody className="divide-y divide-outline-variant/20">
+                      {jsonImportPreview.products.slice(0, 100).map((product, index) => (
+                        <tr key={`${product.productUrl}-${index}`}>
+                          <td className="max-w-[280px] truncate text-sm font-medium">
+                            {product.productName}
+                          </td>
+                          <td className="text-sm text-muted-foreground">
+                            {product.brand ?? "Detected from source"}
+                          </td>
+                          <td className="text-right font-mono text-sm">
+                            {product.price
+                              ? `${product.currency ? `${product.currency} ` : ""}${product.price}`
+                              : "—"}
+                          </td>
+                        </tr>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+                {jsonImportPreview.products.length > 100 && (
+                  <p className="text-xs text-muted-foreground">
+                    Showing the first 100 products. All valid products will be imported.
+                  </p>
+                )}
+                <DialogFooter className="gap-2">
+                  <Button
+                    variant="outline"
+                    onClick={() => setJsonImportPreview(null)}
+                    disabled={jsonImporting}
+                  >
+                    Cancel
+                  </Button>
+                  <Button onClick={handleConfirmJsonImport} disabled={jsonImporting}>
+                    {jsonImporting ? (
+                      <>
+                        <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
+                        Importing...
+                      </>
+                    ) : (
+                      `Import ${jsonImportPreview.products.length} products`
                     )}
                   </Button>
                 </DialogFooter>
