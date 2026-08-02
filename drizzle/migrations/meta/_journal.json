@@ -92,6 +92,13 @@
       "when": 1785636413854,
       "tag": "0012_scoop_competitor_catalog",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1785704751412,
+      "tag": "0013_repair_scoop_catalog_unique_index",
+      "breakpoints": true
     }
   ]
 }
