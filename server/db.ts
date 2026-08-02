@@ -51,6 +51,13 @@ export async function getDb() {
   return _db;
 }
 
+export type AppDatabase = NonNullable<Awaited<ReturnType<typeof getDb>>>;
+export type AppDatabaseTransaction = Parameters<
+  AppDatabase["transaction"]
+>[0] extends (tx: infer Transaction) => Promise<unknown>
+  ? Transaction
+  : never;
+
 export async function closeDb(): Promise<void> {
   if (_pool) {
     await _pool.end();

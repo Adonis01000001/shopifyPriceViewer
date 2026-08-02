@@ -16,6 +16,9 @@ import {
   activityLogs,
   priceRadarProducts,
   priceRadarSources,
+  scoopCompetitorProducts,
+  scoopSearches,
+  scoopSearchResults,
   type Competitor,
   type InsertCompetitor,
   type CompetitorProduct,
@@ -35,7 +38,7 @@ async function getMergedProductCounts(
 
   const database = await requireDb();
   const competitorIds = competitorRows.map(competitor => competitor.id);
-  const [matchedProducts, radarProducts] = await Promise.all([
+  const [matchedProducts, radarProducts, scoopProducts] = await Promise.all([
     database
       .select({
         competitorId: competitorProducts.competitorId,
@@ -62,6 +65,19 @@ async function getMergedProductCounts(
           eq(priceRadarProducts.isActive, true)
         )
       ),
+    database
+      .select({
+        competitorId: scoopCompetitorProducts.competitorId,
+        productUrl: scoopCompetitorProducts.productUrl,
+      })
+      .from(scoopCompetitorProducts)
+      .where(
+        and(
+          eq(scoopCompetitorProducts.userId, userId),
+          eq(scoopCompetitorProducts.isActive, true),
+          inArray(scoopCompetitorProducts.competitorId, competitorIds)
+        )
+      ),
   ]);
 
   const matchedByCompetitor = new Map<
@@ -74,6 +90,13 @@ async function getMergedProductCounts(
     matchedByCompetitor.set(product.competitorId, rows);
   }
 
+  const scoopUrlsByCompetitor = new Map<string, Set<string>>();
+  for (const product of scoopProducts) {
+    const urls = scoopUrlsByCompetitor.get(product.competitorId) ?? new Set();
+    urls.add(product.productUrl);
+    scoopUrlsByCompetitor.set(product.competitorId, urls);
+  }
+
   for (const competitor of competitorRows) {
     counts.set(
       competitor.id,
@@ -81,7 +104,8 @@ async function getMergedProductCounts(
         competitor,
         matchedByCompetitor.get(competitor.id) ?? [],
         radarProducts
-      )
+      ) +
+        (scoopUrlsByCompetitor.get(competitor.id)?.size ?? 0)
     );
   }
   return counts;
@@ -189,7 +213,7 @@ export const competitorService = {
     const comp = await this.getById(userId, competitorId);
     if (!comp) return [];
     const database = await requireDb();
-    const [matchedProducts, radarProducts] = await Promise.all([
+    const [matchedProducts, radarProducts, scoopProducts] = await Promise.all([
       database
         .select()
         .from(competitorProducts)
@@ -223,6 +247,17 @@ export const competitorService = {
           )
         )
         .orderBy(desc(priceRadarProducts.lastSeenAt)),
+      database
+        .select()
+        .from(scoopCompetitorProducts)
+        .where(
+          and(
+            eq(scoopCompetitorProducts.competitorId, competitorId),
+            eq(scoopCompetitorProducts.userId, userId),
+            eq(scoopCompetitorProducts.isActive, true)
+          )
+        )
+        .orderBy(desc(scoopCompetitorProducts.lastSeenAt)),
     ]);
 
     const radarRows = getVisibleRadarProducts(
@@ -250,13 +285,44 @@ export const competitorService = {
           source: "price-radar" as const,
         }));
 
+    const scoopRows = scoopProducts.map(product => ({
+      id: `scoop:${product.id}`,
+      competitorId,
+      productId: null,
+      competitorProductUrl: product.productUrl,
+      competitorProductTitle: product.productName,
+      competitorSku: null,
+      price: product.price,
+      currency: product.currency ?? "USD",
+      matchScore: product.confidenceScore,
+      matchMethod: "scoop",
+      isVerified: false,
+      isActive: product.isActive,
+      previousPrice: null,
+      lastPriceUpdate: product.lastSeenAt,
+      lastScrapedAt: product.lastSeenAt,
+      createdAt: product.firstSeenAt,
+      updatedAt: product.lastSeenAt,
+      source: "scoop" as const,
+      imageUrl: product.imageUrl,
+      rating: product.rating,
+      reviewCount: product.reviewCount,
+      marketplace: product.marketplace,
+      seller: product.seller,
+      searchTimestamp: product.lastSeenAt,
+    }));
+
     return [
       ...matchedProducts.map(product => ({
         ...product,
         source: "matched" as const,
       })),
       ...radarRows,
-    ];
+      ...scoopRows,
+    ].sort(
+      (left, right) =>
+        new Date(right.updatedAt).getTime() - new Date(left.updatedAt).getTime()
+    );
   },
 
   async addProduct(data: InsertCompetitorProduct): Promise<CompetitorProduct> {
@@ -414,6 +480,54 @@ export const competitorService = {
       .orderBy(desc(activityLogs.createdAt))
       .limit(limit);
 
+    const scoopSearchEntries = await database
+      .select({
+        id: scoopSearches.id,
+        query: scoopSearches.query,
+        status: scoopSearches.status,
+        summary: scoopSearches.summary,
+        retrievedAt: scoopSearches.retrievedAt,
+      })
+      .from(scoopSearches)
+      .innerJoin(
+        scoopSearchResults,
+        eq(scoopSearchResults.searchId, scoopSearches.id)
+      )
+      .where(
+        and(
+          eq(scoopSearches.userId, userId),
+          eq(scoopSearchResults.competitorId, competitorId)
+        )
+      )
+      .orderBy(desc(scoopSearches.retrievedAt))
+      .limit(limit * 5);
+    const scoopSearchHistory = Array.from(
+      new Map(scoopSearchEntries.map(entry => [entry.id, entry])).values()
+    ).slice(0, limit);
+
+    const scoopProductHistory = await database
+      .select({
+        id: scoopSearchResults.id,
+        searchId: scoopSearchResults.searchId,
+        productName: scoopSearchResults.productName,
+        productUrl: scoopSearchResults.productUrl,
+        price: scoopSearchResults.price,
+        currency: scoopSearchResults.currency,
+        rating: scoopSearchResults.rating,
+        reviewCount: scoopSearchResults.reviewCount,
+        marketplace: scoopSearchResults.marketplace,
+        retrievedAt: scoopSearchResults.retrievedAt,
+      })
+      .from(scoopSearchResults)
+      .where(
+        and(
+          eq(scoopSearchResults.userId, userId),
+          eq(scoopSearchResults.competitorId, competitorId)
+        )
+      )
+      .orderBy(desc(scoopSearchResults.retrievedAt))
+      .limit(limit * 5);
+
     // Competitor's matched products with current prices
     const products = await this.getProducts(userId, competitorId);
 
@@ -421,6 +535,8 @@ export const competitorService = {
       priceHistory: priceHistoryEntries,
       scrapeJobs: scrapeEntries,
       activityLog: activityEntries,
+      scoopSearchHistory,
+      scoopProductHistory,
       products,
     };
   },

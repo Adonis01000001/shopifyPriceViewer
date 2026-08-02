@@ -109,6 +109,7 @@ function ScoopPanel() {
   const [maxResults, setMaxResults] = useState(10);
   const [result, setResult] = useState<ScoopResult | null>(null);
   const scoopMutation = trpc.scout.scoopSearch.useMutation();
+  const utils = trpc.useUtils();
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -124,6 +125,12 @@ function ScoopPanel() {
         maxResults,
       });
       setResult(nextResult);
+      if (nextResult.status !== "failed" && nextResult.productsFound.length > 0) {
+        await Promise.all([
+          utils.competitors.list.invalidate(),
+          utils.competitors.stats.invalidate(),
+        ]);
+      }
       if (nextResult.productsFound.length > 0) {
         toast.success(
           `Scoop found ${nextResult.productsFound.length} product listings`

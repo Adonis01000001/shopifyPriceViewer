@@ -311,6 +311,7 @@ export const competitors = pgTable(
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
     name: varchar("name", { length: 255 }).notNull(),
+    normalizedName: varchar("normalized_name", { length: 255 }),
     domain: varchar("domain", { length: 255 }).notNull(),
     logoUrl: text("logo_url"),
     description: text("description"),
@@ -323,6 +324,10 @@ export const competitors = pgTable(
       "100.00"
     ),
     lastScrapedAt: timestamp("last_scraped_at", { withTimezone: true }),
+    scoopSearchCount: integer("scoop_search_count").default(0).notNull(),
+    lastScoopSearchAt: timestamp("last_scoop_search_at", {
+      withTimezone: true,
+    }),
     scrapeStatus: scrapeStatusEnum("scrape_status").default("pending"),
     scrapeError: text("scrape_error"),
     createdAt: timestamp("created_at", { withTimezone: true })
@@ -334,6 +339,10 @@ export const competitors = pgTable(
   },
   t => ({
     userIdIdx: index("competitors_user_id_idx").on(t.userId),
+    normalizedNameIdx: index("competitors_user_normalized_name_idx").on(
+      t.userId,
+      t.normalizedName
+    ),
     domainIdx: index("competitors_domain_idx").on(t.domain),
     statusIdx: index("competitors_status_idx").on(t.status),
   })
@@ -950,6 +959,144 @@ export const serpApiScouts = pgTable(
 
 export type SerpApiScout = typeof serpApiScouts.$inferSelect;
 export type InsertSerpApiScout = typeof serpApiScouts.$inferInsert;
+
+// =============================================================================
+// Scoop search history (autonomous product discovery searches)
+// =============================================================================
+
+export const scoopSearches = pgTable(
+  "scoop_searches",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    query: text("query").notNull(),
+    ranking: varchar("ranking", { length: 32 }).notNull(),
+    summary: text("summary").notNull(),
+    confidenceScore: doublePrecision("confidence_score").default(0).notNull(),
+    status: varchar("status", { length: 16 }).notNull(),
+    warnings: jsonb("warnings").default([]).notNull(),
+    sourcesUsed: jsonb("sources_used").default([]).notNull(),
+    retrievedAt: timestamp("retrieved_at", { withTimezone: true }).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  t => ({
+    userIdIdx: index("scoop_searches_user_id_idx").on(t.userId),
+    createdAtIdx: index("scoop_searches_created_at_idx").on(t.createdAt),
+  })
+);
+
+export const scoopSearchResults = pgTable(
+  "scoop_search_results",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    searchId: uuid("search_id")
+      .notNull()
+      .references(() => scoopSearches.id, { onDelete: "cascade" }),
+    competitorId: uuid("competitor_id").references(() => competitors.id, {
+      onDelete: "set null",
+    }),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    productName: varchar("product_name", { length: 500 }).notNull(),
+    brand: varchar("brand", { length: 255 }),
+    model: varchar("model", { length: 255 }),
+    price: text("price"),
+    currency: varchar("currency", { length: 10 }),
+    rating: doublePrecision("rating"),
+    reviewCount: integer("review_count"),
+    availability: varchar("availability", { length: 64 }),
+    seller: varchar("seller", { length: 255 }),
+    marketplace: varchar("marketplace", { length: 128 }),
+    condition: varchar("condition", { length: 32 }),
+    shipping: text("shipping"),
+    productUrl: text("product_url").notNull(),
+    imageUrl: text("image_url"),
+    retrievedAt: timestamp("retrieved_at", { withTimezone: true }).notNull(),
+    publishedDate: text("published_date"),
+    confidenceScore: doublePrecision("confidence_score").notNull(),
+    extractionMethod: varchar("extraction_method", { length: 64 }).notNull(),
+    discoveredBy: jsonb("discovered_by").default([]).notNull(),
+    position: integer("position").notNull(),
+  },
+  t => ({
+    searchIdIdx: index("scoop_search_results_search_id_idx").on(t.searchId),
+    competitorIdIdx: index("scoop_search_results_competitor_id_idx").on(
+      t.competitorId
+    ),
+    userIdIdx: index("scoop_search_results_user_id_idx").on(t.userId),
+    productUrlIdx: index("scoop_search_results_product_url_idx").on(
+      t.productUrl
+    ),
+  })
+);
+
+export type ScoopSearch = typeof scoopSearches.$inferSelect;
+export type InsertScoopSearch = typeof scoopSearches.$inferInsert;
+export type ScoopSearchResult = typeof scoopSearchResults.$inferSelect;
+export type InsertScoopSearchResult = typeof scoopSearchResults.$inferInsert;
+
+export const scoopCompetitorProducts = pgTable(
+  "scoop_competitor_products",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    competitorId: uuid("competitor_id")
+      .notNull()
+      .references(() => competitors.id, { onDelete: "cascade" }),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    productName: varchar("product_name", { length: 500 }).notNull(),
+    brand: varchar("brand", { length: 255 }),
+    model: varchar("model", { length: 255 }),
+    imageUrl: text("image_url"),
+    price: text("price"),
+    currency: varchar("currency", { length: 10 }),
+    rating: doublePrecision("rating"),
+    reviewCount: integer("review_count"),
+    availability: varchar("availability", { length: 64 }),
+    seller: varchar("seller", { length: 255 }),
+    condition: varchar("condition", { length: 32 }),
+    shipping: text("shipping"),
+    productUrl: text("product_url").notNull(),
+    marketplace: varchar("marketplace", { length: 128 }),
+    firstSeenAt: timestamp("first_seen_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    lastSeenAt: timestamp("last_seen_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    latestSearchId: uuid("latest_search_id").references(
+      () => scoopSearches.id,
+      { onDelete: "set null" }
+    ),
+    confidenceScore: doublePrecision("confidence_score").default(0).notNull(),
+    extractionMethod: varchar("extraction_method", { length: 64 }).notNull(),
+    discoveredBy: jsonb("discovered_by").default([]).notNull(),
+    isActive: boolean("is_active").default(true).notNull(),
+  },
+  t => ({
+    competitorIdIdx: index("scoop_competitor_products_competitor_id_idx").on(
+      t.competitorId
+    ),
+    userIdIdx: index("scoop_competitor_products_user_id_idx").on(t.userId),
+    lastSeenAtIdx: index("scoop_competitor_products_last_seen_at_idx").on(
+      t.lastSeenAt
+    ),
+    competitorProductUrlIdx: uniqueIndex(
+      "scoop_competitor_products_competitor_url_idx"
+    ).on(t.competitorId, t.productUrl),
+  })
+);
+
+export type ScoopCompetitorProduct =
+  typeof scoopCompetitorProducts.$inferSelect;
+export type InsertScoopCompetitorProduct =
+  typeof scoopCompetitorProducts.$inferInsert;
 
 // =============================================================================
 // Price Radar — independent competitor web data collection engine

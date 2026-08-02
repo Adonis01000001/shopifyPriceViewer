@@ -1,7 +1,17 @@
 import { Firecrawl } from "firecrawl";
 import type { Browser, BrowserContext } from "playwright";
+import { and, eq, or, sql } from "drizzle-orm";
+import { requireDb } from "../_core/db-assert";
 import { ENV } from "../_core/env";
 import { logger } from "../_core/logger";
+import type { AppDatabaseTransaction } from "../db";
+import {
+  competitors,
+  scoopSearches,
+  scoopSearchResults,
+  scoopCompetitorProducts,
+  type InsertScoopSearchResult,
+} from "../../drizzle/schema";
 import { exaSearchService } from "./exa-search.service";
 import {
   extractProductData,
@@ -27,6 +37,8 @@ export interface ScoopProduct {
   model: string | null;
   price: string | null;
   currency: string | null;
+  rating: number | null;
+  reviewCount: number | null;
   availability: string | null;
   seller: string | null;
   condition: "new" | "refurbished" | "used" | null;
@@ -56,6 +68,298 @@ export interface ScoopResult {
   status: "success" | "partial" | "failed";
   warnings: string[];
   retrievedAt: string;
+}
+
+export function normalizeScoopBrand(value: string): string {
+  return value.trim().replace(/\s+/g, " ").toLocaleLowerCase("en-US");
+}
+
+function displayBrandForProduct(product: ScoopProduct): string {
+  const explicitBrand = product.brand?.trim();
+  if (explicitBrand) return explicitBrand.replace(/\s+/g, " ");
+  const seller = product.seller?.trim();
+  if (seller) return seller.replace(/\s+/g, " ");
+  return hostname(product.productUrl) || "Unknown competitor";
+}
+
+function marketplaceForProduct(product: ScoopProduct): string | null {
+  return hostname(product.productUrl) || product.seller?.trim() || null;
+}
+
+function catalogProductUrl(productUrl: string): string {
+  return canonicalizeUrl(productUrl) ?? productUrl;
+}
+
+export interface ScoopCatalogPlan {
+  brandName: string;
+  normalizedBrandName: string;
+  products: ScoopProduct[];
+}
+
+/** Group a search response into the competitor brands it can safely identify. */
+export function buildScoopCatalogPlan(
+  products: readonly ScoopProduct[]
+): ScoopCatalogPlan[] {
+  const groups = new Map<string, ScoopCatalogPlan>();
+  for (const product of products) {
+    const brandName = displayBrandForProduct(product);
+    const normalizedBrandName = normalizeScoopBrand(brandName);
+    if (!normalizedBrandName) continue;
+    const group =
+      groups.get(normalizedBrandName) ??
+      {
+        brandName,
+        normalizedBrandName,
+        products: [],
+      };
+    const existingIndex = group.products.findIndex(
+      candidate =>
+        (canonicalizeUrl(candidate.productUrl) ?? candidate.productUrl) ===
+        (canonicalizeUrl(product.productUrl) ?? product.productUrl)
+    );
+    if (existingIndex === -1) {
+      group.products.push(product);
+    } else if (
+      product.confidenceScore > group.products[existingIndex].confidenceScore
+    ) {
+      group.products[existingIndex] = product;
+    }
+    groups.set(normalizedBrandName, group);
+  }
+  return Array.from(groups.values());
+}
+
+/** Convert a Scoop response into tenant-scoped rows for the result table. */
+export function toScoopSearchResultRows(input: {
+  searchId: string;
+  userId: string;
+  products: ScoopProduct[];
+  competitorIds?: ReadonlyMap<string, string>;
+}): InsertScoopSearchResult[] {
+  return input.products.map((product, index) => ({
+    searchId: input.searchId,
+    competitorId:
+      input.competitorIds?.get(product.productUrl) ??
+      input.competitorIds?.get(catalogProductUrl(product.productUrl)) ??
+      null,
+    userId: input.userId,
+    productName: product.productName,
+    brand: product.brand,
+    model: product.model,
+    price: product.price,
+    currency: product.currency,
+    rating: product.rating,
+    reviewCount: product.reviewCount,
+    availability: product.availability,
+    seller: product.seller,
+    marketplace: marketplaceForProduct(product),
+    condition: product.condition,
+    shipping: product.shipping,
+    productUrl: product.productUrl,
+    imageUrl: product.imageUrl,
+    retrievedAt: new Date(product.retrievedAt),
+    publishedDate: product.publishedDate,
+    confidenceScore: product.confidenceScore,
+    extractionMethod: product.extractionMethod,
+    discoveredBy: product.discoveredBy,
+    position: index + 1,
+  }));
+}
+
+type ScoopTransaction = AppDatabaseTransaction;
+
+async function findOrCreateScoopCompetitor(
+  tx: ScoopTransaction,
+  userId: string,
+  plan: ScoopCatalogPlan,
+  retrievedAt: Date
+): Promise<string> {
+  await tx.execute(
+    sql`SELECT pg_advisory_xact_lock(hashtextextended(${`${userId}:${plan.normalizedBrandName}`}, 0))`
+  );
+  const existing = await tx
+    .select({ id: competitors.id, logoUrl: competitors.logoUrl })
+    .from(competitors)
+    .where(
+      and(
+        eq(competitors.userId, userId),
+        or(
+          eq(competitors.normalizedName, plan.normalizedBrandName),
+          sql`lower(trim(${competitors.name})) = ${plan.normalizedBrandName}`
+        )
+      )
+    )
+    .limit(1);
+  const firstProduct = plan.products[0];
+  const domain = hostname(firstProduct.productUrl) || "scoop.local";
+  const logoUrl = plan.products.find(product => product.imageUrl)?.imageUrl ?? null;
+
+  if (existing[0]) {
+    await tx
+      .update(competitors)
+      .set({
+        logoUrl: existing[0].logoUrl ?? logoUrl,
+        normalizedName: plan.normalizedBrandName,
+        scoopSearchCount: sql`${competitors.scoopSearchCount} + 1`,
+        lastScoopSearchAt: retrievedAt,
+        lastScrapedAt: retrievedAt,
+        updatedAt: retrievedAt,
+        scrapeStatus: "success",
+        scrapeError: null,
+      })
+      .where(
+        and(eq(competitors.id, existing[0].id), eq(competitors.userId, userId))
+      );
+    return existing[0].id;
+  }
+
+  const [created] = await tx
+    .insert(competitors)
+    .values({
+      userId,
+      name: plan.brandName,
+      normalizedName: plan.normalizedBrandName,
+      domain,
+      logoUrl,
+      description: "Discovered by Scoop",
+      status: "active",
+      productsTracked: 0,
+      avgPriceDiff: "0.00",
+      priceIndex: "100.00",
+      scoopSearchCount: 1,
+      lastScoopSearchAt: retrievedAt,
+      lastScrapedAt: retrievedAt,
+      scrapeStatus: "success",
+      scrapeError: null,
+      updatedAt: retrievedAt,
+    })
+    .returning({ id: competitors.id });
+  if (!created) throw new Error("Scoop competitor was not created");
+  return created.id;
+}
+
+function catalogProductValues(input: {
+  userId: string;
+  competitorId: string;
+  searchId: string;
+  product: ScoopProduct;
+  retrievedAt: Date;
+}) {
+  const { product } = input;
+  return {
+    userId: input.userId,
+    competitorId: input.competitorId,
+    productName: product.productName,
+    brand: product.brand,
+    model: product.model,
+    imageUrl: product.imageUrl,
+    price: product.price,
+    currency: product.currency,
+    rating: product.rating,
+    reviewCount: product.reviewCount,
+    availability: product.availability,
+    seller: product.seller,
+    condition: product.condition,
+    shipping: product.shipping,
+    productUrl: catalogProductUrl(product.productUrl),
+    marketplace: marketplaceForProduct(product),
+    lastSeenAt: input.retrievedAt,
+    latestSearchId: input.searchId,
+    confidenceScore: product.confidenceScore,
+    extractionMethod: product.extractionMethod,
+    discoveredBy: product.discoveredBy,
+    isActive: true,
+  };
+}
+
+async function persistScoopSearch(
+  userId: string,
+  result: ScoopResult
+): Promise<void> {
+  const database = await requireDb();
+  await database.transaction(async tx => {
+    const retrievedAt = new Date(result.retrievedAt);
+    const [search] = await tx
+      .insert(scoopSearches)
+      .values({
+        userId,
+        query: result.searchQuery,
+        ranking: result.ranking,
+        summary: result.summary,
+        confidenceScore: result.confidenceScore,
+        status: result.status,
+        warnings: result.warnings,
+        sourcesUsed: result.sourcesUsed,
+        retrievedAt,
+      })
+      .returning({ id: scoopSearches.id });
+
+    if (!search) throw new Error("Scoop search was not persisted");
+
+    const plans =
+      result.status === "failed"
+        ? []
+        : buildScoopCatalogPlan(result.productsFound);
+    const competitorIds = new Map<string, string>();
+    for (const plan of plans) {
+      const competitorId = await findOrCreateScoopCompetitor(
+        tx,
+        userId,
+        plan,
+        retrievedAt
+      );
+      for (const product of plan.products) {
+        competitorIds.set(product.productUrl, competitorId);
+        competitorIds.set(catalogProductUrl(product.productUrl), competitorId);
+        await tx
+          .insert(scoopCompetitorProducts)
+          .values(
+            catalogProductValues({
+              userId,
+              competitorId,
+              searchId: search.id,
+              product,
+              retrievedAt,
+            })
+          )
+          .onConflictDoUpdate({
+            target: [
+              scoopCompetitorProducts.competitorId,
+              scoopCompetitorProducts.productUrl,
+            ],
+            set: catalogProductValues({
+              userId,
+              competitorId,
+              searchId: search.id,
+              product,
+              retrievedAt,
+            }),
+          });
+      }
+    }
+
+    const rows = toScoopSearchResultRows({
+      searchId: search.id,
+      userId,
+      products: result.productsFound,
+      competitorIds,
+    });
+    if (rows.length > 0) await tx.insert(scoopSearchResults).values(rows);
+  });
+}
+
+async function persistScoopSearchSafely(
+  userId: string,
+  result: ScoopResult
+): Promise<void> {
+  try {
+    await persistScoopSearch(userId, result);
+  } catch (error) {
+    logger.warn(
+      { userId, query: result.searchQuery, error },
+      "Scoop search result persistence failed"
+    );
+  }
 }
 
 interface StructuredCandidate {
@@ -671,6 +975,8 @@ function toScoopProduct(
     model: details.model,
     price: extracted.price,
     currency: extracted.currency,
+    rating: extracted.rating,
+    reviewCount: extracted.reviewCount,
     availability: availabilityValue(extracted),
     seller: extracted.seller ?? hostname(extracted.productUrl),
     condition: details.condition,
@@ -702,6 +1008,8 @@ function fromStructuredCandidate(
     model: null,
     price,
     currency: candidate.structured.currency?.toUpperCase() || null,
+    rating: null,
+    reviewCount: null,
     availability: null,
     seller: candidate.structured.seller || hostname(candidate.url),
     condition: null,
@@ -982,7 +1290,7 @@ export const scoopService = {
         { userId: input.userId, query: input.query },
         "Scoop search returned no candidates"
       );
-      return {
+      const result: ScoopResult = {
         searchQuery: input.query,
         summary: "No verified product listings found.",
         productsFound: [],
@@ -993,6 +1301,8 @@ export const scoopService = {
         warnings,
         retrievedAt,
       };
+      await persistScoopSearchSafely(input.userId, result);
+      return result;
     }
 
     const browser = new ScoopBrowser();
@@ -1068,7 +1378,7 @@ export const scoopService = {
       },
       "Scoop search completed"
     );
-    return {
+    const result: ScoopResult = {
       searchQuery: input.query,
       summary: buildScoopSummary(productsFound),
       productsFound,
@@ -1079,5 +1389,7 @@ export const scoopService = {
       warnings: warnings.slice(0, 20),
       retrievedAt,
     };
+    await persistScoopSearchSafely(input.userId, result);
+    return result;
   },
 };

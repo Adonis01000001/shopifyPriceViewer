@@ -78,6 +78,20 @@
       "when": 1785603739047,
       "tag": "0010_store_scoped_product_identity",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1785626720422,
+      "tag": "0011_scoop_search_history",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1785636413854,
+      "tag": "0012_scoop_competitor_catalog",
+      "breakpoints": true
     }
   ]
 }

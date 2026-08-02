@@ -637,6 +637,8 @@ function CompetitorFeed({
   const priceHistory = feed?.priceHistory ?? [];
   const scrapeJobs = feed?.scrapeJobs ?? [];
   const activityLog = feed?.activityLog ?? [];
+  const scoopSearchHistory = feed?.scoopSearchHistory ?? [];
+  const scoopProductHistory = feed?.scoopProductHistory ?? [];
   const products = feed?.products ?? [];
 
   // Price change detection
@@ -753,9 +755,49 @@ function CompetitorFeed({
         ),
       });
     }
+    for (const search of scoopSearchHistory) {
+      items.push({
+        type: "scoop",
+        date: new Date(search.retrievedAt),
+        content: (
+          <div className="flex items-start gap-2">
+            <Search className="h-3.5 w-3.5 text-primary mt-0.5 shrink-0" />
+            <div>
+              <span className="text-[11px] text-muted-foreground">
+                Scoop search · {search.status}
+              </span>
+              <p className="text-[12px] truncate">{search.query}</p>
+            </div>
+          </div>
+        ),
+      });
+    }
+    for (const product of scoopProductHistory) {
+      items.push({
+        type: "scoop-product",
+        date: new Date(product.retrievedAt),
+        content: (
+          <div className="flex items-start gap-2">
+            <Package className="h-3.5 w-3.5 text-muted-foreground mt-0.5 shrink-0" />
+            <div className="min-w-0">
+              <span className="text-[11px] text-muted-foreground">
+                Scoop product snapshot
+              </span>
+              <p className="text-[12px] truncate">{product.productName}</p>
+              <p className="text-[10px] text-muted-foreground">
+                {product.price
+                  ? `${product.currency ?? "USD"} ${product.price}`
+                  : "Price unavailable"}
+                {product.marketplace ? ` · ${product.marketplace}` : ""}
+              </p>
+            </div>
+          </div>
+        ),
+      });
+    }
     items.sort((a, b) => b.date.getTime() - a.date.getTime());
     return items;
-  }, [priceHistory, scrapeJobs, activityLog]);
+  }, [priceHistory, scrapeJobs, activityLog, scoopSearchHistory, scoopProductHistory]);
 
   const [removeTarget, setRemoveTarget] = useState<string | null>(null);
 
@@ -843,6 +885,15 @@ function CompetitorFeed({
               {products.map(cp => {
                 const change = priceChanges[cp.id];
                 const isRadarProduct = cp.source === "price-radar";
+                const isScoopProduct = cp.source === "scoop";
+                const isReadOnlyProduct = isRadarProduct || isScoopProduct;
+                const scoopInfo = cp as {
+                  imageUrl?: string | null;
+                  rating?: number | null;
+                  reviewCount?: number | null;
+                  marketplace?: string | null;
+                  seller?: string | null;
+                };
                 return (
                   <div
                     key={cp.id}
@@ -856,10 +907,32 @@ function CompetitorFeed({
                     )}
                   >
                     <div className="flex justify-between items-start">
-                      <p className="text-[11px] font-medium truncate flex-1 mr-2">
-                        {cp.competitorProductTitle || "Untitled"}
-                      </p>
-                      {!isRadarProduct && (
+                      <div className="flex min-w-0 flex-1 items-start gap-2 mr-2">
+                        {scoopInfo.imageUrl && (
+                          <img
+                            src={scoopInfo.imageUrl}
+                            alt=""
+                            className="h-8 w-8 shrink-0 rounded object-contain bg-surface-container"
+                          />
+                        )}
+                        <div className="min-w-0">
+                          <p className="text-[11px] font-medium truncate">
+                            {cp.competitorProductTitle || "Untitled"}
+                          </p>
+                          {isScoopProduct && (
+                            <p className="mt-0.5 text-[9px] text-muted-foreground">
+                              {scoopInfo.marketplace ?? scoopInfo.seller ?? "Scoop"}
+                              {scoopInfo.rating != null
+                                ? ` · ${scoopInfo.rating.toFixed(1)}★`
+                                : ""}
+                              {scoopInfo.reviewCount != null
+                                ? ` · ${scoopInfo.reviewCount.toLocaleString()} reviews`
+                                : ""}
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                      {!isReadOnlyProduct && (
                         <button
                           className="text-muted-foreground/40 hover:text-[#ffb4ab] transition-colors shrink-0"
                           onClick={() => setRemoveTarget(cp.id)}
@@ -928,12 +1001,12 @@ function CompetitorFeed({
                             {change === "down" && (
                               <TrendingDown className="h-2.5 w-2.5 text-primary" />
                             )}
-                            {!isRadarProduct && (
+                            {!isReadOnlyProduct && (
                               <button
                                 className="text-muted-foreground/40 hover:text-primary transition-colors ml-0.5"
                                 onClick={() => {
                                   setEditingPrice(cp.id);
-                                  setEditValue(cp.price);
+                                  setEditValue(cp.price ?? "");
                                 }}
                                 title="Edit price"
                               >
@@ -946,7 +1019,9 @@ function CompetitorFeed({
                       <span className="text-[9px] label-caps text-muted-foreground">
                         {isRadarProduct
                           ? "PRICE RADAR"
-                          : `${Math.round((cp.matchScore ?? 0) * 100)}% match`}
+                          : isScoopProduct
+                            ? "SCOOP"
+                            : `${Math.round((cp.matchScore ?? 0) * 100)}% match`}
                       </span>
                     </div>
                     {cp.competitorProductUrl && (
@@ -1071,6 +1146,7 @@ function CompetitorFeed({
 // ─── Main Competitors Page ───────────────────────────────────────────────────
 
 export default function Competitors() {
+  const [competitorQuery, setCompetitorQuery] = useState("");
   const [dialogOpen, setDialogOpen] = useState(false);
   const [importPreview, setImportPreview] = useState<ParsedRow[] | null>(null);
   const [importing, setImporting] = useState(false);
@@ -1135,6 +1211,13 @@ export default function Competitors() {
     defaultValues: { name: "", domain: "", description: "", logoUrl: "" },
   });
   const allCompetitors = competitors ?? [];
+  const visibleCompetitors = useMemo(() => {
+    const query = competitorQuery.trim().toLocaleLowerCase();
+    if (!query) return allCompetitors;
+    return allCompetitors.filter(competitor =>
+      competitor.name.toLocaleLowerCase().includes(query)
+    );
+  }, [allCompetitors, competitorQuery]);
 
   const chartData = useMemo(
     () =>
@@ -1247,12 +1330,22 @@ export default function Competitors() {
           Real-time intelligence across {allCompetitors.length} tracked
           competitors.
         </p>
+        <div className="relative mt-3 max-w-sm">
+          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            value={competitorQuery}
+            onChange={event => setCompetitorQuery(event.target.value)}
+            placeholder="Search competitor brands..."
+            aria-label="Search competitor brands"
+            className="h-9 border-outline-variant bg-surface-container pl-9"
+          />
+        </div>
       </div>
 
       {/* Bento Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        {allCompetitors.length > 0 ? (
-          allCompetitors.slice(0, 4).map((comp, i) => (
+        {visibleCompetitors.length > 0 ? (
+          visibleCompetitors.map((comp, i) => (
             <div
               key={comp.id}
               className={cn(
@@ -1262,10 +1355,18 @@ export default function Competitors() {
             >
               <div className="flex justify-between items-start mb-4">
                 <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 bg-surface-container-highest rounded flex items-center justify-center border border-outline-variant">
-                    <span className="label-caps text-muted-foreground">
-                      {comp.name.charAt(0)}
-                    </span>
+                  <div className="flex h-10 w-10 items-center justify-center overflow-hidden rounded bg-surface-container-highest border border-outline-variant">
+                    {comp.logoUrl ? (
+                      <img
+                        src={comp.logoUrl}
+                        alt={`${comp.name} logo`}
+                        className="h-full w-full object-contain"
+                      />
+                    ) : (
+                      <span className="label-caps text-muted-foreground">
+                        {comp.name.charAt(0)}
+                      </span>
+                    )}
                   </div>
                   <div>
                     <h3 className="text-[14px] font-semibold">{comp.name}</h3>
@@ -1321,7 +1422,19 @@ export default function Competitors() {
                 </div>
               )}
               <div className="flex justify-between items-center text-[11px] text-muted-foreground pt-3 border-t border-outline-variant/30">
-                <span>Products: {comp.productsTracked}</span>
+                <div className="flex flex-col gap-0.5">
+                  <span>Products: {comp.productsTracked}</span>
+                  <span className="text-[9px] text-muted-foreground">
+                    Scoop searches: {comp.scoopSearchCount ?? 0}
+                  </span>
+                  <span className="text-[9px] text-muted-foreground">
+                    Updated: {comp.lastScoopSearchAt
+                      ? new Date(comp.lastScoopSearchAt).toLocaleDateString()
+                      : comp.lastScrapedAt
+                        ? new Date(comp.lastScrapedAt).toLocaleDateString()
+                        : "Never"}
+                  </span>
+                </div>
                 <div className="flex items-center gap-1.5">
                   <button
                     className="text-primary label-caps hover:underline flex items-center gap-1"
@@ -1362,10 +1475,15 @@ export default function Competitors() {
             <Empty>
               <EmptyMedia variant="icon"><Globe className="h-6 w-6" /></EmptyMedia>
               <EmptyHeader>
-                <EmptyTitle>No competitors yet</EmptyTitle>
+                <EmptyTitle>
+                  {allCompetitors.length > 0
+                    ? "No competitors match your search"
+                    : "No competitors yet"}
+                </EmptyTitle>
                 <EmptyDescription>
-                  Add your first competitor to start comparing prices and
-                  discovering market insights.
+                  {allCompetitors.length > 0
+                    ? "Try a different brand name."
+                    : "Add your first competitor to start comparing prices and discovering market insights."}
                 </EmptyDescription>
               </EmptyHeader>
               <EmptyContent>
@@ -1434,7 +1552,7 @@ export default function Competitors() {
                 </TableRow>
               </TableHeader>
               <TableBody className="divide-y divide-outline-variant/20">
-                {allCompetitors.map(comp => {
+                {visibleCompetitors.map(comp => {
                   const s = statusConfig[comp.status] ?? statusConfig.active;
                   return (
                     <TableRow
@@ -1443,8 +1561,16 @@ export default function Competitors() {
                     >
                       <TableCell className="px-5 py-3">
                         <div className="flex items-center gap-3">
-                          <div className="w-8 h-8 rounded bg-surface-container-highest border border-outline-variant flex items-center justify-center text-xs font-bold text-muted-foreground">
-                            {comp.name.charAt(0)}
+                          <div className="flex h-8 w-8 items-center justify-center overflow-hidden rounded bg-surface-container-highest border border-outline-variant text-xs font-bold text-muted-foreground">
+                            {comp.logoUrl ? (
+                              <img
+                                src={comp.logoUrl}
+                                alt={`${comp.name} logo`}
+                                className="h-full w-full object-contain"
+                              />
+                            ) : (
+                              comp.name.charAt(0)
+                            )}
                           </div>
                           <div>
                             <p className="text-[13px] font-medium">
@@ -1502,8 +1628,10 @@ export default function Competitors() {
                         </span>
                       </TableCell>
                       <TableCell className="px-5 py-3 text-[11px] text-muted-foreground text-right">
-                        {comp.lastScrapedAt
-                          ? new Date(comp.lastScrapedAt).toLocaleString(
+                        {(comp.lastScoopSearchAt ?? comp.lastScrapedAt)
+                          ? new Date(
+                              comp.lastScoopSearchAt ?? comp.lastScrapedAt!
+                            ).toLocaleString(
                               "en-US",
                               {
                                 month: "short",
