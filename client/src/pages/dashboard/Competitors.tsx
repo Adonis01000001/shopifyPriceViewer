@@ -34,6 +34,7 @@ import { Empty, EmptyHeader, EmptyTitle, EmptyDescription, EmptyMedia, EmptyCont
 import {
   AlertCircle,
   ArrowRight,
+  ArrowRightLeft,
   CheckCircle2,
   Globe,
   Plus,
@@ -163,11 +164,15 @@ function numberFromJson(record: JsonRecord, keys: string[]): number | null {
   return null;
 }
 
-function urlFromJson(record: JsonRecord, keys: string[]): string | null {
+function urlFromJson(
+  record: JsonRecord,
+  keys: string[],
+  baseUrl?: string
+): string | null {
   const value = stringFromJson(record, keys);
   if (!value) return null;
   try {
-    return new URL(value).toString();
+    return new URL(value, baseUrl).toString();
   } catch {
     return null;
   }
@@ -220,7 +225,11 @@ function productFromJson(
     condition: conditionFromJson(stringFromJson(record, ["condition"])),
     shipping: stringFromJson(record, ["shipping", "shippingInformation"]),
     productUrl,
-    imageUrl: urlFromJson(record, ["imageUrl", "image", "thumbnail"]),
+    imageUrl: urlFromJson(
+      record,
+      ["imageUrl", "image", "thumbnail"],
+      productUrl
+    ),
     retrievedAt: isoDateFromJson(record, ["retrievedAt", "dateRetrieved"], retrievedAt),
     publishedDate: stringFromJson(record, ["publishedDate", "datePublished"]),
     confidenceScore:
@@ -245,6 +254,8 @@ function parseJsonCatalog(value: unknown): JsonCatalogProduct[] {
     ? value
     : root && Array.isArray(root.competitors)
       ? root.competitors
+      : root && Array.isArray(root.productsFound)
+        ? root.productsFound
       : root && Array.isArray(root.products)
         ? root.products
         : root
@@ -764,10 +775,12 @@ function AddProductDialog({
 function CompetitorFeed({
   competitorId,
   competitorName,
+  availableCompetitors,
   onClose,
 }: {
   competitorId: string;
   competitorName: string;
+  availableCompetitors: Array<{ id: string; name: string }>;
   onClose: () => void;
 }) {
   const {
@@ -790,6 +803,11 @@ function CompetitorFeed({
 
   const [editingPrice, setEditingPrice] = useState<string | null>(null);
   const [editValue, setEditValue] = useState("");
+  const [moveTarget, setMoveTarget] = useState<{
+    id: string;
+    title: string;
+  } | null>(null);
+  const [moveDestinationId, setMoveDestinationId] = useState("");
   const updatePriceMutation = trpc.competitors.updateProductPrice.useMutation({
     onSuccess: (data, vars) => {
       utils.competitors.feed.invalidate();
@@ -798,6 +816,21 @@ function CompetitorFeed({
     },
     onError: err => toast.error(err.message || "Failed to update price"),
   });
+  const moveScoopProductMutation = trpc.competitors.moveScoopProduct.useMutation({
+    onSuccess: result => {
+      utils.competitors.feed.invalidate();
+      utils.competitors.list.invalidate();
+      utils.competitors.stats.invalidate();
+      setMoveTarget(null);
+      setMoveDestinationId("");
+      toast.success(
+        result.merged
+          ? "Product moved and merged with the existing listing"
+          : "Product moved to the competitor"
+      );
+    },
+    onError: err => toast.error(err.message || "Failed to move product"),
+  });
 
   const priceHistory = feed?.priceHistory ?? [];
   const scrapeJobs = feed?.scrapeJobs ?? [];
@@ -805,6 +838,9 @@ function CompetitorFeed({
   const scoopSearchHistory = feed?.scoopSearchHistory ?? [];
   const scoopProductHistory = feed?.scoopProductHistory ?? [];
   const products = feed?.products ?? [];
+  const otherCompetitors = availableCompetitors.filter(
+    competitor => competitor.id !== competitorId
+  );
 
   // Price change detection
   const prevPricesRef = useRef<Record<string, string>>({});
@@ -1052,6 +1088,9 @@ function CompetitorFeed({
                 const isRadarProduct = cp.source === "price-radar";
                 const isScoopProduct = cp.source === "scoop";
                 const isReadOnlyProduct = isRadarProduct || isScoopProduct;
+                const scoopProductId = isScoopProduct && cp.id.startsWith("scoop:")
+                  ? cp.id.slice("scoop:".length)
+                  : null;
                 const scoopInfo = cp as {
                   imageUrl?: string | null;
                   rating?: number | null;
@@ -1097,15 +1136,38 @@ function CompetitorFeed({
                           )}
                         </div>
                       </div>
-                      {!isReadOnlyProduct && (
-                        <button
-                          className="text-muted-foreground/40 hover:text-[#ffb4ab] transition-colors shrink-0"
-                          onClick={() => setRemoveTarget(cp.id)}
-                          title="Remove"
-                        >
-                          <Trash2 className="h-3 w-3" />
-                        </button>
-                      )}
+                      <div className="flex items-center gap-1 shrink-0">
+                        {isScoopProduct && scoopProductId && (
+                          <button
+                            className="text-muted-foreground/50 hover:text-primary transition-colors disabled:cursor-not-allowed disabled:opacity-30"
+                            onClick={() => {
+                              setMoveTarget({
+                                id: scoopProductId,
+                                title: cp.competitorProductTitle || "this product",
+                              });
+                              setMoveDestinationId(otherCompetitors[0]?.id ?? "");
+                            }}
+                            disabled={otherCompetitors.length === 0}
+                            title={
+                              otherCompetitors.length === 0
+                                ? "Add another competitor before moving"
+                                : "Move to another competitor"
+                            }
+                            aria-label={`Move ${cp.competitorProductTitle || "product"} to another competitor`}
+                          >
+                            <ArrowRightLeft className="h-3 w-3" />
+                          </button>
+                        )}
+                        {!isReadOnlyProduct && (
+                          <button
+                            className="text-muted-foreground/40 hover:text-[#ffb4ab] transition-colors"
+                            onClick={() => setRemoveTarget(cp.id)}
+                            title="Remove"
+                          >
+                            <Trash2 className="h-3 w-3" />
+                          </button>
+                        )}
+                      </div>
                     </div>
                     <div className="flex justify-between items-center mt-1.5">
                       <div className="flex items-center gap-1">
@@ -1304,6 +1366,69 @@ function CompetitorFeed({
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      <Dialog
+        open={!!moveTarget}
+        onOpenChange={open => {
+          if (!open && !moveScoopProductMutation.isPending) {
+            setMoveTarget(null);
+            setMoveDestinationId("");
+          }
+        }}
+      >
+        <DialogContent className="sm:max-w-[460px]">
+          <DialogHeader>
+            <DialogTitle>Move Scoop product</DialogTitle>
+            <DialogDescription>
+              Move <strong>{moveTarget?.title}</strong> to another competitor.
+              Product history and the latest price will stay attached to it.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2 py-2">
+            <Label htmlFor="move-scoop-destination">Destination competitor</Label>
+            <select
+              id="move-scoop-destination"
+              value={moveDestinationId}
+              onChange={event => setMoveDestinationId(event.target.value)}
+              className="h-10 w-full rounded-md border border-outline-variant bg-surface-container-lowest px-3 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/40"
+              disabled={moveScoopProductMutation.isPending}
+            >
+              <option value="">Select a competitor</option>
+              {otherCompetitors.map(competitor => (
+                <option key={competitor.id} value={competitor.id}>
+                  {competitor.name}
+                </option>
+              ))}
+            </select>
+          </div>
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => {
+                setMoveTarget(null);
+                setMoveDestinationId("");
+              }}
+              disabled={moveScoopProductMutation.isPending}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              onClick={() => {
+                if (!moveTarget || !moveDestinationId) return;
+                moveScoopProductMutation.mutate({
+                  scoopProductId: moveTarget.id,
+                  targetCompetitorId: moveDestinationId,
+                });
+              }}
+              disabled={!moveDestinationId || moveScoopProductMutation.isPending}
+            >
+              {moveScoopProductMutation.isPending ? "Moving..." : "Move product"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
@@ -1744,6 +1869,7 @@ export default function Competitors() {
         <CompetitorFeed
           competitorId={feedCompetitor.id}
           competitorName={feedCompetitor.name}
+          availableCompetitors={allCompetitors}
           onClose={() => setFeedCompetitor(null)}
         />
       )}
@@ -2180,6 +2306,7 @@ export default function Competitors() {
                   <Table>
                     <TableHeader>
                       <TableRow className="label-caps text-muted-foreground">
+                        <TableHead className="w-12">Image</TableHead>
                         <TableHead>Product</TableHead>
                         <TableHead>Competitor</TableHead>
                         <TableHead className="text-right">Price</TableHead>
@@ -2188,6 +2315,18 @@ export default function Competitors() {
                     <TableBody className="divide-y divide-outline-variant/20">
                       {jsonImportPreview.products.slice(0, 100).map((product, index) => (
                         <tr key={`${product.productUrl}-${index}`}>
+                          <td className="w-12">
+                            {product.imageUrl ? (
+                              <img
+                                src={product.imageUrl}
+                                alt=""
+                                loading="lazy"
+                                className="h-8 w-8 rounded object-contain bg-surface-container"
+                              />
+                            ) : (
+                              <span className="text-xs text-muted-foreground">—</span>
+                            )}
+                          </td>
                           <td className="max-w-[280px] truncate text-sm font-medium">
                             {product.productName}
                           </td>

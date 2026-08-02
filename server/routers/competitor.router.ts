@@ -173,7 +173,28 @@ export const competitorRouter = router({
     .input(z.object({ id: z.string().uuid() }))
     .mutation(async ({ ctx, input }) => {
       await competitorService.delete(ctx.user!.id, input.id);
-      return { success: true };
+       return { success: true };
+     }),
+
+  moveScoopProduct: protectedProcedure
+    .input(
+      z.object({
+        scoopProductId: z.string().uuid(),
+        targetCompetitorId: z.string().uuid(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const moved = await competitorService.moveScoopProduct(
+        ctx.user!.id,
+        input.scoopProductId,
+        input.targetCompetitorId
+      );
+      if (!moved)
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "Scoop product or target competitor not found",
+        });
+      return moved;
     }),
 
   feed: protectedProcedure

@@ -4,6 +4,7 @@ import { trpc } from "@/lib/trpc";
 import {
   Bot,
   Copy,
+  Download,
   Globe,
   Search,
   TrendingDown,
@@ -155,6 +156,27 @@ function ScoopPanel() {
     }
   };
 
+  const downloadJson = () => {
+    if (!result || result.productsFound.length === 0) return;
+    const payload = JSON.stringify(result, null, 2);
+    const blob = new Blob([payload], { type: "application/json;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    const safeQuery = result.searchQuery
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "")
+      .slice(0, 60);
+    const date = new Date(result.retrievedAt).toISOString().slice(0, 10);
+    link.href = url;
+    link.download = `scoop-${safeQuery || "products"}-${date}.json`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    window.setTimeout(() => URL.revokeObjectURL(url), 0);
+    toast.success("Scoop JSON downloaded");
+  };
+
   const statusClass =
     result?.status === "success"
       ? "border-[#21a732]/30 bg-[#21a732]/10 text-[#21a732]"
@@ -168,25 +190,44 @@ function ScoopPanel() {
       aria-labelledby="scoop-heading"
     >
       <div className="p-5 border-b border-white/[0.04] bg-gradient-to-r from-primary/10 via-surface-container/70 to-transparent">
-        <div className="flex items-start gap-3">
-          <div className="h-10 w-10 rounded-lg bg-primary/15 border border-primary/25 flex items-center justify-center shrink-0">
-            <Bot className="h-5 w-5 text-primary" />
-          </div>
-          <div>
-            <div className="flex items-center gap-2">
-              <h3 id="scoop-heading" className="text-[16px] font-bold">
-                Scoop
-              </h3>
-              <span className="label-caps text-[9px] px-2 py-0.5 rounded-full border border-primary/25 text-primary bg-primary/10">
-                Autonomous discovery
-              </span>
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+          <div className="flex items-start gap-3">
+            <div className="h-10 w-10 rounded-lg bg-primary/15 border border-primary/25 flex items-center justify-center shrink-0">
+              <Bot className="h-5 w-5 text-primary" />
             </div>
-            <p className="text-[12px] text-muted-foreground mt-1">
-              Describe any product. Scoop searches multiple providers, verifies
-              public product pages, removes duplicates, and returns grounded
-              structured data.
-            </p>
+            <div>
+              <div className="flex items-center gap-2">
+                <h3 id="scoop-heading" className="text-[16px] font-bold">
+                  Scoop
+                </h3>
+                <span className="label-caps text-[9px] px-2 py-0.5 rounded-full border border-primary/25 text-primary bg-primary/10">
+                  Autonomous discovery
+                </span>
+              </div>
+              <p className="text-[12px] text-muted-foreground mt-1">
+                Describe any product. Scoop searches multiple providers, verifies
+                public product pages, removes duplicates, and returns grounded
+                structured data.
+              </p>
+            </div>
           </div>
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            className="h-8 shrink-0 self-start border-outline-variant text-[10px]"
+            onClick={downloadJson}
+            disabled={!result || result.productsFound.length === 0}
+            title={
+              result?.productsFound.length
+                ? "Download the latest Scoop result as JSON"
+                : "Run a Scoop search with products to enable download"
+            }
+            aria-label="Download latest Scoop result as JSON"
+          >
+            <Download className="h-3 w-3 mr-1.5" />
+            Download JSON
+          </Button>
         </div>
 
         <form

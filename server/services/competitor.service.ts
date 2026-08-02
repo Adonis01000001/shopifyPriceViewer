@@ -404,6 +404,148 @@ export const competitorService = {
     return result[0];
   },
 
+  async moveScoopProduct(
+    userId: string,
+    scoopProductId: string,
+    targetCompetitorId: string
+  ): Promise<
+    | {
+        productId: string;
+        productName: string;
+        targetCompetitorId: string;
+        merged: boolean;
+      }
+    | undefined
+  > {
+    const database = await requireDb();
+    return database.transaction(async tx => {
+      const [source] = await tx
+        .select()
+        .from(scoopCompetitorProducts)
+        .where(
+          and(
+            eq(scoopCompetitorProducts.id, scoopProductId),
+            eq(scoopCompetitorProducts.userId, userId)
+          )
+        )
+        .limit(1);
+      if (!source) return undefined;
+
+      const [target] = await tx
+        .select({ id: competitors.id, name: competitors.name })
+        .from(competitors)
+        .where(
+          and(
+            eq(competitors.id, targetCompetitorId),
+            eq(competitors.userId, userId)
+          )
+        )
+        .limit(1);
+      if (!target) return undefined;
+
+      if (source.competitorId === target.id) {
+        return {
+          productId: source.id,
+          productName: source.productName,
+          targetCompetitorId: target.id,
+          merged: false,
+        };
+      }
+
+      const [existing] = await tx
+        .select()
+        .from(scoopCompetitorProducts)
+        .where(
+          and(
+            eq(scoopCompetitorProducts.competitorId, target.id),
+            eq(scoopCompetitorProducts.userId, userId),
+            eq(scoopCompetitorProducts.productUrl, source.productUrl)
+          )
+        )
+        .limit(1);
+
+      if (existing) {
+        const sourceIsNewer = source.lastSeenAt >= existing.lastSeenAt;
+        const latest = sourceIsNewer ? source : existing;
+        const firstSeenAt =
+          source.firstSeenAt < existing.firstSeenAt
+            ? source.firstSeenAt
+            : existing.firstSeenAt;
+
+        await tx
+          .update(scoopCompetitorProducts)
+          .set({
+            productName: latest.productName,
+            brand: latest.brand,
+            model: latest.model,
+            imageUrl: latest.imageUrl,
+            price: latest.price,
+            currency: latest.currency,
+            rating: latest.rating,
+            reviewCount: latest.reviewCount,
+            availability: latest.availability,
+            seller: latest.seller,
+            condition: latest.condition,
+            shipping: latest.shipping,
+            marketplace: latest.marketplace,
+            firstSeenAt,
+            lastSeenAt: latest.lastSeenAt,
+            latestSearchId: latest.latestSearchId,
+            confidenceScore: latest.confidenceScore,
+            extractionMethod: latest.extractionMethod,
+            discoveredBy: latest.discoveredBy,
+            isActive: latest.isActive,
+          })
+          .where(eq(scoopCompetitorProducts.id, existing.id));
+        await tx
+          .delete(scoopCompetitorProducts)
+          .where(eq(scoopCompetitorProducts.id, source.id));
+      } else {
+        await tx
+          .update(scoopCompetitorProducts)
+          .set({ competitorId: target.id })
+          .where(eq(scoopCompetitorProducts.id, source.id));
+      }
+
+      // Keep historical Scoop rows attached to the destination competitor.
+      await tx
+        .update(scoopSearchResults)
+        .set({ competitorId: target.id })
+        .where(
+          and(
+            eq(scoopSearchResults.userId, userId),
+            eq(scoopSearchResults.competitorId, source.competitorId),
+            eq(scoopSearchResults.productUrl, source.productUrl)
+          )
+        );
+
+      const now = new Date();
+      await tx
+        .update(competitors)
+        .set({ updatedAt: now })
+        .where(
+          and(
+            eq(competitors.userId, userId),
+            inArray(competitors.id, [source.competitorId, target.id])
+          )
+        );
+      await tx.insert(activityLogs).values({
+        userId,
+        action: "competitor.product.moved",
+        entityType: "competitor",
+        entityId: source.competitorId,
+        detail: `Moved ${source.productName} to ${target.name}`,
+      });
+
+      return {
+        productId: source.id,
+        productName: source.productName,
+        targetCompetitorId: target.id,
+        merged: Boolean(existing),
+      };
+    });
+  },
+
   async getStats(userId: string) {
     const database = await requireDb();
     const result = await database
