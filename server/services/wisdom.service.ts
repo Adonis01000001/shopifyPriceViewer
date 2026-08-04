@@ -4,6 +4,7 @@ import { logger } from "../_core/logger";
 import { requireDb } from "../_core/db-assert";
 import { productService } from "./product.service";
 import { pricingEngine } from "./pricing-engine.service";
+import { recommendationService } from "./recommendation.service";
 import {
   products,
   competitors,
@@ -250,6 +251,15 @@ export async function analyzePortfolio(userId: string): Promise<{
     const analysis = parseAnalysis(content, productInputs);
     if (!analysis) {
       return { analysis: null, error: "Failed to parse LLM response", productCount: tracked.length };
+    }
+
+    try {
+      await recommendationService.upsertWisdomRecommendations(
+        userId,
+        analysis.productRecommendations
+      );
+    } catch (err) {
+      logger.warn({ err, userId }, "Failed to persist Path of Wisdom recommendations");
     }
 
     logger.info(

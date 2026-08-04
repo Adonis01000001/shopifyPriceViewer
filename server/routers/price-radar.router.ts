@@ -204,7 +204,12 @@ export const priceRadarRouter = router({
           })
           .from(competitorProducts)
           .innerJoin(competitors, eq(competitorProducts.competitorId, competitors.id))
-          .where(eq(competitors.userId, ctx.user.id))
+          .where(
+            and(
+              eq(competitors.userId, ctx.user.id),
+              isNotNull(competitorProducts.price)
+            )
+          )
           .orderBy(desc(competitors.domain))
           .limit(limit)
           .offset(offset),

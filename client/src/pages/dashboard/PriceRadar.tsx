@@ -361,18 +361,17 @@ export default function PriceRadar() {
   );
 
   const sourceList = sources ?? [];
-  const productsList = useMemo(() => products ?? [], [products]);
+  const productsList = useMemo(
+    () =>
+      (products ?? []).filter(
+        (product: any) =>
+          typeof product.name === "string" &&
+          product.name.trim().length > 0 &&
+          product.price != null
+      ),
+    [products]
+  );
   const jobsList = jobs ?? [];
-
-  const productsByDomain = useMemo(() => {
-    const groups: Record<string, typeof productsList> = {};
-    for (const p of productsList) {
-      const domain = (p as any).domain || "Unknown";
-      if (!groups[domain]) groups[domain] = [];
-      groups[domain].push(p);
-    }
-    return groups;
-  }, [productsList]);
 
   return (
     <div className="space-y-6">
@@ -548,68 +547,38 @@ export default function PriceRadar() {
       )}
 
       {/* Products found */}
-      {Object.keys(productsByDomain).length > 0 && (
+      {productsList.length > 0 && (
         <div>
           <h3 className="text-lg font-bold text-primary flex items-center gap-2 mb-3">
             <Package className="h-5 w-5" />
             Discovered Products
           </h3>
-          <div className="space-y-6">
-            {Object.entries(productsByDomain).map(([domain, items]) => (
-              <div key={domain}>
-                <h4 className="text-sm font-semibold text-foreground flex items-center gap-2 mb-2 capitalize">
-                  <Globe className="h-4 w-4 text-muted-foreground" />
-                  {domain}
-                  <span className="text-[10px] label-caps text-muted-foreground font-normal">
-                    {items.length} product{items.length > 1 ? "s" : ""}
-                  </span>
-                </h4>
-                <div className="grid gap-2">
-                  {items.map((p: any) => (
-                    <div
-                      key={p.id}
-                      className="glass-panel rounded-lg px-5 py-3 flex items-center gap-4 hover:bg-muted/30 transition-colors"
+          <div className="grid gap-2">
+            {productsList.map((p: any) => (
+              <div
+                key={p.id}
+                className="glass-panel rounded-lg px-5 py-3 flex items-center gap-4 hover:bg-muted/30 transition-colors"
+              >
+                <div className="flex-1 min-w-0">
+                  {p.productUrl ? (
+                    <a
+                      href={p.productUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-[13px] font-medium truncate block hover:text-primary"
                     >
-                      <div className="flex-1 min-w-0">
-                        <p className="text-[13px] font-medium truncate">
-                          {p.name || "Unknown product"}
-                        </p>
-                        <div className="flex items-center gap-3 text-[11px] text-muted-foreground mt-0.5">
-                          {p.sku && (
-                            <span className="font-mono">SKU: {p.sku}</span>
-                          )}
-                          {p.category && <span>{p.category}</span>}
-                        </div>
-                      </div>
-                      <div className="text-right shrink-0">
-                        {p.price ? (
-                          <span className="font-mono text-[15px] font-bold">
-                            {formatPrice(p.price, p.currency)}
-                          </span>
-                        ) : (
-                          <span className="text-[11px] text-muted-foreground">
-                            Price pending
-                          </span>
-                        )}
-                        {p.availability && (
-                          <p className="text-[10px] text-muted-foreground">
-                            {p.availability.replace("_", " ")}
-                          </p>
-                        )}
-                      </div>
-                      {p.productUrl && (
-                        <a
-                          href={p.productUrl}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="text-primary hover:text-primary/80 shrink-0"
-                        >
-                          <ExternalLink className="h-4 w-4" />
-                        </a>
-                      )}
-                    </div>
-                  ))}
+                      {p.name}
+                    </a>
+                  ) : (
+                    <p className="text-[13px] font-medium truncate">{p.name}</p>
+                  )}
                 </div>
+                <span className="font-mono text-[15px] font-bold shrink-0">
+                  {formatPrice(p.price, p.currency)}
+                </span>
+                {p.productUrl && (
+                  <ExternalLink className="h-4 w-4 text-primary shrink-0" aria-hidden="true" />
+                )}
               </div>
             ))}
           </div>

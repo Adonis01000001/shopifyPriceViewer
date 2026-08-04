@@ -300,7 +300,10 @@ async function executeCrawl(input: {
       });
       if (!page) return;
       let productId: string | undefined;
-      if (extraction.product) {
+      // Price Radar stores only usable product observations. A product name
+      // without a current price is not actionable for price monitoring and
+      // should not appear as a discovered product.
+      if (extraction.product?.name.trim() && extraction.product.price?.trim()) {
         const product = await priceRadarRepository.upsertProduct({
           userId: input.userId,
           sourceId: input.sourceId,

@@ -12,10 +12,12 @@ import {
   Target,
   BarChart3,
   ArrowRight,
+  ExternalLink,
   RefreshCw,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { useLocation } from "wouter";
 
 type WisdomData = {
   analysis: {
@@ -41,6 +43,7 @@ type WisdomData = {
 };
 
 export default function PathOfWisdom() {
+  const [, navigate] = useLocation();
   const [hasAnalyzed, setHasAnalyzed] = useState(false);
   const { data, isLoading, refetch, isFetching } = trpc.wisdom.analyze.useQuery(undefined, {
     enabled: false,
@@ -245,25 +248,37 @@ export default function PathOfWisdom() {
                         {rec.productTitle}
                       </h4>
                     </div>
-                    <span
-                      className={cn(
-                        "inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-bold label-caps shrink-0 ml-2",
-                        confidenceColor,
-                        rec.confidence === "high"
-                          ? "bg-[#21a732]/10"
-                          : rec.confidence === "medium"
-                            ? "bg-yellow-500/10"
-                            : "bg-gray-500/10",
-                        "border",
-                        rec.confidence === "high"
-                          ? "border-[#21a732]/30"
-                          : rec.confidence === "medium"
-                            ? "border-yellow-500/30"
-                            : "border-gray-500/30"
-                      )}
-                    >
-                      {rec.confidence.toUpperCase()}
-                    </span>
+                    <div className="flex items-center gap-2 shrink-0 ml-2">
+                      <span
+                        className={cn(
+                          "inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-bold label-caps",
+                          confidenceColor,
+                          rec.confidence === "high"
+                            ? "bg-[#21a732]/10"
+                            : rec.confidence === "medium"
+                              ? "bg-yellow-500/10"
+                              : "bg-gray-500/10",
+                          "border",
+                          rec.confidence === "high"
+                            ? "border-[#21a732]/30"
+                            : rec.confidence === "medium"
+                              ? "border-yellow-500/30"
+                              : "border-gray-500/30"
+                        )}
+                      >
+                        {rec.confidence.toUpperCase()}
+                      </span>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="h-7 gap-1 px-2 text-[10px] text-primary"
+                        onClick={() => navigate(`/products/${rec.productId}`)}
+                      >
+                        View product
+                        <ExternalLink className="h-3 w-3" />
+                      </Button>
+                    </div>
                   </div>
                   <div className="p-5 space-y-4">
                     <div className="flex items-center gap-6 flex-wrap">

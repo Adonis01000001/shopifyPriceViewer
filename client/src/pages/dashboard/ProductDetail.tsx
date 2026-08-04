@@ -1,11 +1,39 @@
 import { useRoute, useLocation } from "wouter";
 import { trpc } from "@/lib/trpc";
 import { cn } from "@/lib/utils";
-import { ArrowLeft, Package, ExternalLink, TrendingUp, TrendingDown, Minus } from "lucide-react";
+import {
+  ArrowLeft,
+  Package,
+  ExternalLink,
+  TrendingUp,
+  TrendingDown,
+  Minus,
+  Sparkles,
+  AlertTriangle,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { PageSkeleton } from "@/components/dashboard/PageSkeleton";
 import { PricingRecommendationWidget } from "@/components/dashboard/PricingRecommendationWidget";
+import { toast } from "sonner";
+
+function getWisdomFactors(value: unknown): {
+  marketContext: string;
+  riskFactors: string[];
+} | null {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) {
+    return null;
+  }
+  const factors = value as Record<string, unknown>;
+  if (factors.source !== "path-of-wisdom") return null;
+  return {
+    marketContext:
+      typeof factors.marketContext === "string" ? factors.marketContext : "",
+    riskFactors: Array.isArray(factors.riskFactors)
+      ? factors.riskFactors.filter((risk): risk is string => typeof risk === "string")
+      : [],
+  };
+}
 
 const statusConfig: Record<string, { label: string; className: string }> = {
   optimal: {
@@ -40,6 +68,29 @@ export default function ProductDetail() {
     { productId: productId ?? "" },
     { enabled: !!productId }
   );
+  const { data: savedRecommendations } =
+    trpc.recommendations.getByProduct.useQuery(
+      { productId: productId ?? "" },
+      { enabled: !!productId }
+    );
+  const utils = trpc.useUtils();
+  const implementWisdomMutation = trpc.recommendations.implement.useMutation({
+    onSuccess: () => {
+      toast.success("Path of Wisdom recommendation applied");
+      if (productId) {
+        utils.products.getById.invalidate({ id: productId });
+        utils.recommendations.getByProduct.invalidate({ productId });
+      }
+    },
+    onError: error => toast.error(error.message || "Failed to apply recommendation"),
+  });
+
+  const wisdomRecommendation = savedRecommendations?.find(recommendation =>
+    getWisdomFactors(recommendation.factors)
+  );
+  const wisdomFactors = wisdomRecommendation
+    ? getWisdomFactors(wisdomRecommendation.factors)
+    : null;
 
   if (error) {
     return (
@@ -118,7 +169,102 @@ export default function ProductDetail() {
       {/* Two-column layout: Market Insight + Competitor Prices */}
       <div className="grid gap-6 lg:grid-cols-2">
         {/* Left: Pricing Recommendation Widget */}
-        <PricingRecommendationWidget productId={product.id} />
+        <div className="space-y-6">
+          {wisdomRecommendation && wisdomFactors && (
+            <div className="glass-panel rounded-lg overflow-hidden border border-primary/20">
+              <div className="px-5 py-3 border-b border-white/[0.04] bg-primary/10 flex items-center gap-2">
+                <Sparkles className="h-4 w-4 text-primary" />
+                <h3 className="text-[14px] font-semibold">
+                  Path of Wisdom Recommendation
+                </h3>
+                <Badge
+                  variant="outline"
+                  className="ml-auto text-[10px] font-mono capitalize"
+                >
+                  {wisdomRecommendation.status}
+                </Badge>
+              </div>
+              <div className="p-5 space-y-4">
+                <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+                  <div className="glass-card rounded p-3">
+                    <p className="label-caps text-muted-foreground/60 text-[10px]">
+                      Current
+                    </p>
+                    <p className="mt-1 text-lg font-bold font-mono">
+                      ${Number(wisdomRecommendation.currentPrice).toFixed(2)}
+                    </p>
+                  </div>
+                  <div className="glass-card rounded p-3">
+                    <p className="label-caps text-muted-foreground/60 text-[10px]">
+                      Recommended
+                    </p>
+                    <p className="mt-1 text-lg font-bold font-mono text-primary">
+                      ${Number(wisdomRecommendation.recommendedPrice).toFixed(2)}
+                    </p>
+                  </div>
+                  <div className="glass-card rounded p-3 col-span-2 sm:col-span-1">
+                    <p className="label-caps text-muted-foreground/60 text-[10px]">
+                      Change
+                    </p>
+                    <p className="mt-1 text-lg font-bold font-mono">
+                      {Number(wisdomRecommendation.priceChange) > 0 ? "+" : ""}
+                      ${Number(wisdomRecommendation.priceChange).toFixed(2)}
+                    </p>
+                  </div>
+                </div>
+
+                <p className="text-[12px] text-muted-foreground leading-relaxed">
+                  {wisdomRecommendation.reason}
+                </p>
+
+                {wisdomFactors.marketContext && (
+                  <div className="rounded bg-surface-container-highest/50 p-3">
+                    <p className="text-[11px] text-muted-foreground leading-relaxed">
+                      {wisdomFactors.marketContext}
+                    </p>
+                  </div>
+                )}
+
+                {wisdomFactors.riskFactors.length > 0 && (
+                  <div className="space-y-1.5">
+                    <p className="label-caps text-[10px] font-bold text-muted-foreground/60">
+                      Risks
+                    </p>
+                    {wisdomFactors.riskFactors.map((risk, index) => (
+                      <div key={index} className="flex items-start gap-2">
+                        <AlertTriangle className="h-3 w-3 text-yellow-500 mt-0.5 shrink-0" />
+                        <p className="text-[11px] text-muted-foreground">{risk}</p>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                <Button
+                  type="button"
+                  className="w-full"
+                  onClick={() =>
+                    implementWisdomMutation.mutate({
+                      id: wisdomRecommendation.id,
+                    })
+                  }
+                  disabled={
+                    wisdomRecommendation.status !== "pending" ||
+                    implementWisdomMutation.isPending
+                  }
+                >
+                  {implementWisdomMutation.isPending
+                    ? "Applying..."
+                    : wisdomRecommendation.status === "implemented"
+                      ? "Recommendation applied"
+                      : wisdomRecommendation.status === "dismissed"
+                        ? "Recommendation dismissed"
+                        : "Apply recommendation"}
+                </Button>
+              </div>
+            </div>
+          )}
+          <PricingRecommendationWidget productId={product.id} />
+        </div>
 
         {/* Right: Competitor Prices */}
         <div className="glass-panel rounded-lg overflow-hidden">
