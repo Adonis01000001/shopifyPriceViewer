@@ -1228,18 +1228,16 @@ function CompetitorFeed({
                             {change === "down" && (
                               <TrendingDown className="h-2.5 w-2.5 text-primary" />
                             )}
-                            {!isReadOnlyProduct && (
-                              <button
-                                className="text-muted-foreground/40 hover:text-primary transition-colors ml-0.5"
-                                onClick={() => {
-                                  setEditingPrice(cp.id);
-                                  setEditValue(cp.price ?? "");
-                                }}
-                                title="Edit price"
-                              >
-                                <Pencil className="h-2.5 w-2.5" />
-                              </button>
-                            )}
+                            <button
+                              className="text-muted-foreground/40 hover:text-primary transition-colors ml-0.5"
+                              onClick={() => {
+                                setEditingPrice(cp.id);
+                                setEditValue(cp.price ?? "");
+                              }}
+                              title="Edit price"
+                            >
+                              <Pencil className="h-2.5 w-2.5" />
+                            </button>
                           </>
                         )}
                       </div>

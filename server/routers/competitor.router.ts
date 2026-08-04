@@ -12,8 +12,28 @@ import {
   priceHistory,
   competitors,
   activityLogs,
+  priceRadarProducts,
+  scoopCompetitorProducts,
 } from "../../drizzle/schema";
 import { requireDb } from "../_core/db-assert";
+
+const competitorFeedProductIdSchema = z.string().refine(
+  value => {
+    if (z.string().uuid().safeParse(value).success) return true;
+
+    const separator = value.indexOf(":");
+    if (separator <= 0 || separator === value.length - 1) return false;
+    if (value.indexOf(":", separator + 1) !== -1) return false;
+
+    const source = value.slice(0, separator);
+    const productId = value.slice(separator + 1);
+    return (
+      (source === "price-radar" || source === "scoop") &&
+      z.string().uuid().safeParse(productId).success
+    );
+  },
+  { message: "Invalid competitor product ID" }
+);
 
 export const competitorRouter = router({
   list: protectedProcedure
@@ -315,12 +335,107 @@ export const competitorRouter = router({
   updateProductPrice: protectedProcedure
     .input(
       z.object({
-        competitorProductId: z.string().uuid(),
+        competitorProductId: competitorFeedProductIdSchema,
         price: z.string().regex(/^\d+(\.\d{1,2})?$/),
       })
     )
     .mutation(async ({ ctx, input }) => {
       const database = await requireDb();
+      const [source, rawProductId] = input.competitorProductId.split(":", 2);
+
+      // Price Radar and Scoop products are virtual feed rows. They are not
+      // stored in competitor_products, so update their owning source table
+      // after validating the authenticated user's ownership.
+      if (source === "price-radar" || source === "scoop") {
+        const parsedId = z.string().uuid().safeParse(rawProductId);
+        if (!parsedId.success) {
+          throw new TRPCError({
+            code: "NOT_FOUND",
+            message: "Product not found",
+          });
+        }
+
+        const now = new Date();
+        if (source === "price-radar") {
+          const [radarProduct] = await database
+            .select({
+              id: priceRadarProducts.id,
+              price: priceRadarProducts.price,
+            })
+            .from(priceRadarProducts)
+            .where(
+              and(
+                eq(priceRadarProducts.id, parsedId.data),
+                eq(priceRadarProducts.userId, ctx.user!.id)
+              )
+            )
+            .limit(1);
+          if (!radarProduct) {
+            throw new TRPCError({
+              code: "NOT_FOUND",
+              message: "Product not found",
+            });
+          }
+
+          await database
+            .update(priceRadarProducts)
+            .set({
+              previousPrice: radarProduct.price,
+              price: input.price,
+              lastSeenAt: now,
+              updatedAt: now,
+            })
+            .where(
+              and(
+                eq(priceRadarProducts.id, parsedId.data),
+                eq(priceRadarProducts.userId, ctx.user!.id)
+              )
+            );
+
+          return {
+            success: true,
+            previousPrice: radarProduct.price,
+            newPrice: input.price,
+          };
+        }
+
+        const [scoopProduct] = await database
+          .select({
+            id: scoopCompetitorProducts.id,
+            price: scoopCompetitorProducts.price,
+          })
+          .from(scoopCompetitorProducts)
+          .where(
+            and(
+              eq(scoopCompetitorProducts.id, parsedId.data),
+              eq(scoopCompetitorProducts.userId, ctx.user!.id)
+            )
+          )
+          .limit(1);
+        if (!scoopProduct) {
+          throw new TRPCError({
+            code: "NOT_FOUND",
+            message: "Product not found",
+          });
+        }
+
+        await database
+          .update(scoopCompetitorProducts)
+          .set({ price: input.price, lastSeenAt: now })
+          .where(
+            and(
+              eq(scoopCompetitorProducts.id, parsedId.data),
+              eq(scoopCompetitorProducts.userId, ctx.user!.id)
+            )
+          );
+
+        return {
+          success: true,
+          previousPrice: scoopProduct.price,
+          newPrice: input.price,
+        };
+      }
+
       const cp = await database
         .select({
           cp: competitorProducts,
