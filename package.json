@@ -4,7 +4,7 @@
   "type": "module",
   "license": "MIT",
   "scripts": {
-    "dev": "cross-env NODE_ENV=development tsx watch server/_core/index.ts",
+    "dev": "cross-env NODE_ENV=development node --import tsx server/_core/index.ts",
     "build": "vite build && esbuild server/_core/index.ts --platform=node --packages=external --bundle --format=esm --outdir=dist && pnpm run build:worker",
     "build:worker": "esbuild server/workers/index.ts --platform=node --packages=external --bundle --format=esm --outfile=dist/worker.js",
     "build:all": "npm run build",
@@ -18,7 +18,7 @@
     "check": "tsc --noEmit",
     "typecheck": "npm run check",
     "format": "prettier --write .",
-    "format:check": "prettier --check package.json server/_core/env.ts server/seed.ts drizzle/seed.ts server/test-login.ts scripts/smoke-check.mjs scripts/release-preflight.mjs server/_core/shopify-webhooks.ts server/_core/index.ts README.md docs/LAUNCH-READINESS-CHECKLIST.md docs/LEGAL-PRIVACY-INPUTS.md docs/RELEASE-DEPLOYMENT.md docs/RELEASE-PLAN-V1.md code.md .github/workflows/ci.yml",
+    "format:check": "prettier --check package.json vite.config.ts server/_core/env.ts server/seed.ts server/test-login.ts scripts/smoke-check.mjs scripts/release-preflight.mjs server/_core/shopify-webhooks.ts server/_core/index.ts README.md docs/LAUNCH-READINESS-CHECKLIST.md docs/LEGAL-PRIVACY-INPUTS.md docs/RELEASE-DEPLOYMENT.md docs/RELEASE-PLAN-V1.md code.md .github/workflows/ci.yml",
     "lint": "eslint .",
     "test": "vitest run",
     "db:seed": "tsx server/seed.ts",
