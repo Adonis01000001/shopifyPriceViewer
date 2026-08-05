@@ -288,6 +288,36 @@ export const competitorRouter = router({
     }),
 
   // ── Scrape competitor site for products ──────────────────────────────────
+  updateProduct: protectedProcedure
+    .input(
+      z.object({
+        competitorProductId: z.string().uuid(),
+        competitorId: z.string().uuid().optional(),
+        competitorProductUrl: z.string().url().optional(),
+        competitorProductTitle: z.string().trim().min(1).max(500).optional(),
+        competitorSku: z.string().trim().max(128).optional(),
+        price: z
+          .string()
+          .regex(/^\d+(\.\d{1,2})?$/)
+          .optional(),
+        currency: z.string().length(3).optional(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const { competitorProductId, ...data } = input;
+      const product = await competitorService.updateProduct(
+        ctx.user!.id,
+        competitorProductId,
+        data
+      );
+      if (!product)
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "Product link not found",
+        });
+      return product;
+    }),
+
   scrapeProducts: protectedProcedure
     .input(
       z.object({

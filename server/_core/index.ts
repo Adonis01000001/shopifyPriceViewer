@@ -10,6 +10,7 @@ import { registerOAuthRoutes } from "./oauth";
 import {
   apiLimiter,
   authLimiter,
+  closeRateLimitStore,
   shopifyLimiter,
   scrapeLimiter,
 } from "./rate-limit";
@@ -271,6 +272,7 @@ async function startServer() {
     await cronScheduler.stop();
     await priceRadarService.shutdown();
     await jobQueueService.close();
+    await closeRateLimitStore();
     const forceCloseTimer = setTimeout(() => {
       logger.error("Graceful shutdown timeout reached; closing connections");
       server.closeAllConnections?.();

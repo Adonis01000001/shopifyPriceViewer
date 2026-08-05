@@ -178,4 +178,6 @@ pnpm build && pnpm start  # Production
 - **Database**: Indexed for analytics queries on product_id, competitor_id, created_at
 - **Snapshots**: Immutable — never overwritten, only appended
 - **AI costs**: Single call per page, structured output minimizes tokens
-- **Future**: Can be extended to use BullMQ + Redis for distributed workers
+- **Workers**: BullMQ + Redis are implemented for distributed price monitoring,
+  competitor discovery, and notification processing; staging recovery still
+  requires the evidence tracked in `docs/RELEASE-PLAN-V1.md`.

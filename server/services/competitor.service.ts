@@ -347,6 +347,22 @@ export const competitorService = {
         });
       }
     }
+    const [existingLink] = await database
+      .select({ id: competitorProducts.id })
+      .from(competitorProducts)
+      .where(
+        and(
+          eq(competitorProducts.competitorId, data.competitorId),
+          eq(competitorProducts.productId, data.productId)
+        )
+      )
+      .limit(1);
+    if (existingLink) {
+      throw new TRPCError({
+        code: "CONFLICT",
+        message: "This product is already linked to that competitor",
+      });
+    }
     const result = await database
       .insert(competitorProducts)
       .values(data)
@@ -466,6 +482,14 @@ export const competitorService = {
       .set({ ...data, updatedAt: new Date() })
       .where(eq(competitorProducts.id, productId))
       .returning();
+    if (
+      result[0] &&
+      data.competitorId &&
+      data.competitorId !== current.competitorId
+    ) {
+      await this.recalcTrackedCount(current.competitorId);
+      await this.recalcTrackedCount(data.competitorId);
+    }
     return result[0];
   },
 

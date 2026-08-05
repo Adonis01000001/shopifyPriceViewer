@@ -233,6 +233,10 @@ export const productRouter = router({
       return rows;
     }),
 
+  getCompetitorMappings: protectedProcedure.query(({ ctx }) =>
+    productService.getCompetitorPricesForUser(ctx.user!.id)
+  ),
+
   stats: protectedProcedure.query(async ({ ctx }) => {
     return productService.getStats(ctx.user!.id);
   }),

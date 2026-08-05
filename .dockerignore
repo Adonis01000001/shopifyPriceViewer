@@ -1,0 +1,33 @@
+# Secrets and local configuration
+.env
+.env.*
+!.env.example
+
+# Version control and local dependency/build state
+.git
+.gitignore
+node_modules
+dist
+coverage
+.cache
+.codex
+.shopify
+.obsidian
+
+# Large unrelated artifacts and generated work products
+rapport-pfe
+*.docx
+*.pptx
+*.ndjson
+*.csv
+*.png
+*.jpg
+*.jpeg
+
+# Local diagnostics and scratch files
+server.err
+_check*.ts
+_listtables.ts
+_migrate_pr.ts
+drop_db.ts
+seed_all.ts

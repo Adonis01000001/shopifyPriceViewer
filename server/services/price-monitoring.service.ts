@@ -177,9 +177,16 @@ export const priceMonitoringService = {
       const whereClause = userId
         ? and(
             eq(competitorProducts.isActive, true),
-            eq(competitors.userId, userId)
+            eq(competitors.userId, userId),
+            eq(products.userId, userId),
+            eq(products.isActive, true),
+            eq(products.isTracked, true)
           )
-        : eq(competitorProducts.isActive, true);
+        : and(
+            eq(competitorProducts.isActive, true),
+            eq(products.isActive, true),
+            eq(products.isTracked, true)
+          );
 
       const activeMatches = await database
         .select({

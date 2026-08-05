@@ -21,15 +21,26 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { trpc } from "@/lib/trpc";
+import type { RouterOutputs } from "@/lib/trpc";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import {
   Radar,
   Plus,
+  Search,
+  Check,
+  Pencil,
+  Link2,
   Trash2,
   Play,
   Square,
   Globe,
   Loader2,
-  ExternalLink,
   AlertCircle,
   Clock,
   Package,
@@ -44,6 +55,11 @@ import { toast } from "sonner";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
+
+type CatalogProduct = RouterOutputs["products"]["list"][number];
+type Competitor = RouterOutputs["competitors"]["list"][number];
+type CompetitorMapping =
+  RouterOutputs["products"]["getCompetitorMappings"][number];
 
 const statusBadge: Record<string, { label: string; className: string }> = {
   active: {
@@ -99,16 +115,6 @@ function formatDate(d: string | Date | null | undefined): string {
     hour: "2-digit",
     minute: "2-digit",
   });
-}
-
-function formatPrice(
-  value: string | number,
-  currency: string | null | undefined
-): string {
-  return new Intl.NumberFormat("en-US", {
-    style: "currency",
-    currency: currency || "USD",
-  }).format(Number(value));
 }
 
 function SourceRow({
@@ -277,6 +283,437 @@ function SourceRow({
   );
 }
 
+const competitorMappingSchema = z.object({
+  competitorId: z.string().uuid("Choose a competitor"),
+  title: z
+    .string()
+    .trim()
+    .min(1, "Competitor product title is required")
+    .max(500),
+  url: z.union([z.literal(""), z.string().url("Enter a valid product URL")]),
+  sku: z.string().trim().max(128),
+  price: z.string().regex(/^\d+(\.\d{1,2})?$/, "Enter a valid price"),
+  currency: z.string().trim().length(3, "Use a 3-letter currency code"),
+});
+
+type CompetitorMappingForm = z.infer<typeof competitorMappingSchema>;
+
+function CompetitorMappingDialog({
+  product,
+  competitors,
+  mapping,
+  open,
+  onOpenChange,
+}: {
+  product: CatalogProduct;
+  competitors: Competitor[];
+  mapping: CompetitorMapping | null;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+}) {
+  const utils = trpc.useUtils();
+  const form = useForm<CompetitorMappingForm>({
+    resolver: zodResolver(competitorMappingSchema),
+    defaultValues: {
+      competitorId: mapping?.competitorId ?? "",
+      title: mapping?.title ?? "",
+      url: mapping?.url ?? "",
+      sku: mapping?.sku ?? "",
+      price: mapping?.price ?? "",
+      currency: mapping?.currency ?? product.currency ?? "USD",
+    },
+  });
+
+  useEffect(() => {
+    form.reset({
+      competitorId: mapping?.competitorId ?? "",
+      title: mapping?.title ?? "",
+      url: mapping?.url ?? "",
+      sku: mapping?.sku ?? "",
+      price: mapping?.price ?? "",
+      currency: mapping?.currency ?? product.currency ?? "USD",
+    });
+  }, [form, mapping, product.currency]);
+
+  const refreshMappings = useCallback(() => {
+    void utils.products.getCompetitorMappings.invalidate();
+    void utils.competitors.list.invalidate();
+  }, [utils]);
+
+  const addMapping = trpc.competitors.addProduct.useMutation({
+    onSuccess: () => {
+      refreshMappings();
+      onOpenChange(false);
+      toast.success("Competitor product linked");
+    },
+    onError: error => toast.error(error.message || "Failed to link product"),
+  });
+
+  const updateMapping = trpc.competitors.updateProduct.useMutation({
+    onSuccess: () => {
+      refreshMappings();
+      onOpenChange(false);
+      toast.success("Competitor product updated");
+    },
+    onError: error => toast.error(error.message || "Failed to update link"),
+  });
+
+  const submit = (data: CompetitorMappingForm) => {
+    const values = {
+      competitorId: data.competitorId,
+      competitorProductTitle: data.title.trim(),
+      competitorProductUrl: data.url.trim() || undefined,
+      competitorSku: data.sku.trim() || undefined,
+      price: data.price,
+      currency: data.currency.trim().toUpperCase(),
+    };
+
+    if (mapping) {
+      updateMapping.mutate({
+        competitorProductId: mapping.id,
+        ...values,
+      });
+      return;
+    }
+
+    addMapping.mutate({
+      productId: product.id,
+      matchScore: 1,
+      matchMethod: "manual",
+      ...values,
+    });
+  };
+
+  const isPending = addMapping.isPending || updateMapping.isPending;
+  const selectedCompetitor = form.watch("competitorId");
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent>
+        <form onSubmit={form.handleSubmit(submit)}>
+          <DialogHeader>
+            <DialogTitle>
+              {mapping ? "Edit competitor product" : "Add competitor product"}
+            </DialogTitle>
+            <DialogDescription>
+              Link a competitor listing to {product.title}. This keeps the
+              competitor data attached to your existing product.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label htmlFor={`competitor-${product.id}`}>Competitor</Label>
+              <Select
+                value={selectedCompetitor}
+                onValueChange={value =>
+                  form.setValue("competitorId", value, { shouldValidate: true })
+                }
+              >
+                <SelectTrigger id={`competitor-${product.id}`}>
+                  <SelectValue placeholder="Select a competitor" />
+                </SelectTrigger>
+                <SelectContent>
+                  {competitors.map(competitor => (
+                    <SelectItem key={competitor.id} value={competitor.id}>
+                      {competitor.name} · {competitor.domain}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {form.formState.errors.competitorId && (
+                <p className="text-[11px] text-destructive">
+                  {form.formState.errors.competitorId.message}
+                </p>
+              )}
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor={`competitor-title-${product.id}`}>
+                Product title
+              </Label>
+              <Input
+                id={`competitor-title-${product.id}`}
+                {...form.register("title")}
+                placeholder="Competitor listing title"
+              />
+              {form.formState.errors.title && (
+                <p className="text-[11px] text-destructive">
+                  {form.formState.errors.title.message}
+                </p>
+              )}
+            </div>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div className="space-y-2">
+                <Label htmlFor={`competitor-price-${product.id}`}>Price</Label>
+                <Input
+                  id={`competitor-price-${product.id}`}
+                  {...form.register("price")}
+                  inputMode="decimal"
+                  placeholder="99.99"
+                />
+                {form.formState.errors.price && (
+                  <p className="text-[11px] text-destructive">
+                    {form.formState.errors.price.message}
+                  </p>
+                )}
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor={`competitor-currency-${product.id}`}>
+                  Currency
+                </Label>
+                <Input
+                  id={`competitor-currency-${product.id}`}
+                  {...form.register("currency")}
+                  maxLength={3}
+                  placeholder="USD"
+                />
+                {form.formState.errors.currency && (
+                  <p className="text-[11px] text-destructive">
+                    {form.formState.errors.currency.message}
+                  </p>
+                )}
+              </div>
+            </div>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div className="space-y-2">
+                <Label htmlFor={`competitor-sku-${product.id}`}>SKU</Label>
+                <Input
+                  id={`competitor-sku-${product.id}`}
+                  {...form.register("sku")}
+                  placeholder="Optional SKU"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor={`competitor-url-${product.id}`}>
+                  Product URL
+                </Label>
+                <Input
+                  id={`competitor-url-${product.id}`}
+                  {...form.register("url")}
+                  placeholder="https://competitor.com/product"
+                />
+                {form.formState.errors.url && (
+                  <p className="text-[11px] text-destructive">
+                    {form.formState.errors.url.message}
+                  </p>
+                )}
+              </div>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => onOpenChange(false)}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="submit"
+              disabled={isPending || competitors.length === 0}
+            >
+              {isPending
+                ? "Saving..."
+                : mapping
+                  ? "Save changes"
+                  : "Add competitor"}
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function ProductRadarCard({
+  product,
+  mappings,
+  competitors,
+  onToggleTracking,
+  trackingPending,
+}: {
+  product: CatalogProduct;
+  mappings: CompetitorMapping[];
+  competitors: Competitor[];
+  onToggleTracking: () => void;
+  trackingPending: boolean;
+}) {
+  const utils = trpc.useUtils();
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [editingMapping, setEditingMapping] =
+    useState<CompetitorMapping | null>(null);
+  const removeMapping = trpc.competitors.removeProduct.useMutation({
+    onSuccess: () => {
+      void utils.products.getCompetitorMappings.invalidate();
+      void utils.competitors.list.invalidate();
+      toast.success("Competitor product removed");
+    },
+    onError: error => toast.error(error.message || "Failed to remove link"),
+  });
+
+  const openAddDialog = () => {
+    setEditingMapping(null);
+    setDialogOpen(true);
+  };
+
+  const openEditDialog = (mapping: CompetitorMapping) => {
+    setEditingMapping(mapping);
+    setDialogOpen(true);
+  };
+
+  return (
+    <article className="glass-panel rounded-lg p-5">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+        <div className="flex items-center gap-3 min-w-0">
+          {product.imageUrl ? (
+            <img
+              src={product.imageUrl}
+              alt=""
+              className="h-12 w-12 rounded object-cover border border-outline-variant shrink-0"
+            />
+          ) : (
+            <div
+              className="h-12 w-12 rounded bg-surface-container-highest border border-outline-variant flex items-center justify-center text-sm font-bold text-muted-foreground shrink-0"
+              aria-hidden="true"
+            >
+              {product.title.charAt(0).toUpperCase()}
+            </div>
+          )}
+          <div className="min-w-0">
+            <h3 className="text-[15px] font-semibold truncate">
+              {product.title}
+            </h3>
+            <p className="text-[11px] text-muted-foreground truncate">
+              {product.sku ? `SKU: ${product.sku} · ` : ""}
+              {product.currency || "USD"} {product.price}
+            </p>
+          </div>
+        </div>
+        <Button
+          type="button"
+          size="sm"
+          variant={product.isTracked ? "default" : "outline"}
+          aria-pressed={product.isTracked}
+          disabled={trackingPending}
+          onClick={onToggleTracking}
+          className="shrink-0"
+        >
+          {product.isTracked ? "Monitoring" : "Start monitoring"}
+        </Button>
+      </div>
+
+      <div className="mt-5 border-t border-outline-variant/20 pt-4">
+        <div className="flex items-center justify-between gap-3 mb-3">
+          <h4 className="text-[12px] font-semibold label-caps text-muted-foreground">
+            Competitor Products ({mappings.length})
+          </h4>
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            className="h-8 text-[11px]"
+            onClick={openAddDialog}
+            disabled={competitors.length === 0}
+          >
+            <Plus className="mr-1.5 h-3.5 w-3.5" />
+            Add Competitor
+          </Button>
+        </div>
+
+        {mappings.length > 0 ? (
+          <div className="space-y-2">
+            {mappings.map(mapping => (
+              <div
+                key={mapping.id}
+                className="rounded-lg bg-surface-container-lowest border border-outline-variant/20 p-3 flex items-center gap-3"
+              >
+                <Link2
+                  className="h-4 w-4 text-primary/70 shrink-0"
+                  aria-hidden="true"
+                />
+                <div className="min-w-0 flex-1">
+                  <p className="text-[12px] font-medium truncate">
+                    {mapping.competitorName}
+                    {mapping.title ? ` · ${mapping.title}` : ""}
+                  </p>
+                  <p className="text-[10px] text-muted-foreground truncate">
+                    {mapping.sku ? `SKU: ${mapping.sku} · ` : ""}
+                    {mapping.currency || "USD"} {mapping.price}
+                    {mapping.competitorDomain
+                      ? ` · ${mapping.competitorDomain}`
+                      : ""}
+                  </p>
+                </div>
+                <div className="flex items-center gap-1 shrink-0">
+                  {mapping.url && (
+                    <a
+                      href={mapping.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-[11px] text-primary hover:underline px-2"
+                    >
+                      View
+                    </a>
+                  )}
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="ghost"
+                    className="h-8 w-8 p-0"
+                    aria-label={`Edit ${mapping.title || "competitor product"}`}
+                    onClick={() => openEditDialog(mapping)}
+                  >
+                    <Pencil className="h-3.5 w-3.5" />
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="ghost"
+                    className="h-8 w-8 p-0 text-muted-foreground hover:text-destructive"
+                    aria-label={`Remove ${mapping.title || "competitor product"}`}
+                    disabled={removeMapping.isPending}
+                    onClick={() => {
+                      if (
+                        window.confirm("Remove this competitor product link?")
+                      ) {
+                        removeMapping.mutate({
+                          competitorProductId: mapping.id,
+                        });
+                      }
+                    }}
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </Button>
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="rounded-lg border border-dashed border-outline-variant p-5 text-center text-muted-foreground">
+            <Link2
+              className="h-6 w-6 mx-auto mb-2 opacity-40"
+              aria-hidden="true"
+            />
+            <p className="text-[12px] font-medium">
+              No competitor products linked
+            </p>
+            <p className="text-[11px] mt-1">
+              Add a competitor listing to start monitoring this product.
+            </p>
+          </div>
+        )}
+      </div>
+
+      <CompetitorMappingDialog
+        product={product}
+        competitors={competitors}
+        mapping={editingMapping}
+        open={dialogOpen}
+        onOpenChange={setDialogOpen}
+      />
+    </article>
+  );
+}
+
 export default function PriceRadar() {
   const [createOpen, setCreateOpen] = useState(false);
   const [deleteId, setDeleteId] = useState<string | null>(null);
@@ -290,7 +727,38 @@ export default function PriceRadar() {
     isLoading: sourcesLoading,
     refetch: refetchSources,
   } = trpc.priceRadar.sources.useQuery();
-  const { data: products } = trpc.priceRadar.products.useQuery({ limit: 50 });
+  const [catalogQuery, setCatalogQuery] = useState("");
+  const {
+    data: catalogProducts,
+    isLoading: catalogLoading,
+    error: catalogError,
+    refetch: refetchCatalog,
+  } = trpc.products.list.useQuery(undefined, { staleTime: 1000 * 60 * 5 });
+  const {
+    data: catalogMatches,
+    isFetching: catalogSearchLoading,
+    error: catalogSearchError,
+    refetch: refetchCatalogSearch,
+  } = trpc.products.search.useQuery(
+    { query: catalogQuery.trim() },
+    {
+      enabled: catalogQuery.trim().length > 0,
+      staleTime: 1000 * 60,
+    }
+  );
+  const {
+    data: availableCompetitors,
+    isLoading: competitorsLoading,
+    error: competitorsError,
+  } = trpc.competitors.list.useQuery(undefined, { staleTime: 1000 * 60 * 5 });
+  const {
+    data: competitorMappings,
+    isLoading: mappingsLoading,
+    error: mappingsError,
+    refetch: refetchMappings,
+  } = trpc.products.getCompetitorMappings.useQuery(undefined, {
+    staleTime: 1000 * 60,
+  });
   const { data: jobs } = trpc.priceRadar.history.useQuery({ limit: 100 });
 
   const createSource = trpc.priceRadar.createSource.useMutation({
@@ -336,6 +804,21 @@ export default function PriceRadar() {
     },
   });
 
+  const toggleProductTracking = trpc.products.toggleTracking.useMutation({
+    onSuccess: product => {
+      toast.success(
+        product.isTracked
+          ? `${product.title} added to Price Radar`
+          : `${product.title} removed from Price Radar`
+      );
+      void refetchCatalog();
+      if (catalogQuery.trim()) void refetchCatalogSearch();
+    },
+    onError: error => {
+      toast.error(error.message || "Failed to update product monitoring");
+    },
+  });
+
   const form = useForm<CreateSourceForm>({
     resolver: zodResolver(createSourceSchema),
     defaultValues: { name: "", url: "", crawlDelayMs: 300 },
@@ -365,16 +848,21 @@ export default function PriceRadar() {
   );
 
   const sourceList = sources ?? [];
-  const productsList = useMemo(
-    () =>
-      (products ?? []).filter(
-        (product: any) =>
-          typeof product.name === "string" &&
-          product.name.trim().length > 0 &&
-          product.price != null
-      ),
-    [products]
-  );
+  const productList = catalogProducts ?? [];
+  const competitorList = availableCompetitors ?? [];
+  const trackedProducts = productList.filter(product => product.isTracked);
+  const catalogResults = catalogQuery.trim()
+    ? (catalogMatches ?? [])
+    : productList;
+  const mappingsByProduct = useMemo(() => {
+    const grouped = new Map<string, CompetitorMapping[]>();
+    for (const mapping of competitorMappings ?? []) {
+      const productMappings = grouped.get(mapping.productId) ?? [];
+      productMappings.push(mapping);
+      grouped.set(mapping.productId, productMappings);
+    }
+    return grouped;
+  }, [competitorMappings]);
   const jobsList = jobs ?? [];
 
   return (
@@ -502,16 +990,130 @@ export default function PriceRadar() {
         <div className="glass-card p-4 flex items-center justify-between">
           <div>
             <p className="text-2xl font-bold font-mono tracking-tight">
-              {productsList.length}
+              {trackedProducts.length}
             </p>
             <p className="label-caps text-muted-foreground/60">
-              Products Found
+              Monitored Products
             </p>
           </div>
-          <Package className="h-8 w-8 text-primary/30" />
+          <Check className="h-8 w-8 text-primary/30" />
         </div>
       </div>
 
+      {/* Product catalog and competitor mappings */}
+      <section aria-labelledby="radar-mappings-title">
+        <div className="flex flex-col gap-1 mb-4">
+          <h3
+            id="radar-mappings-title"
+            className="text-lg font-bold text-primary"
+          >
+            Product monitoring
+          </h3>
+          <p className="text-xs text-muted-foreground">
+            Every product below comes from your Products catalog. Link one or
+            more competitor listings to compare prices and track changes.
+          </p>
+        </div>
+        <div className="relative max-w-md mb-4">
+          <Search
+            className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground"
+            aria-hidden="true"
+          />
+          <Input
+            name="search-radar-products"
+            value={catalogQuery}
+            onChange={event => setCatalogQuery(event.target.value)}
+            placeholder="Search products or SKUs..."
+            aria-label="Search products to monitor"
+            className="pl-9 h-9 bg-surface-container border-outline-variant"
+          />
+        </div>
+        {catalogError ||
+        catalogSearchError ||
+        mappingsError ||
+        competitorsError ? (
+          <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-4 text-sm">
+            <p className="text-destructive">
+              {catalogError?.message ||
+                catalogSearchError?.message ||
+                mappingsError?.message ||
+                competitorsError?.message ||
+                "Failed to load product mappings"}
+            </p>
+            <Button
+              variant="outline"
+              size="sm"
+              className="mt-3"
+              onClick={() => {
+                void refetchCatalog();
+                void refetchMappings();
+                if (catalogQuery.trim()) void refetchCatalogSearch();
+              }}
+            >
+              Retry
+            </Button>
+          </div>
+        ) : catalogLoading ||
+          catalogSearchLoading ||
+          mappingsLoading ||
+          competitorsLoading ? (
+          <div className="flex items-center justify-center py-12 text-muted-foreground">
+            <Loader2 className="h-5 w-5 animate-spin" aria-hidden="true" />
+            <span className="ml-2 text-sm">Loading product mappings...</span>
+          </div>
+        ) : catalogResults.length > 0 ? (
+          <div className="grid gap-4">
+            {catalogResults.map(product => (
+              <ProductRadarCard
+                key={product.id}
+                product={product}
+                mappings={mappingsByProduct.get(product.id) ?? []}
+                competitors={competitorList}
+                trackingPending={toggleProductTracking.isPending}
+                onToggleTracking={() =>
+                  toggleProductTracking.mutate({
+                    id: product.id,
+                    isTracked: !product.isTracked,
+                  })
+                }
+              />
+            ))}
+          </div>
+        ) : (
+          <div className="glass-panel rounded-lg p-12 text-center text-muted-foreground">
+            <Package
+              className="h-10 w-10 mx-auto mb-3 opacity-30"
+              aria-hidden="true"
+            />
+            <p className="text-sm font-medium">
+              {catalogQuery.trim()
+                ? "No matching products"
+                : "No products in your catalog"}
+            </p>
+            <p className="text-xs mt-1">
+              {catalogQuery.trim()
+                ? "Try a different product name or SKU."
+                : "Add products from the Products page to configure monitoring."}
+            </p>
+          </div>
+        )}
+        {!competitorsLoading &&
+          competitorList.length === 0 &&
+          productList.length > 0 && (
+            <div className="mt-4 rounded-lg border border-dashed border-outline-variant p-4 text-center text-muted-foreground">
+              <p className="text-sm font-medium">Add a competitor first</p>
+              <p className="text-xs mt-1">
+                Create a competitor in the Competitors page before linking
+                listings.
+              </p>
+            </div>
+          )}
+      </section>
+      {/*
+
+                    {product.sku || product.category || "No SKU"} ·{" "}
+
+      */}
       {/* Sources list */}
       {sourcesLoading && (
         <div className="flex items-center justify-center py-16">
@@ -542,48 +1144,6 @@ export default function PriceRadar() {
           <p className="text-xs mt-1">
             Add a competitor URL to start crawling for prices.
           </p>
-        </div>
-      )}
-
-      {/* Products found */}
-      {productsList.length > 0 && (
-        <div>
-          <h3 className="text-lg font-bold text-primary flex items-center gap-2 mb-3">
-            <Package className="h-5 w-5" />
-            Discovered Products
-          </h3>
-          <div className="grid gap-2">
-            {productsList.map((p: any) => (
-              <div
-                key={p.id}
-                className="glass-panel rounded-lg px-5 py-3 flex items-center gap-4 hover:bg-muted/30 transition-colors"
-              >
-                <div className="flex-1 min-w-0">
-                  {p.productUrl ? (
-                    <a
-                      href={p.productUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-[13px] font-medium truncate block hover:text-primary"
-                    >
-                      {p.name}
-                    </a>
-                  ) : (
-                    <p className="text-[13px] font-medium truncate">{p.name}</p>
-                  )}
-                </div>
-                <span className="font-mono text-[15px] font-bold shrink-0">
-                  {formatPrice(p.price, p.currency)}
-                </span>
-                {p.productUrl && (
-                  <ExternalLink
-                    className="h-4 w-4 text-primary shrink-0"
-                    aria-hidden="true"
-                  />
-                )}
-              </div>
-            ))}
-          </div>
         </div>
       )}
 

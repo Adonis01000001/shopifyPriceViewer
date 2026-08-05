@@ -1,5 +1,10 @@
 # Backend Architecture
 
+> **Retired guide:** This document describes an older Python, SQL Server, and
+> Celery architecture. Do not use it for Version 1.0. Follow the current
+> [Version 1.0 deployment runbook](RELEASE-DEPLOYMENT.md) and repository
+> [README](../README.md) for the Node.js, PostgreSQL, Redis, and Vite service.
+
 ## Overview
 
 The backend is built with **FastAPI** and **Python 3.11**, providing a modern, high-performance REST API for the Shopify Price Intelligence platform.

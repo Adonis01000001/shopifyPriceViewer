@@ -117,7 +117,9 @@ describe("ProductService SKU workflow", () => {
     });
 
     it("allows different users to use the same SKU", async () => {
-      const otherUserId = await createTestUser(`other-${Date.now()}@example.com`);
+      const otherUserId = await createTestUser(
+        `other-${Date.now()}@example.com`
+      );
       const otherStoreId = await createTestStore(otherUserId);
 
       await productService.create({
@@ -231,6 +233,31 @@ describe("ProductService SKU workflow", () => {
   });
 
   // ── Search ──────────────────────────────────────────────────────────────
+
+  describe("tracking", () => {
+    it("persists the Price Radar monitoring state", async () => {
+      const product = await productService.create({
+        userId,
+        storeId,
+        title: "Radar Tracking Test",
+        price: "10.00",
+      });
+
+      const untracked = await productService.toggleTracking(
+        userId,
+        product.id,
+        false
+      );
+      expect(untracked?.isTracked).toBe(false);
+
+      const tracked = await productService.toggleTracking(
+        userId,
+        product.id,
+        true
+      );
+      expect(tracked?.isTracked).toBe(true);
+    });
+  });
 
   describe("search", () => {
     beforeEach(async () => {

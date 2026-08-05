@@ -1,0 +1,1 @@
+CREATE INDEX "price_radar_jobs_user_source_created_idx" ON "price_radar_jobs" USING btree ("user_id","source_id","created_at");

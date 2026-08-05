@@ -9,7 +9,6 @@ export default tseslint.config(
       "dist",
       "node_modules",
       "drizzle/migrations",
-      "drizzle/seed.ts",
       "seed_all.ts",
       "client/public/**",
       "rapport-pfe/**",

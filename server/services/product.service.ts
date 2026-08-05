@@ -14,6 +14,15 @@ import {
 import { normalizeName } from "../../shared/validation";
 import { publicShopifyStoreColumns } from "../_core/public-views";
 
+function validateProductTitle(title: string | undefined): void {
+  if (title !== undefined && title.trim().length < 2) {
+    throw new TRPCError({
+      code: "BAD_REQUEST",
+      message: "Product title must be at least 2 characters",
+    });
+  }
+}
+
 export const productService = {
   async getByUserId(
     userId: string,
@@ -70,6 +79,7 @@ export const productService = {
 
   async create(data: InsertProduct): Promise<Product> {
     const database = await requireDb();
+    validateProductTitle(data.title);
     const storeId = data.storeId;
     if (!storeId) {
       throw new TRPCError({
@@ -130,6 +140,7 @@ export const productService = {
     data: Partial<InsertProduct>
   ): Promise<Product | undefined> {
     const database = await requireDb();
+    validateProductTitle(data.title);
 
     // Normalize SKU if provided.
     const normalizedSku =
@@ -162,7 +173,7 @@ export const productService = {
       updatedAt: new Date() as any,
     };
     if (data.sku !== undefined) {
-      updateData.sku = normalizedSku;
+      updateData.sku = normalizedSku ?? null;
     }
 
     const result = await database
@@ -216,6 +227,43 @@ export const productService = {
           eq(competitorProducts.isActive, true)
         )
       );
+  },
+
+  async getCompetitorPricesForUser(userId: string) {
+    const database = await requireDb();
+    return database
+      .select({
+        id: competitorProducts.id,
+        productId: competitorProducts.productId,
+        competitorId: competitorProducts.competitorId,
+        competitorName: competitors.name,
+        competitorDomain: competitors.domain,
+        title: competitorProducts.competitorProductTitle,
+        sku: competitorProducts.competitorSku,
+        price: competitorProducts.price,
+        currency: competitorProducts.currency,
+        url: competitorProducts.competitorProductUrl,
+        matchScore: competitorProducts.matchScore,
+        isVerified: competitorProducts.isVerified,
+        lastPriceUpdate: competitorProducts.lastPriceUpdate,
+        lastScrapedAt: competitorProducts.lastScrapedAt,
+        updatedAt: competitorProducts.updatedAt,
+      })
+      .from(competitorProducts)
+      .innerJoin(products, eq(competitorProducts.productId, products.id))
+      .innerJoin(
+        competitors,
+        eq(competitorProducts.competitorId, competitors.id)
+      )
+      .where(
+        and(
+          eq(products.userId, userId),
+          eq(products.isActive, true),
+          eq(competitors.userId, userId),
+          eq(competitorProducts.isActive, true)
+        )
+      )
+      .orderBy(desc(competitorProducts.updatedAt));
   },
 
   async getStats(userId: string) {
@@ -444,7 +492,7 @@ export const productService = {
           WHEN ${products.sku} = ${normalizedQuery} THEN 0
           WHEN ${products.sku} LIKE ${normalizedQuery + "%"} THEN 1
           ELSE 2
-        END`,
+        END`.as("rank"),
       })
       .from(products)
       .where(

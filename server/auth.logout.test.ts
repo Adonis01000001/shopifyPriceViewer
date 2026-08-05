@@ -82,3 +82,21 @@ describe("auth.me", () => {
     expect(result).not.toHaveProperty("openId");
   });
 });
+
+describe("product catalog authorization", () => {
+  it("rejects unauthenticated catalog searches", async () => {
+    const { ctx } = createAuthContext();
+    const caller = appRouter.createCaller({ ...ctx, user: null });
+
+    await expect(
+      caller.products.search({ query: "phone" })
+    ).rejects.toMatchObject({
+      code: "UNAUTHORIZED",
+    });
+    await expect(caller.products.getCompetitorMappings()).rejects.toMatchObject(
+      {
+        code: "UNAUTHORIZED",
+      }
+    );
+  });
+});

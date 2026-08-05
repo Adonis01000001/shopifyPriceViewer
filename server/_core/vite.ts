@@ -8,14 +8,35 @@ import viteConfig from "../../vite.config";
 import { logger } from "./logger";
 
 export async function setupVite(app: Express, server: Server, port?: number) {
+  const projectRoot = path.resolve(import.meta.dirname, "../..");
+  const clientRoot = path.resolve(projectRoot, "client");
   const serverOptions = {
     middlewareMode: true,
     hmr: { server, port: port ?? 3000 },
     allowedHosts: true as const,
   };
 
+  const resolvedViteConfig =
+    typeof viteConfig === "function"
+      ? await viteConfig({
+          command: "serve",
+          mode: "development",
+          isSsrBuild: false,
+          isPreview: false,
+        })
+      : viteConfig;
+
   const vite = await createViteServer({
-    ...viteConfig,
+    ...resolvedViteConfig,
+    root: clientRoot,
+    resolve: {
+      ...resolvedViteConfig.resolve,
+      alias: {
+        "@": path.resolve(clientRoot, "src"),
+        "@shared": path.resolve(projectRoot, "shared"),
+        "@assets": path.resolve(projectRoot, "attached_assets"),
+      },
+    },
     configFile: false,
     server: serverOptions,
     appType: "custom",
