@@ -47,7 +47,7 @@ export const priceRouter = router({
       })
     )
     .mutation(async ({ ctx, input }) => {
-      const record = await priceService.recordPrice({
+      const record = await priceService.recordPrice(ctx.user!.id, {
         productId: input.productId,
         competitorProductId: input.competitorProductId,
         price: input.price,

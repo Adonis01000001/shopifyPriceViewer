@@ -2,6 +2,7 @@ import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { protectedProcedure, adminProcedure, router } from "../_core/trpc";
 import { recommendationService } from "../services/recommendation.service";
+import { entitlementService } from "../services/entitlement.service";
 
 export const recommendationRouter = router({
   list: protectedProcedure
@@ -41,6 +42,14 @@ export const recommendationRouter = router({
   generate: protectedProcedure
     .input(z.object({ productId: z.string().uuid() }))
     .mutation(async ({ ctx, input }) => {
+      await entitlementService.assertFeature(
+        ctx.user!.id,
+        "aiRecommendations"
+      );
+      await entitlementService.assertWithinLimit(
+        ctx.user!.id,
+        "aiRunsMonthly"
+      );
       const rec = await recommendationService.generateForProduct(
         ctx.user!.id,
         input.productId

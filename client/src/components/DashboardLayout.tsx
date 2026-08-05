@@ -48,8 +48,8 @@ import {
 } from "lucide-react";
 import { CSSProperties, useEffect, useRef, useState, useCallback } from "react";
 import { useLocation } from "wouter";
-import type { User } from "@shared/types";
-import { trpc } from "@/lib/trpc";
+import type { PublicUser } from "@shared/types";
+import { trpc, type RouterOutputs } from "@/lib/trpc";
 import { DashboardLayoutSkeleton } from "./DashboardLayoutSkeleton";
 import OnboardingWizard from "./dashboard/OnboardingWizard";
 import { useTheme } from "@/contexts/ThemeContext";
@@ -66,7 +66,12 @@ const menuItems = [
   { icon: Users, label: "Competitors", path: "/competitors", adminOnly: false },
   { icon: BarChart3, label: "Analytics", path: "/analytics", adminOnly: false },
   { icon: Bell, label: "Alerts", path: "/alerts", adminOnly: false },
-  { icon: SettingsIcon, label: "Settings", path: "/settings", adminOnly: false },
+  {
+    icon: SettingsIcon,
+    label: "Settings",
+    path: "/settings",
+    adminOnly: false,
+  },
 ];
 
 const SIDEBAR_WIDTH_KEY = "sidebar-width";
@@ -90,14 +95,25 @@ export default function DashboardLayout({
     localStorage.setItem(SIDEBAR_WIDTH_KEY, sidebarWidth.toString());
   }, [sidebarWidth]);
 
-  const { data: products } = trpc.products.list.useQuery(undefined, { enabled: !!user });
-  const { data: stores } = trpc.shopify.listStores.useQuery(undefined, { enabled: !!user });
+  const { data: products } = trpc.products.list.useQuery(undefined, {
+    enabled: !!user,
+    staleTime: 60_000,
+  });
+  const { data: stores } = trpc.shopify.listStores.useQuery(undefined, {
+    enabled: !!user,
+    staleTime: 60_000,
+  });
+  const { data: competitorCount } = trpc.competitors.count.useQuery(undefined, {
+    enabled: !!user,
+    staleTime: 60_000,
+  });
   const [onboardingOpen, setOnboardingOpen] = useState(() => {
     if (!user || isLoading) return false;
     const dismissed = localStorage.getItem("onboarding-dismissed");
     const hasProducts = (products?.length ?? 0) > 0;
     const hasStores = (stores?.length ?? 0) > 0;
-    return !dismissed && !hasProducts && !hasStores;
+    const hasCompetitors = (competitorCount ?? 0) > 0;
+    return !dismissed && !(hasProducts && hasStores && hasCompetitors);
   });
 
   useEffect(() => {
@@ -105,10 +121,11 @@ export default function DashboardLayout({
     const dismissed = localStorage.getItem("onboarding-dismissed");
     const hasProducts = (products?.length ?? 0) > 0;
     const hasStores = (stores?.length ?? 0) > 0;
-    if (!dismissed && !hasProducts && !hasStores) {
+    const hasCompetitors = (competitorCount ?? 0) > 0;
+    if (!dismissed && !(hasProducts && hasStores && hasCompetitors)) {
       setOnboardingOpen(true);
     }
-  }, [user, isLoading, products, stores]);
+  }, [user, isLoading, products, stores, competitorCount]);
 
   const handleOnboardingComplete = () => {
     localStorage.setItem("onboarding-dismissed", "true");
@@ -124,13 +141,20 @@ export default function DashboardLayout({
     >
       <OnboardingWizard
         open={onboardingOpen}
-        onOpenChange={(open) => {
+        stores={stores ?? []}
+        productCount={products?.length ?? 0}
+        competitorCount={competitorCount ?? 0}
+        onOpenChange={open => {
           setOnboardingOpen(open);
-          if (!open) localStorage.setItem("onboarding-dismissed", "true");
         }}
         onComplete={handleOnboardingComplete}
       />
-      <DashboardLayoutContent user={user} setSidebarWidth={setSidebarWidth}>
+      <DashboardLayoutContent
+        user={user}
+        products={products ?? []}
+        stores={stores ?? []}
+        setSidebarWidth={setSidebarWidth}
+      >
         {children}
       </DashboardLayoutContent>
     </SidebarProvider>
@@ -138,13 +162,17 @@ export default function DashboardLayout({
 }
 
 type DashboardLayoutContentProps = {
-  user: User;
+  user: PublicUser;
+  products: RouterOutputs["products"]["list"];
+  stores: RouterOutputs["shopify"]["listStores"];
   children: React.ReactNode;
   setSidebarWidth: (width: number) => void;
 };
 
 function DashboardLayoutContent({
   user,
+  products,
+  stores,
   children,
   setSidebarWidth,
 }: DashboardLayoutContentProps) {
@@ -203,9 +231,7 @@ function DashboardLayoutContent({
   }, []);
 
   // ── Export handler ──
-  const { data: allProducts } = trpc.products.list.useQuery();
   const handleExport = useCallback(() => {
-    const products = allProducts ?? [];
     if (!products.length) {
       toast.error("No products to export");
       return;
@@ -230,10 +256,9 @@ function DashboardLayoutContent({
     document.body.removeChild(link);
     URL.revokeObjectURL(url);
     toast.success(`Exported ${products.length} products`);
-  }, [allProducts]);
+  }, [products]);
 
   // ── Sync Shopify handler ──
-  const { data: stores } = trpc.shopify.listStores.useQuery();
   const syncMutation = trpc.shopify.syncProducts.useMutation({
     onSuccess: data => {
       toast.success(data.message || `Synced ${data.synced} products`);
@@ -250,7 +275,7 @@ function DashboardLayoutContent({
       });
       return;
     }
-    const activeStore = stores.find((s: { isActive: boolean }) => s.isActive);
+    const activeStore = stores.find(s => s.isActive);
     if (!activeStore) {
       toast.error("No active Shopify store found");
       return;
@@ -264,9 +289,7 @@ function DashboardLayoutContent({
 
   const { data: alertStats } = trpc.alerts.stats.useQuery();
   const { data: unreadAlerts, refetch: refetchAlerts } =
-    trpc.alerts.list.useQuery(
-      { unreadOnly: true, limit: 10 }
-    );
+    trpc.alerts.list.useQuery({ unreadOnly: true, limit: 10 });
 
   const markReadMutation = trpc.alerts.markRead.useMutation({
     onSuccess: () => {

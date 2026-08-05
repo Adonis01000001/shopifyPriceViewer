@@ -70,7 +70,8 @@ export function isSameSite(candidate: string, root: string): boolean {
 export function classifyUrl(urlValue: string): PriceRadarPageKind {
   const url = new URL(urlValue);
   const path = url.pathname.toLowerCase();
-  if (path.endsWith("sitemap.xml") || path.includes("/sitemap")) return "sitemap";
+  if (path.endsWith("sitemap.xml") || path.includes("/sitemap"))
+    return "sitemap";
   if (PRODUCT_HINTS.some(hint => path.includes(hint))) return "product";
   if (
     Array.from(url.searchParams.keys()).some(key =>
@@ -119,19 +120,70 @@ export function extractSitemapUrls(xml: string, rootUrl: string): string[] {
 }
 
 function isPrivateAddress(address: string): boolean {
-  if (address === "::1" || address === "0.0.0.0") return true;
-  if (address.startsWith("fc") || address.startsWith("fd") || address.startsWith("fe80:"))
-    return true;
-  if (!isIP(address).toString()) return true;
-  const parts = address.split(".").map(Number);
-  if (parts.length !== 4) return false;
+  const normalized = address.toLowerCase().replace(/^\[|\]$/g, "");
+  const version = isIP(normalized);
+
+  if (version === 0) return true;
+
+  if (version === 4) {
+    const parts = normalized.split(".").map(Number);
+    if (parts.length !== 4 || parts.some(part => !Number.isInteger(part))) {
+      return true;
+    }
+    const [first, second, third] = parts;
+    return (
+      first === 0 ||
+      first === 10 ||
+      first === 127 ||
+      (first === 100 && second >= 64 && second <= 127) ||
+      (first === 169 && second === 254) ||
+      (first === 172 && second >= 16 && second <= 31) ||
+      (first === 192 && (second === 0 || second === 168)) ||
+      (first === 198 &&
+        (second === 18 || second === 19 || (second === 51 && third === 100))) ||
+      (first === 203 && second === 0 && third === 113) ||
+      first >= 224
+    );
+  }
+
+  if (normalized === "::" || normalized === "::1") return true;
+  if (normalized.startsWith("::ffff:")) {
+    const mappedIpv4 = normalized.slice("::ffff:".length);
+    if (isIP(mappedIpv4) === 4) return isPrivateAddress(mappedIpv4);
+  }
+
+  const ipv6Parts = normalized.split("::");
+  if (ipv6Parts.length <= 2) {
+    const left = ipv6Parts[0] ? ipv6Parts[0].split(":") : [];
+    const right = ipv6Parts[1] ? ipv6Parts[1].split(":") : [];
+    const missing = 8 - left.length - right.length;
+    if (missing >= 0) {
+      const groups = [
+        ...left,
+        ...Array.from({ length: missing }, () => "0"),
+        ...right,
+      ].map(group => Number.parseInt(group, 16));
+      if (
+        groups.length === 8 &&
+        groups.slice(0, 5).every(group => group === 0) &&
+        groups[5] === 0xffff
+      ) {
+        const mappedIpv4 = [
+          groups[6] >> 8,
+          groups[6] & 0xff,
+          groups[7] >> 8,
+          groups[7] & 0xff,
+        ].join(".");
+        return isPrivateAddress(mappedIpv4);
+      }
+    }
+  }
+
   return (
-    parts[0] === 10 ||
-    parts[0] === 127 ||
-    (parts[0] === 169 && parts[1] === 254) ||
-    (parts[0] === 172 && parts[1] >= 16 && parts[1] <= 31) ||
-    (parts[0] === 192 && parts[1] === 168) ||
-    parts[0] === 0
+    /^f[cd]/.test(normalized) ||
+    /^fe[89ab]/.test(normalized) ||
+    normalized.startsWith("ff") ||
+    normalized.startsWith("2001:db8:")
   );
 }
 
@@ -140,16 +192,27 @@ export async function assertPublicUrl(urlValue: string): Promise<void> {
   if (!["http:", "https:"].includes(url.protocol)) {
     throw new Error("Only HTTP and HTTPS URLs are supported");
   }
-  const hostname = url.hostname.toLowerCase();
+  if (url.username || url.password) {
+    throw new Error("URLs with embedded credentials are not allowed");
+  }
+
+  const hostname = url.hostname.toLowerCase().replace(/^\[|\]$/g, "");
   if (
     hostname === "localhost" ||
     hostname.endsWith(".localhost") ||
-    hostname.endsWith(".local")
+    hostname.endsWith(".local") ||
+    hostname.endsWith(".internal")
   ) {
     throw new Error("Private network targets are not allowed");
   }
-  const addresses = await lookup(hostname, { all: true, verbatim: true });
-  if (addresses.length === 0 || addresses.some(entry => isPrivateAddress(entry.address))) {
+
+  const addresses = isIP(hostname)
+    ? [{ address: hostname }]
+    : await lookup(hostname, { all: true, verbatim: true });
+  if (
+    addresses.length === 0 ||
+    addresses.some(entry => isPrivateAddress(entry.address))
+  ) {
     throw new Error("Private network targets are not allowed");
   }
 }
@@ -181,8 +244,13 @@ export function parseRobotsTxt(content: string): {
   return { disallow, crawlDelayMs, sitemaps };
 }
 
-export function isAllowedByRobots(urlValue: string, disallow: string[]): boolean {
+export function isAllowedByRobots(
+  urlValue: string,
+  disallow: string[]
+): boolean {
   const path = new URL(urlValue).pathname;
-  return !disallow.some(rule => rule !== "/" && path.startsWith(rule)) &&
-    !disallow.includes("/");
+  return (
+    !disallow.some(rule => rule !== "/" && path.startsWith(rule)) &&
+    !disallow.includes("/")
+  );
 }

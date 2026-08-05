@@ -1,5 +1,10 @@
 # Setup Guide - Shopify Price Intelligence
 
+> **Version 1.0 notice:** This document describes the retired Python,
+> SQL Server, and Next.js setup and is retained for historical reference. Use
+> the current [README](README.md) and [release deployment runbook](docs/RELEASE-DEPLOYMENT.md)
+> for the Node.js, PostgreSQL, Redis, and Vite application.
+
 Complete setup instructions for the Shopify Price Intelligence platform.
 
 ## Quick Start

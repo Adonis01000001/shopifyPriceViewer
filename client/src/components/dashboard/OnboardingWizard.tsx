@@ -1,10 +1,24 @@
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
-import { Store, Package, Users, ArrowRight, Check, Loader2 } from "lucide-react";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+} from "@/components/ui/dialog";
+import {
+  Store,
+  Package,
+  Users,
+  ArrowRight,
+  Check,
+  Loader2,
+} from "lucide-react";
 import { cn } from "@/lib/utils";
-import { useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
+import { useProductAnalytics } from "@/lib/analytics";
 
 const steps = [
   {
@@ -35,41 +49,85 @@ const steps = [
 
 interface OnboardingWizardProps {
   open: boolean;
+  stores: Array<{ id: string; isActive: boolean }>;
+  productCount: number;
+  competitorCount: number;
   onOpenChange: (open: boolean) => void;
   onComplete: () => void;
 }
 
-export default function OnboardingWizard({ open, onOpenChange, onComplete }: OnboardingWizardProps) {
+export default function OnboardingWizard({
+  open,
+  stores,
+  productCount,
+  competitorCount,
+  onOpenChange,
+  onComplete,
+}: OnboardingWizardProps) {
   const [step, setStep] = useState(0);
-  const [completed, setCompleted] = useState<Set<string>>(new Set());
+  const [manuallyCompleted, setManuallyCompleted] = useState<Set<string>>(
+    new Set()
+  );
+  const completionEventsSent = useRef<Set<string>>(new Set());
+  const utils = trpc.useUtils();
+  const track = useProductAnalytics();
+
+  const completed = useMemo(() => {
+    const ids = new Set(manuallyCompleted);
+    if (stores.some(store => store.isActive)) ids.add("shopify");
+    if (productCount > 0) ids.add("products");
+    if (competitorCount > 0) ids.add("competitor");
+    return ids;
+  }, [competitorCount, manuallyCompleted, productCount, stores]);
+
+  const firstIncompleteStep = steps.findIndex(item => !completed.has(item.id));
+  const allStepsComplete = firstIncompleteStep === -1;
+
+  useEffect(() => {
+    if (!open || allStepsComplete) return;
+    setStep(currentStep =>
+      currentStep === firstIncompleteStep ? currentStep : firstIncompleteStep
+    );
+  }, [allStepsComplete, firstIncompleteStep, open]);
+
+  useEffect(() => {
+    if (!open) return;
+    for (const item of steps) {
+      if (!completed.has(item.id) || completionEventsSent.current.has(item.id)) {
+        continue;
+      }
+      completionEventsSent.current.add(item.id);
+      track("onboarding_step_completed", { step: item.id });
+    }
+  }, [completed, open, track]);
 
   const syncMutation = trpc.shopify.syncProducts.useMutation({
-    onSuccess: (data) => {
+    onSuccess: data => {
       toast.success(data.message || `Synced ${data.synced} products`);
-      setCompleted((prev) => new Set(prev).add("products"));
+      setManuallyCompleted(prev => new Set(prev).add("products"));
+      utils.products.list.invalidate();
     },
-    onError: (err) => toast.error(err.message || "Sync failed"),
+    onError: err => toast.error(err.message || "Sync failed"),
   });
 
-  const { data: stores } = trpc.shopify.listStores.useQuery();
-
   const handleConnectShopify = () => {
-    window.open("/api/shopify/login", "_blank");
-    setCompleted((prev) => new Set(prev).add("shopify"));
+    track("onboarding_step_started", { step: "shopify" });
+    window.location.href = "/api/shopify/login";
   };
 
   const handleSyncProducts = () => {
-    const activeStore = stores?.find((s: any) => s.isActive);
+    const activeStore = stores.find(store => store.isActive);
     if (!activeStore) {
       toast.error("No active store found. Connect a Shopify store first.");
       return;
     }
+    track("onboarding_step_started", { step: "products" });
     syncMutation.mutate({ storeId: activeStore.id });
   };
 
   const handleAddCompetitor = () => {
-    window.location.href = "/competitors";
-    setCompleted((prev) => new Set(prev).add("competitor"));
+    track("onboarding_step_started", { step: "competitor" });
+    window.location.href = "/competitors?onboarding=1";
   };
 
   const current = steps[step];
@@ -77,9 +135,13 @@ export default function OnboardingWizard({ open, onOpenChange, onComplete }: Onb
   const isCompleted = completed.has(current.id);
 
   const handleNext = () => {
+    if (!isCompleted) return;
     if (step < steps.length - 1) {
-      setStep((s) => s + 1);
+      setStep(s => s + 1);
     } else {
+      track("first_value_reached", {
+        activation_path: "shopify_products_competitor",
+      });
       onComplete();
       onOpenChange(false);
     }
@@ -87,26 +149,33 @@ export default function OnboardingWizard({ open, onOpenChange, onComplete }: Onb
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-          <DialogContent className="sm:max-w-[540px]" showCloseButton={false}>
+      <DialogContent className="sm:max-w-[540px]" showCloseButton={false}>
         <DialogHeader>
+          <p className="label-caps text-[10px] text-primary">
+            Get your first pricing signal in under 5 minutes
+          </p>
           <div className="flex items-center gap-2 mb-1">
             {steps.map((s, i) => (
               <div key={s.id} className="flex items-center gap-2">
-                <div className={cn(
-                  "w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold transition-all",
-                  i === step
-                    ? "bg-primary text-primary-foreground"
-                    : i < step
-                      ? "bg-[#21a732] text-white"
-                      : "bg-surface-container-highest text-muted-foreground"
-                )}>
+                <div
+                  className={cn(
+                    "w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold transition-all",
+                    i === step
+                      ? "bg-primary text-primary-foreground"
+                      : i < step
+                        ? "bg-[#21a732] text-white"
+                        : "bg-surface-container-highest text-muted-foreground"
+                  )}
+                >
                   {i < step ? <Check className="h-3.5 w-3.5" /> : i + 1}
                 </div>
                 {i < steps.length - 1 && (
-                  <div className={cn(
-                    "w-12 h-0.5",
-                    i < step ? "bg-[#21a732]" : "bg-surface-container-highest"
-                  )} />
+                  <div
+                    className={cn(
+                      "w-12 h-0.5",
+                      i < step ? "bg-[#21a732]" : "bg-surface-container-highest"
+                    )}
+                  />
                 )}
               </div>
             ))}
@@ -118,32 +187,39 @@ export default function OnboardingWizard({ open, onOpenChange, onComplete }: Onb
         </DialogHeader>
 
         <div className="flex flex-col items-center py-6">
-          <div className={cn(
-            "w-20 h-20 rounded-2xl flex items-center justify-center border-2 mb-4",
-            current.color
-          )}>
+          <div
+            className={cn(
+              "w-20 h-20 rounded-2xl flex items-center justify-center border-2 mb-4",
+              current.color
+            )}
+          >
             <StepIcon className="h-8 w-8" />
           </div>
 
           <div className="text-center max-w-sm">
             {step === 0 && (
               <p className="text-xs text-muted-foreground">
-                Authorize PriceIntel to access your Shopify store. We only read product
-                and pricing data — we never modify your store without your approval.
+                Authorize PriceVision to access your Shopify store. We only read
+                product and pricing data — we never modify your store without
+                your approval.
               </p>
             )}
             {step === 1 && (
               <p className="text-xs text-muted-foreground">
-                We&apos;ll import your product catalog from Shopify. You can then
-                select which products to actively monitor and track.
+                We&apos;ll import your product catalog from Shopify. You can
+                then select which products to actively monitor and track.
               </p>
             )}
             {step === 2 && (
               <p className="text-xs text-muted-foreground">
-                Enter the website domain of a competitor. Our AI will discover their
-                products and match them to yours automatically.
+                Enter the website domain of a competitor. Our AI will discover
+                their products and match them to yours automatically.
               </p>
             )}
+            <p className="text-[11px] text-muted-foreground/70 mt-4">
+              {completed.size} of {steps.length} setup steps complete. You can
+              leave and resume this checklist any time.
+            </p>
           </div>
         </div>
 
@@ -157,11 +233,7 @@ export default function OnboardingWizard({ open, onOpenChange, onComplete }: Onb
             Skip for now
           </Button>
           <div className="flex items-center gap-2">
-            {isCompleted ? (
-              <span className="text-xs text-[#21a732] flex items-center gap-1">
-                <Check className="h-3 w-3" /> Done
-              </span>
-            ) : (
+            {!isCompleted ? (
               <Button
                 size="sm"
                 className="bg-primary text-primary-foreground text-xs"
@@ -172,22 +244,25 @@ export default function OnboardingWizard({ open, onOpenChange, onComplete }: Onb
                 }}
                 disabled={step === 1 ? syncMutation.isPending : false}
               >
-                {(step === 1 && syncMutation.isPending) ? (
-                  <><Loader2 className="h-3 w-3 mr-1 animate-spin" /> Syncing...</>
+                {step === 1 && syncMutation.isPending ? (
+                  <>
+                    <Loader2 className="h-3 w-3 mr-1 animate-spin" /> Syncing...
+                  </>
                 ) : (
                   <>{current.action}</>
                 )}
               </Button>
+            ) : (
+              <Button
+                size="sm"
+                variant="outline"
+                className="border-outline-variant text-xs"
+                onClick={handleNext}
+              >
+                {step < steps.length - 1 ? "Continue" : "See your dashboard"}
+                <ArrowRight className="h-3 w-3 ml-1" />
+              </Button>
             )}
-            <Button
-              size="sm"
-              variant="outline"
-              className="border-outline-variant text-xs"
-              onClick={handleNext}
-            >
-              {step < steps.length - 1 ? "Next" : "Finish"}
-              <ArrowRight className="h-3 w-3 ml-1" />
-            </Button>
           </div>
         </div>
       </DialogContent>

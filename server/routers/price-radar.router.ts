@@ -3,10 +3,16 @@ import { z } from "zod";
 import { and, eq, desc, isNotNull, sql } from "drizzle-orm";
 import { protectedProcedure, router } from "../_core/trpc";
 import { requireDb } from "../_core/db-assert";
-import { priceRadarProducts, priceRadarSources, competitorProducts, competitors } from "../../drizzle/schema";
+import {
+  priceRadarProducts,
+  priceRadarSources,
+  competitorProducts,
+  competitors,
+} from "../../drizzle/schema";
 import { priceRadarService } from "../services/price-radar/price-radar.service";
 import { resolveProductDisplayName } from "../services/price-radar/extraction";
 import { normalizeCompetitorDomain } from "../services/price-radar/url-policy";
+import { entitlementService } from "../services/entitlement.service";
 
 const crawlPolicySchema = z.object({
   maxPages: z.number().int().min(1).max(5_000).optional(),
@@ -21,7 +27,8 @@ const crawlPolicySchema = z.object({
 });
 
 function mapServiceError(error: unknown): never {
-  const message = error instanceof Error ? error.message : "Price Radar request failed";
+  const message =
+    error instanceof Error ? error.message : "Price Radar request failed";
   if (/not found/i.test(message))
     throw new TRPCError({ code: "NOT_FOUND", message });
   if (/already active/i.test(message))
@@ -47,6 +54,7 @@ export const priceRadarRouter = router({
       })
     )
     .mutation(async ({ ctx, input }) => {
+      await entitlementService.assertCanAdd(ctx.user.id, "radarSources");
       try {
         return await priceRadarService.createSource({
           userId: ctx.user.id,
@@ -107,7 +115,10 @@ export const priceRadarRouter = router({
     .query(async ({ ctx, input }) => {
       const job = await priceRadarService.getJob(ctx.user.id, input.jobId);
       if (!job)
-        throw new TRPCError({ code: "NOT_FOUND", message: "Crawl job not found" });
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "Crawl job not found",
+        });
       return job;
     }),
 
@@ -115,17 +126,18 @@ export const priceRadarRouter = router({
     .input(
       z
         .object({
+          sourceId: z.string().uuid().optional(),
           limit: z.number().int().min(1).max(200).default(50),
           offset: z.number().int().min(0).default(0),
         })
         .optional()
     )
     .query(({ ctx, input }) =>
-      priceRadarService.listJobs(
-        ctx.user.id,
-        input?.limit ?? 50,
-        input?.offset ?? 0
-      )
+      priceRadarService.listJobs(ctx.user.id, {
+        sourceId: input?.sourceId,
+        limit: input?.limit ?? 50,
+        offset: input?.offset ?? 0,
+      })
     ),
 
   products: protectedProcedure
@@ -203,7 +215,10 @@ export const priceRadarRouter = router({
             lastSeenAt: competitorProducts.updatedAt,
           })
           .from(competitorProducts)
-          .innerJoin(competitors, eq(competitorProducts.competitorId, competitors.id))
+          .innerJoin(
+            competitors,
+            eq(competitorProducts.competitorId, competitors.id)
+          )
           .where(
             and(
               eq(competitors.userId, ctx.user.id),
@@ -273,7 +288,14 @@ export const priceRadarRouter = router({
     .query(async ({ ctx, input }) => {
       const job = await priceRadarService.getJob(ctx.user.id, input.jobId);
       if (!job)
-        throw new TRPCError({ code: "NOT_FOUND", message: "Crawl job not found" });
-      return priceRadarService.listErrors(ctx.user.id, input.jobId, input.limit);
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "Crawl job not found",
+        });
+      return priceRadarService.listErrors(
+        ctx.user.id,
+        input.jobId,
+        input.limit
+      );
     }),
 });

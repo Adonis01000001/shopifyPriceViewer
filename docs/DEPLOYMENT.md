@@ -1,5 +1,9 @@
 # Production Deployment Guide
 
+> **Retired guide:** This document describes an older Python, SQL Server, and
+> Celery architecture. Do not use it for Version 1.0. Follow the current
+> [Version 1.0 deployment runbook](RELEASE-DEPLOYMENT.md) instead.
+
 ## Architecture Overview
 
 The application uses a modular monolith architecture with:

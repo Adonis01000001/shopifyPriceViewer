@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useLocation } from "wouter";
 import { trpc } from "@/lib/trpc";
+import { useProductAnalytics } from "@/lib/analytics";
 import { toast } from "sonner";
 import { DottedSurface } from "@/components/ui/dotted-surface";
 import { TypewriterEffectSmooth } from "@/components/ui/typewriter-effect";
@@ -13,6 +14,7 @@ export default function Auth() {
   const [password, setPassword] = useState("");
   const [name, setName] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+  const track = useProductAnalytics();
 
   const utils = trpc.useUtils();
 
@@ -31,6 +33,8 @@ export default function Auth() {
   const registerMutation = trpc.auth.register.useMutation({
     onSuccess: () => {
       toast.success("Account created successfully!");
+      track("signup_completed", { method: "email" });
+      track("trial_started", { source: "registration" });
       utils.auth.me.invalidate();
       navigate("/");
     },
@@ -113,8 +117,8 @@ export default function Auth() {
             />
 
             <p className="auth-branding__desc">
-              AI-powered pricing intelligence for your Shopify store. Monitor,
-              analyze, and optimize — all in real-time.
+              Pricing intelligence for your Shopify store. See which competitor
+              moves deserve action, then make better decisions with evidence.
             </p>
 
             <div className="auth-branding__features">
@@ -136,9 +140,9 @@ export default function Auth() {
                   </svg>
                 </div>
                 <div>
-                  <div className="auth-feature__title">Real-time Tracking</div>
+                  <div className="auth-feature__title">Scheduled Tracking</div>
                   <div className="auth-feature__desc">
-                    Monitor competitor prices as they change
+                    Keep a watchlist without spreadsheet work
                   </div>
                 </div>
               </div>
@@ -166,9 +170,9 @@ export default function Auth() {
                   </svg>
                 </div>
                 <div>
-                  <div className="auth-feature__title">AI Recommendations</div>
+                  <div className="auth-feature__title">Explainable Recommendations</div>
                   <div className="auth-feature__desc">
-                    Get smart pricing suggestions instantly
+                    See the evidence behind a price decision
                   </div>
                 </div>
               </div>
@@ -194,9 +198,9 @@ export default function Auth() {
                   </svg>
                 </div>
                 <div>
-                  <div className="auth-feature__title">Price Alerts</div>
+                  <div className="auth-feature__title">Alerts That Matter</div>
                   <div className="auth-feature__desc">
-                    Notified the moment competitors adjust
+                    Focus on changes that can affect your margin
                   </div>
                 </div>
               </div>
@@ -214,7 +218,7 @@ export default function Auth() {
               <p className="auth-form-header__subtitle">
                 {mode === "login"
                   ? "Sign in to your PriceVision dashboard"
-                  : "Start your pricing intelligence journey"}
+                  : "Connect Shopify and see your first actionable signal in under five minutes."}
               </p>
             </div>
 

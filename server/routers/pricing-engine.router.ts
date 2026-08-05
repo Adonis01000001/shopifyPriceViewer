@@ -5,7 +5,11 @@ import { recommendationService } from "../services/recommendation.service";
 import { productService } from "../services/product.service";
 import { getAiRecommendation } from "../services/ai-recommendation.service";
 import { ensureCompetitors } from "../services/auto-competitor.service";
-import { products, competitors, competitorProducts } from "../../drizzle/schema";
+import {
+  products,
+  competitors,
+  competitorProducts,
+} from "../../drizzle/schema";
 import { eq, and } from "drizzle-orm";
 import { requireDb } from "../_core/db-assert";
 
@@ -35,9 +39,14 @@ export const pricingEngineRouter = router({
       const compPrices = await database
         .select({ price: competitorProducts.price })
         .from(competitorProducts)
+        .innerJoin(
+          competitors,
+          eq(competitorProducts.competitorId, competitors.id)
+        )
         .where(
           and(
             eq(competitorProducts.productId, input.productId),
+            eq(competitors.userId, ctx.user!.id),
             eq(competitorProducts.isActive, true)
           )
         );
@@ -88,10 +97,14 @@ export const pricingEngineRouter = router({
           name: competitors.name,
         })
         .from(competitorProducts)
-        .innerJoin(competitors, eq(competitorProducts.competitorId, competitors.id))
+        .innerJoin(
+          competitors,
+          eq(competitorProducts.competitorId, competitors.id)
+        )
         .where(
           and(
             eq(competitorProducts.productId, input.productId),
+            eq(competitors.userId, ctx.user!.id),
             eq(competitorProducts.isActive, true)
           )
         );
@@ -125,9 +138,10 @@ export const pricingEngineRouter = router({
         return {
           aiRecommendation: null,
           deterministicRecommendation: analysis.recommendation,
-          fallbackReason: aiResult === null
-            ? "AI unavailable — showing rules-based recommendation"
-            : null,
+          fallbackReason:
+            aiResult === null
+              ? "AI unavailable — showing rules-based recommendation"
+              : null,
         };
       }
 
@@ -168,10 +182,14 @@ export const pricingEngineRouter = router({
           name: competitors.name,
         })
         .from(competitorProducts)
-        .innerJoin(competitors, eq(competitorProducts.competitorId, competitors.id))
+        .innerJoin(
+          competitors,
+          eq(competitorProducts.competitorId, competitors.id)
+        )
         .where(
           and(
             eq(competitorProducts.productId, input.productId),
+            eq(competitors.userId, ctx.user!.id),
             eq(competitorProducts.isActive, true)
           )
         );
@@ -251,7 +269,10 @@ export const pricingEngineRouter = router({
     }[] = [];
 
     for (const product of tracked) {
-      const compPrices = await productService.getCompetitorPrices(product.id);
+      const compPrices = await productService.getCompetitorPrices(
+        ctx.user!.id,
+        product.id
+      );
       const prices = compPrices.map(c => Number(c.price));
       const merchantPrice = Number(product.price);
       const costPrice =
@@ -297,9 +318,14 @@ export const pricingEngineRouter = router({
       const compPrices = await database
         .select({ price: competitorProducts.price })
         .from(competitorProducts)
+        .innerJoin(
+          competitors,
+          eq(competitorProducts.competitorId, competitors.id)
+        )
         .where(
           and(
             eq(competitorProducts.productId, input.productId),
+            eq(competitors.userId, ctx.user!.id),
             eq(competitorProducts.isActive, true)
           )
         );
@@ -361,7 +387,10 @@ export const pricingEngineRouter = router({
     };
 
     for (const product of tracked) {
-      const compPrices = await productService.getCompetitorPrices(product.id);
+      const compPrices = await productService.getCompetitorPrices(
+        ctx.user!.id,
+        product.id
+      );
       const prices = compPrices.map(c => Number(c.price));
       const merchantPrice = Number(product.price);
       const costPrice =

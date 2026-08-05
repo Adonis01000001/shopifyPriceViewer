@@ -59,6 +59,44 @@ export const notificationFrequencyEnum = pgEnum("notification_frequency", [
   "daily",
   "weekly",
 ]);
+export const subscriptionPlanEnum = pgEnum("subscription_plan", [
+  "free",
+  "starter",
+  "pro",
+  "scale",
+]);
+export const subscriptionStatusEnum = pgEnum("subscription_status", [
+  "trialing",
+  "active",
+  "past_due",
+  "canceled",
+]);
+export const billingEventStatusEnum = pgEnum("billing_event_status", [
+  "processing",
+  "processed",
+  "failed",
+]);
+export const reportTypeEnum = pgEnum("report_type", [
+  "daily_summary",
+  "weekly_competitors",
+  "pricing_opportunities",
+]);
+export const reportStatusEnum = pgEnum("report_status", [
+  "queued",
+  "sending",
+  "sent",
+  "failed",
+]);
+export const deliveryChannelEnum = pgEnum("delivery_channel", [
+  "email",
+  "in_app",
+]);
+export const deliveryStatusEnum = pgEnum("delivery_status", [
+  "queued",
+  "sending",
+  "sent",
+  "failed",
+]);
 
 // =============================================================================
 // Users
@@ -95,6 +133,151 @@ export const users = pgTable(
 
 export type User = typeof users.$inferSelect;
 export type InsertUser = typeof users.$inferInsert;
+
+// Billing-provider-neutral subscription state. Provider identifiers are kept
+// server-side and are intentionally excluded from account DTOs.
+export const subscriptions = pgTable(
+  "subscriptions",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    plan: subscriptionPlanEnum("plan").default("free").notNull(),
+    status: subscriptionStatusEnum("status").default("trialing").notNull(),
+    trialEndsAt: timestamp("trial_ends_at", { withTimezone: true }),
+    currentPeriodEndsAt: timestamp("current_period_ends_at", {
+      withTimezone: true,
+    }),
+    cancelAtPeriodEnd: boolean("cancel_at_period_end").default(false).notNull(),
+    provider: varchar("provider", { length: 32 }),
+    providerCustomerId: varchar("provider_customer_id", { length: 255 }),
+    providerSubscriptionId: varchar("provider_subscription_id", {
+      length: 255,
+    }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  t => ({
+    userIdIdx: uniqueIndex("subscriptions_user_id_idx").on(t.userId),
+    providerCustomerIdx: index("subscriptions_provider_customer_idx").on(
+      t.providerCustomerId
+    ),
+    providerSubscriptionIdx: index(
+      "subscriptions_provider_subscription_idx"
+    ).on(t.providerSubscriptionId),
+  })
+);
+
+export type Subscription = typeof subscriptions.$inferSelect;
+export type InsertSubscription = typeof subscriptions.$inferInsert;
+
+// Durable Stripe event ledger. Stripe retries delivery, so this table is the
+// source of truth for idempotency and operational replay decisions.
+export const billingEvents = pgTable(
+  "billing_events",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    stripeEventId: varchar("stripe_event_id", { length: 255 }).notNull(),
+    eventType: varchar("event_type", { length: 128 }).notNull(),
+    status: billingEventStatusEnum("status").default("processing").notNull(),
+    livemode: boolean("livemode").default(false).notNull(),
+    payload: jsonb("payload"),
+    errorMessage: text("error_message"),
+    processedAt: timestamp("processed_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  t => ({
+    stripeEventIdx: uniqueIndex("billing_events_stripe_event_id_idx").on(
+      t.stripeEventId
+    ),
+    statusIdx: index("billing_events_status_idx").on(t.status),
+    createdAtIdx: index("billing_events_created_at_idx").on(t.createdAt),
+  })
+);
+
+export type BillingEvent = typeof billingEvents.$inferSelect;
+export type InsertBillingEvent = typeof billingEvents.$inferInsert;
+
+export const reportRuns = pgTable(
+  "report_runs",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    reportType: reportTypeEnum("report_type").notNull(),
+    status: reportStatusEnum("status").default("queued").notNull(),
+    periodStart: timestamp("period_start", { withTimezone: true }).notNull(),
+    periodEnd: timestamp("period_end", { withTimezone: true }).notNull(),
+    summary: jsonb("summary"),
+    errorMessage: text("error_message"),
+    queuedAt: timestamp("queued_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    sentAt: timestamp("sent_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  t => ({
+    userCreatedIdx: index("report_runs_user_created_idx").on(
+      t.userId,
+      t.createdAt
+    ),
+    userTypePeriodIdx: index("report_runs_user_type_period_idx").on(
+      t.userId,
+      t.reportType,
+      t.periodStart
+    ),
+    statusIdx: index("report_runs_status_idx").on(t.status),
+  })
+);
+
+export type ReportRun = typeof reportRuns.$inferSelect;
+export type InsertReportRun = typeof reportRuns.$inferInsert;
+
+export const notificationDeliveries = pgTable(
+  "notification_deliveries",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    reportRunId: uuid("report_run_id").references(() => reportRuns.id, {
+      onDelete: "set null",
+    }),
+    channel: deliveryChannelEnum("channel").notNull(),
+    category: varchar("category", { length: 64 }).notNull(),
+    status: deliveryStatusEnum("status").default("queued").notNull(),
+    providerMessageId: varchar("provider_message_id", { length: 255 }),
+    errorMessage: text("error_message"),
+    sentAt: timestamp("sent_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  t => ({
+    reportChannelIdx: uniqueIndex("notification_deliveries_report_channel_idx").on(
+      t.reportRunId,
+      t.channel
+    ),
+    userCreatedIdx: index("notification_deliveries_user_created_idx").on(
+      t.userId,
+      t.createdAt
+    ),
+    statusIdx: index("notification_deliveries_status_idx").on(t.status),
+  })
+);
+
+export type NotificationDelivery = typeof notificationDeliveries.$inferSelect;
+export type InsertNotificationDelivery = typeof notificationDeliveries.$inferInsert;
 
 // =============================================================================
 // Email Configuration
@@ -252,6 +435,11 @@ export const products = pgTable(
   },
   t => ({
     userIdIdx: index("products_user_id_idx").on(t.userId),
+    userActiveUpdatedIdx: index("products_user_active_updated_idx").on(
+      t.userId,
+      t.isActive,
+      t.updatedAt
+    ),
     storeIdIdx: index("products_store_id_idx").on(t.storeId),
     skuIdx: index("products_sku_idx").on(t.sku),
     userSkuUniqueIdx: uniqueIndex("products_user_sku_unique_idx").on(
@@ -339,6 +527,10 @@ export const competitors = pgTable(
   },
   t => ({
     userIdIdx: index("competitors_user_id_idx").on(t.userId),
+    userCreatedIdx: index("competitors_user_created_idx").on(
+      t.userId,
+      t.createdAt
+    ),
     normalizedNameIdx: index("competitors_user_normalized_name_idx").on(
       t.userId,
       t.normalizedName
@@ -391,6 +583,14 @@ export const competitorProducts = pgTable(
       t.competitorId
     ),
     productIdIdx: index("competitor_products_product_id_idx").on(t.productId),
+    productActiveIdx: index("competitor_products_product_active_idx").on(
+      t.productId,
+      t.isActive
+    ),
+    competitorActiveIdx: index("competitor_products_competitor_active_idx").on(
+      t.competitorId,
+      t.isActive
+    ),
     matchScoreIdx: index("competitor_products_match_score_idx").on(
       t.matchScore
     ),
@@ -488,6 +688,11 @@ export const alerts = pgTable(
     isResolvedIdx: index("alerts_is_resolved_idx").on(t.isResolved),
     createdAtIdx: index("alerts_created_at_idx").on(t.createdAt),
     userUnreadIdx: index("alerts_user_unread_idx").on(t.userId, t.isRead),
+    userReadCreatedIdx: index("alerts_user_read_created_idx").on(
+      t.userId,
+      t.isRead,
+      t.createdAt
+    ),
   })
 );
 
@@ -540,6 +745,10 @@ export const recommendations = pgTable(
   },
   t => ({
     userIdIdx: index("recommendations_user_id_idx").on(t.userId),
+    userCreatedIdx: index("recommendations_user_created_idx").on(
+      t.userId,
+      t.createdAt
+    ),
     productIdIdx: index("recommendations_product_id_idx").on(t.productId),
     statusIdx: index("recommendations_status_idx").on(t.status),
     confidenceIdx: index("recommendations_confidence_idx").on(
@@ -576,6 +785,10 @@ export const scrapeJobs = pgTable(
   },
   t => ({
     competitorIdIdx: index("scrape_jobs_competitor_id_idx").on(t.competitorId),
+    competitorCreatedIdx: index("scrape_jobs_competitor_created_idx").on(
+      t.competitorId,
+      t.createdAt
+    ),
     statusIdx: index("scrape_jobs_status_idx").on(t.status),
     createdAtIdx: index("scrape_jobs_created_at_idx").on(t.createdAt),
   })
@@ -1177,6 +1390,11 @@ export const priceRadarJobs = pgTable(
       t.userId,
       t.createdAt
     ),
+    userSourceCreatedIdx: index("price_radar_jobs_user_source_created_idx").on(
+      t.userId,
+      t.sourceId,
+      t.createdAt
+    ),
   })
 );
 
@@ -1278,6 +1496,11 @@ export const priceRadarProducts = pgTable(
   },
   t => ({
     userIdIdx: index("price_radar_products_user_id_idx").on(t.userId),
+    userActiveSeenIdx: index("price_radar_products_user_active_seen_idx").on(
+      t.userId,
+      t.isActive,
+      t.lastSeenAt
+    ),
     sourceIdIdx: index("price_radar_products_source_id_idx").on(t.sourceId),
     skuIdx: index("price_radar_products_sku_idx").on(t.sku),
     gtinIdx: index("price_radar_products_gtin_idx").on(t.gtin),
@@ -1305,7 +1528,9 @@ export const priceRadarProductAttributes = pgTable(
       .notNull(),
   },
   t => ({
-    productIdIdx: index("price_radar_attributes_product_id_idx").on(t.productId),
+    productIdIdx: index("price_radar_attributes_product_id_idx").on(
+      t.productId
+    ),
     productNameIdx: uniqueIndex("price_radar_attributes_product_name_idx").on(
       t.productId,
       t.name
@@ -1403,9 +1628,43 @@ export const priceRadarCrawlErrors = pgTable(
   })
 );
 
+/**
+ * First-party product analytics. Keep this table intentionally small and
+ * property-based: event names are allow-listed at the API boundary and
+ * properties must never contain credentials, catalog contents, or free-form
+ * personal data.
+ */
+export const analyticsEvents = pgTable(
+  "analytics_events",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    eventName: varchar("event_name", { length: 64 }).notNull(),
+    sessionId: varchar("session_id", { length: 128 }),
+    properties: jsonb("properties")
+      .$type<Record<string, string | number | boolean | null>>()
+      .default({})
+      .notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  t => ({
+    userEventCreatedIdx: index("analytics_events_user_event_created_idx").on(
+      t.userId,
+      t.eventName,
+      t.createdAt
+    ),
+    createdAtIdx: index("analytics_events_created_at_idx").on(t.createdAt),
+  })
+);
+
 export type PriceRadarSource = typeof priceRadarSources.$inferSelect;
 export type InsertPriceRadarSource = typeof priceRadarSources.$inferInsert;
 export type PriceRadarJob = typeof priceRadarJobs.$inferSelect;
 export type PriceRadarPage = typeof priceRadarPages.$inferSelect;
 export type PriceRadarScrapedProduct = typeof priceRadarProducts.$inferSelect;
 export type PriceRadarCrawlError = typeof priceRadarCrawlErrors.$inferSelect;
+export type AnalyticsEvent = typeof analyticsEvents.$inferSelect;

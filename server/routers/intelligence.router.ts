@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
-import { protectedProcedure, router } from "../_core/trpc";
+import { adminProcedure, protectedProcedure, router } from "../_core/trpc";
 import { competitorDiscoveryService } from "../services/competitor-discovery.service";
 import { priceMonitoringService } from "../services/price-monitoring.service";
 import { aiExtractionService } from "../services/ai-extraction.service";
@@ -8,8 +8,13 @@ import { cronScheduler } from "../services/cron-scheduler.service";
 import { scrapingService } from "../services/scraping.service";
 import { competitorService } from "../services/competitor.service";
 import { productService } from "../services/product.service";
+import { actionCenterService } from "../services/action-center.service";
 
 export const intelligenceRouter = router({
+  actionCenter: protectedProcedure.query(async ({ ctx }) => {
+    return actionCenterService.getForUser(ctx.user!.id);
+  }),
+
   // ── Competitor Discovery ──────────────────────────────────────────────────
 
   discoverCompetitors: protectedProcedure
@@ -250,7 +255,7 @@ export const intelligenceRouter = router({
       return priceMonitoringService.getTimeline(ctx.user!.id, input);
     }),
 
-  getCronRuns: protectedProcedure
+  getCronRuns: adminProcedure
     .input(z.object({ limit: z.number().min(1).max(50).optional() }).optional())
     .query(async ({ ctx, input }) => {
       return priceMonitoringService.getCronRuns(input?.limit ?? 20);
@@ -269,6 +274,7 @@ export const intelligenceRouter = router({
     )
     .query(async ({ ctx, input }) => {
       return priceMonitoringService.getSnapshotHistory(
+        ctx.user!.id,
         input.competitorProductId,
         input.limit ?? 30
       );

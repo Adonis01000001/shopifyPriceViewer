@@ -23,6 +23,7 @@ function createAuthContext(): {
     name: "Sample User",
     loginMethod: "manus",
     role: "user",
+    passwordHash: "$2b$12$not-a-real-password-hash",
     createdAt: new Date(),
     updatedAt: new Date(),
     lastSignedIn: new Date(),
@@ -61,5 +62,23 @@ describe("auth.logout", () => {
       httpOnly: true,
       path: "/",
     });
+  });
+});
+
+describe("auth.me", () => {
+  it("does not expose credential or internal identity fields", async () => {
+    const { ctx } = createAuthContext();
+    const caller = appRouter.createCaller(ctx);
+
+    const result = await caller.auth.me();
+
+    expect(result).toMatchObject({
+      id: 1,
+      email: "sample@example.com",
+      name: "Sample User",
+      role: "user",
+    });
+    expect(result).not.toHaveProperty("passwordHash");
+    expect(result).not.toHaveProperty("openId");
   });
 });

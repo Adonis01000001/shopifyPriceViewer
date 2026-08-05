@@ -8,6 +8,7 @@ import {
   normalizeCompetitorDomain,
   parseRobotsTxt,
   shouldCrawlUrl,
+  assertPublicUrl,
 } from "../url-policy";
 import { extractProductData, shouldRenderWithBrowser } from "../extraction";
 
@@ -15,6 +16,34 @@ describe("Price Radar URL policy", () => {
   it("normalizes competitor domains for source assignment", () => {
     expect(normalizeCompetitorDomain("www.Amazon.com")).toBe("amazon.com");
     expect(normalizeCompetitorDomain("EBAY.com.")).toBe("ebay.com");
+  });
+
+  it("rejects embedded credentials before DNS resolution", async () => {
+    await expect(
+      assertPublicUrl("https://user:password@example.com/products")
+    ).rejects.toThrow("embedded credentials");
+  });
+
+  it("rejects private, link-local, and reserved IPv4 targets", async () => {
+    for (const url of [
+      "http://127.0.0.1",
+      "http://169.254.169.254",
+      "http://100.64.0.1",
+      "http://192.0.2.1",
+    ]) {
+      await expect(assertPublicUrl(url)).rejects.toThrow(
+        "Private network targets"
+      );
+    }
+  });
+
+  it("rejects IPv6 loopback and IPv4-mapped private targets", async () => {
+    await expect(assertPublicUrl("http://[::1]")).rejects.toThrow(
+      "Private network targets"
+    );
+    await expect(assertPublicUrl("http://[::ffff:127.0.0.1]")).rejects.toThrow(
+      "Private network targets"
+    );
   });
 
   it("canonicalizes tracking parameters and fragments", () => {
@@ -31,7 +60,9 @@ describe("Price Radar URL policy", () => {
     expect(shouldCrawlUrl("/collections/phones?page=2", root)).toBe(true);
     expect(shouldCrawlUrl("/assets/phone.jpg", root)).toBe(false);
     expect(shouldCrawlUrl("/checkout", root)).toBe(false);
-    expect(shouldCrawlUrl("https://evil.example/products/phone", root)).toBe(false);
+    expect(shouldCrawlUrl("https://evil.example/products/phone", root)).toBe(
+      false
+    );
   });
 
   it("deduplicates canonical links and classifies page hints", () => {
@@ -58,7 +89,12 @@ describe("Price Radar URL policy", () => {
     `);
     expect(robots.disallow).toEqual(["/account"]);
     expect(robots.crawlDelayMs).toBe(2_000);
-    expect(isAllowedByRobots("https://shop.example.com/account/orders", robots.disallow)).toBe(false);
+    expect(
+      isAllowedByRobots(
+        "https://shop.example.com/account/orders",
+        robots.disallow
+      )
+    ).toBe(false);
     expect(
       extractSitemapUrls(
         `<urlset><url><loc>https://shop.example.com/products/a&amp;x=1</loc></url></urlset>`,
@@ -305,7 +341,10 @@ describe("Price Radar extraction", () => {
       <meta property="product:price:currency" content="USD">
       <meta property="og:image" content="/simple.png">
       <button>Add to cart</button>`;
-    const result = extractProductData(html, "https://shop.example.com/p/simple");
+    const result = extractProductData(
+      html,
+      "https://shop.example.com/p/simple"
+    );
     expect(result.product?.name).toBe("Simple Product");
     expect(result.product?.price).toBe("49.99");
     expect(result.product?.brand).toBeNull();
@@ -314,7 +353,10 @@ describe("Price Radar extraction", () => {
 
   it("requests browser rendering for empty JavaScript shells", () => {
     const html = `<html><body><div id="root"></div><script src="/app.js"></script></body></html>`;
-    const result = extractProductData(html, "https://shop.example.com/products/a");
+    const result = extractProductData(
+      html,
+      "https://shop.example.com/products/a"
+    );
     expect(shouldRenderWithBrowser(html, result)).toBe(true);
   });
 });

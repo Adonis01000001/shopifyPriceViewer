@@ -7,7 +7,7 @@ name = "PriceVision Local Sync"
 
 [access_scopes]
 # Learn more at https://shopify.dev/docs/apps/tools/cli/configuration#access_scopes
-scopes = "read_orders,read_products,write_products"
+scopes = "read_products"
 optional_scopes = [ ]
 use_legacy_install_flow = true
 
@@ -16,3 +16,11 @@ redirect_urls = [ "http://localhost:3000/api/shopify/callback" ]
 
 [webhooks]
 api_version = "2026-07"
+
+[[webhooks.subscriptions]]
+topics = [ "app/uninstalled" ]
+uri = "/api/shopify/webhooks"
+
+[[webhooks.subscriptions]]
+compliance_topics = [ "customers/data_request", "customers/redact", "shop/redact" ]
+uri = "/api/shopify/webhooks"

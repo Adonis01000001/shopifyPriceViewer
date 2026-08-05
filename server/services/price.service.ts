@@ -86,8 +86,19 @@ export const priceService = {
     };
   },
 
-  async recordPrice(data: InsertPriceHistory): Promise<PriceHistory> {
+  async recordPrice(
+    userId: string,
+    data: InsertPriceHistory
+  ): Promise<PriceHistory> {
     const database = await requireDb();
+    const ownedProduct = await database
+      .select({ id: products.id })
+      .from(products)
+      .where(and(eq(products.id, data.productId), eq(products.userId, userId)))
+      .limit(1);
+    if (ownedProduct.length === 0) {
+      throw new Error("Product not found");
+    }
     const result = await database.insert(priceHistory).values(data).returning();
     return result[0];
   },
@@ -107,6 +118,13 @@ export const priceService = {
 
     const fromDate = new Date();
     fromDate.setMonth(fromDate.getMonth() - months);
+
+    const ownedProduct = await database
+      .select({ id: products.id })
+      .from(products)
+      .where(and(eq(products.id, productId), eq(products.userId, userId)))
+      .limit(1);
+    if (ownedProduct.length === 0) return [];
 
     return database
       .select({

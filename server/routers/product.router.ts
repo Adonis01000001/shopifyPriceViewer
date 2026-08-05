@@ -8,8 +8,16 @@ import {
   priceSchema,
 } from "../../shared/validation";
 import * as db from "../db";
-import { shopifyStores, competitors, competitorProducts } from "../../drizzle/schema";
+import {
+  products,
+  shopifyStores,
+  competitors,
+  competitorProducts,
+} from "../../drizzle/schema";
 import { eq, and } from "drizzle-orm";
+import { encryptToken } from "../_core/sdk";
+import { toPublicShopifyStore } from "../_core/public-views";
+import { entitlementService } from "../services/entitlement.service";
 
 // Helper: get or create a "Manual" store placeholder for products without Shopify
 async function getOrCreateManualStore(userId: string): Promise<string> {
@@ -18,7 +26,10 @@ async function getOrCreateManualStore(userId: string): Promise<string> {
 
   // Look for existing manual store for this user
   const existing = await database.query.shopifyStores.findFirst({
-    where: and(eq(shopifyStores.userId, userId), eq(shopifyStores.storeName, "Manual")),
+    where: and(
+      eq(shopifyStores.userId, userId),
+      eq(shopifyStores.storeName, "Manual")
+    ),
   });
 
   if (existing) return existing.id;
@@ -97,8 +108,10 @@ export const productRouter = router({
       })
     )
     .mutation(async ({ ctx, input }) => {
+      await entitlementService.assertCanAdd(ctx.user!.id, "products");
       // Auto-create "Manual" store for products without Shopify connection
-      const resolvedStoreId = input.storeId || (await getOrCreateManualStore(ctx.user!.id));
+      const resolvedStoreId =
+        input.storeId || (await getOrCreateManualStore(ctx.user!.id));
 
       const product = await productService.create({
         userId: ctx.user!.id,
@@ -203,10 +216,16 @@ export const productRouter = router({
           lastScrapedAt: competitorProducts.lastScrapedAt,
         })
         .from(competitorProducts)
-        .innerJoin(competitors, eq(competitorProducts.competitorId, competitors.id))
+        .innerJoin(products, eq(competitorProducts.productId, products.id))
+        .innerJoin(
+          competitors,
+          eq(competitorProducts.competitorId, competitors.id)
+        )
         .where(
           and(
             eq(competitorProducts.productId, input.productId),
+            eq(products.userId, ctx.user!.id),
+            eq(competitors.userId, ctx.user!.id),
             eq(competitorProducts.isActive, true)
           )
         );
@@ -235,9 +254,11 @@ export const productRouter = router({
       })
     )
     .mutation(async ({ ctx, input }) => {
+      const { accessToken, ...storeInput } = input;
       const store = await productService.upsertStore({
         userId: ctx.user!.id,
-        ...input,
+        ...storeInput,
+        accessToken: encryptToken(accessToken),
         isActive: true,
       });
       if (!store)
@@ -245,7 +266,7 @@ export const productRouter = router({
           code: "INTERNAL_SERVER_ERROR",
           message: "Failed to save store",
         });
-      return store;
+      return toPublicShopifyStore(store);
     }),
 
   search: protectedProcedure

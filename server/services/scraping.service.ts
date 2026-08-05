@@ -5,6 +5,7 @@ import { requireDb } from "../_core/db-assert";
 import { scrapeJobs } from "../../drizzle/schema";
 import { logger } from "../_core/logger";
 import { ENV } from "../_core/env";
+import { assertPublicUrl } from "./price-radar/url-policy";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -124,8 +125,25 @@ function parsePrice(raw: string): { value: string; currency: string } | null {
 
 // ─── Page Scraping ───────────────────────────────────────────────────────────
 
+function normalizeCompetitorBaseUrl(domain: string): string {
+  const candidate = domain.trim();
+  const url = new URL(
+    /^https?:\/\//i.test(candidate) ? candidate : "https://" + candidate
+  );
+  if (!["http:", "https:"].includes(url.protocol)) {
+    throw new Error("Only HTTP and HTTPS competitor URLs are supported");
+  }
+  url.username = "";
+  url.password = "";
+  url.hash = "";
+  url.search = "";
+  url.pathname = url.pathname.replace(/\/+$/, "");
+  return url.toString().replace(/\/$/, "");
+}
+
 async function scrapePage(page: Page, url: string): Promise<ScrapedProduct[]> {
   logger.info({ url }, "Scraping competitor page");
+  await assertPublicUrl(url);
 
   await page
     .goto(url, { waitUntil: "domcontentloaded", timeout: 30000 })
@@ -337,7 +355,8 @@ async function firecrawlScrapeSite(
     apiUrl: ENV.firecrawlBaseUrl,
   });
 
-  const baseUrl = domain.startsWith("http") ? domain : `https://${domain}`;
+  const baseUrl = normalizeCompetitorBaseUrl(domain);
+  await assertPublicUrl(baseUrl);
   const urls: string[] = [];
 
   // Build candidate URLs (same logic as Playwright fallback)
@@ -430,6 +449,8 @@ export const scrapingService = {
     domain: string,
     searchQuery?: string
   ): Promise<ScrapeResult> {
+    const baseUrl = normalizeCompetitorBaseUrl(domain);
+    await assertPublicUrl(baseUrl);
     const database = await requireDb();
 
     const [job] = await database
@@ -497,6 +518,20 @@ export const scrapingService = {
 
         const page = await context.newPage();
 
+        await page.route("**/*", async route => {
+          const requestUrl = route.request().url();
+          if (!/^https?:/i.test(requestUrl)) {
+            await route.continue();
+            return;
+          }
+          try {
+            await assertPublicUrl(requestUrl);
+            await route.continue();
+          } catch {
+            await route.abort("blockedbyclient");
+          }
+        });
+
         // Block unnecessary resources to speed up loading and reduce detection
         await page
           .route("**/*.{woff,woff2,ttf,otf,eot}", route => route.abort())
@@ -531,9 +566,6 @@ export const scrapingService = {
           window.chrome = { runtime: {} };
         });
 
-        const baseUrl = domain.startsWith("http")
-          ? domain
-          : `https://${domain}`;
         const urls: string[] = [];
 
         if (isAmazon) {

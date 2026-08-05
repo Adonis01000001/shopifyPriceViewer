@@ -38,6 +38,24 @@ interface ScrapedPageData {
   responseTimeMs: number;
 }
 
+export async function forEachConcurrent<T>(
+  items: readonly T[],
+  concurrency: number,
+  worker: (item: T) => Promise<void>
+): Promise<void> {
+  let nextIndex = 0;
+  const workerCount = Math.min(Math.max(1, concurrency), items.length);
+  await Promise.all(
+    Array.from({ length: workerCount }, async () => {
+      while (true) {
+        const index = nextIndex++;
+        if (index >= items.length) return;
+        await worker(items[index]);
+      }
+    })
+  );
+}
+
 // ─── Page Scraper ────────────────────────────────────────────────────────────
 
 async function scrapePage(url: string): Promise<ScrapedPageData | null> {
@@ -182,261 +200,269 @@ export const priceMonitoringService = {
         "Starting price monitoring run"
       );
 
-      for (const match of activeMatches) {
-        const { competitorProduct, competitor, product } = match;
-        const url = competitorProduct.competitorProductUrl;
-        if (!url) {
-          productsProcessed++;
-          continue;
-        }
-
-        try {
-          const pageData = await scrapePage(url);
-
-          await database.insert(scrapeLogs).values({
-            competitorId: competitor.id,
-            competitorProductId: competitorProduct.id,
-            cronRunId: cronRun.id,
-            url,
-            status: pageData ? "success" : "failed",
-            method: pageData?.method ?? "firecrawl",
-            responseTimeMs: pageData?.responseTimeMs,
-            errorMessage: pageData ? null : "Failed to scrape",
-            htmlSize: pageData?.content?.length,
-          });
-
-          if (!pageData) {
+      await forEachConcurrent(
+        activeMatches,
+        Math.min(ENV.maxConcurrentScrapes, 8),
+        async match => {
+          const { competitorProduct, competitor, product } = match;
+          const url = competitorProduct.competitorProductUrl;
+          if (!url) {
             productsProcessed++;
-            continue;
+            return;
           }
 
-          const extractionResult = await aiExtractionService.extractAndValidate(
-            {
-              merchantProduct: {
-                id: product.id,
-                title: product.title,
-                description: product.description,
-                sku: product.sku,
-                barcode: product.barcode,
-                vendor: product.vendor,
-                category: product.category,
-                price: product.price,
-              },
-              competitorPageContent: pageData.content,
-              competitorUrl: url,
-              competitorDomain: competitor.domain,
+          try {
+            const pageData = await scrapePage(url);
+
+            await database.insert(scrapeLogs).values({
               competitorId: competitor.id,
+              competitorProductId: competitorProduct.id,
+              cronRunId: cronRun.id,
+              url,
+              status: pageData ? "success" : "failed",
+              method: pageData?.method ?? "firecrawl",
+              responseTimeMs: pageData?.responseTimeMs,
+              errorMessage: pageData ? null : "Failed to scrape",
+              htmlSize: pageData?.content?.length,
+            });
+
+            if (!pageData) {
+              productsProcessed++;
+              return;
             }
-          );
 
-          const extracted = extractionResult.extraction;
-          if (!extracted.isMatch || !extractionResult.passedThreshold) {
-            productsProcessed++;
-            continue;
-          }
-
-          const previousPrice = competitorProduct.price
-            ? Number(competitorProduct.price)
-            : null;
-          const newPrice = extracted.price;
-          const change = detectChanges(
-            previousPrice,
-            newPrice,
-            "in_stock",
-            "in_stock"
-          );
-
-          // Store snapshot
-          await database.insert(priceSnapshots).values({
-            competitorProductId: competitorProduct.id,
-            price: String(newPrice ?? 0),
-            currency: extracted.currency,
-            salePrice:
-              extracted.salePrice != null ? String(extracted.salePrice) : null,
-            originalPrice:
-              extracted.originalPrice != null
-                ? String(extracted.originalPrice)
-                : null,
-            availability: "in_stock",
-            scrapeMethod: pageData.method,
-          });
-
-          // Update competitor product
-          if (previousPrice !== newPrice && newPrice != null) {
-            await database
-              .update(competitorProducts)
-              .set({
-                previousPrice: competitorProduct.price,
-                price: String(newPrice),
-                lastPriceUpdate: new Date(),
-                lastScrapedAt: new Date(),
-                updatedAt: new Date(),
-              })
-              .where(eq(competitorProducts.id, competitorProduct.id));
-            productsUpdated++;
-          }
-
-          // Record change event
-          if (change.changeType) {
-            const [pc] = await database
-              .insert(priceChanges)
-              .values({
-                competitorProductId: competitorProduct.id,
-                productId: product.id,
-                changeType: change.changeType,
-                previousPrice:
-                  previousPrice != null ? String(previousPrice) : null,
-                newPrice: newPrice != null ? String(newPrice) : null,
-                previousAvailability: "in_stock",
-                newAvailability: "in_stock",
-                priceDiff:
-                  change.priceDiff != null ? String(change.priceDiff) : null,
-                priceDiffPercent:
-                  change.priceDiffPercent != null
-                    ? String(change.priceDiffPercent)
-                    : null,
-                currency: extracted.currency,
-              })
-              .returning();
-            changeDetails.push(pc);
-            changesDetected++;
-
-            const timelineEvent = generateTimelineEvent(
-              product.title,
-              competitor.name,
-              change.changeType,
-              previousPrice,
-              newPrice,
-              change.priceDiffPercent,
-              extracted.currency
-            );
-            await database.insert(activityLogs).values({
-              userId: competitor.userId,
-              action: `price_change.${change.changeType}`,
-              entityType: "price_change",
-              entityId: pc.id,
-              detail: timelineEvent,
-              metadata: {
-                productId: product.id,
+            const extractionResult =
+              await aiExtractionService.extractAndValidate({
+                merchantProduct: {
+                  id: product.id,
+                  title: product.title,
+                  description: product.description,
+                  sku: product.sku,
+                  barcode: product.barcode,
+                  vendor: product.vendor,
+                  category: product.category,
+                  price: product.price,
+                },
+                competitorPageContent: pageData.content,
+                competitorUrl: url,
+                competitorDomain: competitor.domain,
                 competitorId: competitor.id,
-                previousPrice:
-                  previousPrice != null ? String(previousPrice) : null,
-                newPrice: newPrice != null ? String(newPrice) : null,
-                confidence: extracted.confidence,
-              },
-            } as InsertActivityLog);
-
-            // Create alert for significant changes
-            if (
-              change.priceDiffPercent !== null &&
-              Math.abs(change.priceDiffPercent) >= 2
-            ) {
-              const alertType =
-                change.changeType === "price_decrease"
-                  ? "price_drop"
-                  : "price_increase";
-              const severity: "high" | "medium" =
-                Math.abs(change.priceDiffPercent) >= 10 ? "high" : "medium";
-              await database.insert(alerts).values({
-                userId: competitor.userId,
-                productId: product.id,
-                competitorProductId: competitorProduct.id,
-                alertType,
-                severity,
-                title: `${change.changeType === "price_decrease" ? "Price Drop" : "Price Increase"} Detected`,
-                message: timelineEvent,
-                triggerPrice: newPrice != null ? String(newPrice) : null,
-                triggerCondition:
-                  change.changeType === "price_decrease" ? "below" : "above",
               });
 
-              notificationBroadcaster.broadcast({
-                type: "alert_created",
+            const extracted = extractionResult.extraction;
+            if (!extracted.isMatch || !extractionResult.passedThreshold) {
+              productsProcessed++;
+              return;
+            }
+
+            const previousPrice = competitorProduct.price
+              ? Number(competitorProduct.price)
+              : null;
+            const newPrice = extracted.price;
+            const change = detectChanges(
+              previousPrice,
+              newPrice,
+              "in_stock",
+              "in_stock"
+            );
+
+            // Store snapshot
+            await database.insert(priceSnapshots).values({
+              competitorProductId: competitorProduct.id,
+              price: String(newPrice ?? 0),
+              currency: extracted.currency,
+              salePrice:
+                extracted.salePrice != null
+                  ? String(extracted.salePrice)
+                  : null,
+              originalPrice:
+                extracted.originalPrice != null
+                  ? String(extracted.originalPrice)
+                  : null,
+              availability: "in_stock",
+              scrapeMethod: pageData.method,
+            });
+
+            // Update competitor product
+            if (previousPrice !== newPrice && newPrice != null) {
+              await database
+                .update(competitorProducts)
+                .set({
+                  previousPrice: competitorProduct.price,
+                  price: String(newPrice),
+                  lastPriceUpdate: new Date(),
+                  lastScrapedAt: new Date(),
+                  updatedAt: new Date(),
+                })
+                .where(eq(competitorProducts.id, competitorProduct.id));
+              productsUpdated++;
+            }
+
+            // Record change event
+            if (change.changeType) {
+              const [pc] = await database
+                .insert(priceChanges)
+                .values({
+                  competitorProductId: competitorProduct.id,
+                  productId: product.id,
+                  changeType: change.changeType,
+                  previousPrice:
+                    previousPrice != null ? String(previousPrice) : null,
+                  newPrice: newPrice != null ? String(newPrice) : null,
+                  previousAvailability: "in_stock",
+                  newAvailability: "in_stock",
+                  priceDiff:
+                    change.priceDiff != null ? String(change.priceDiff) : null,
+                  priceDiffPercent:
+                    change.priceDiffPercent != null
+                      ? String(change.priceDiffPercent)
+                      : null,
+                  currency: extracted.currency,
+                })
+                .returning();
+              changeDetails.push(pc);
+              changesDetected++;
+
+              const timelineEvent = generateTimelineEvent(
+                product.title,
+                competitor.name,
+                change.changeType,
+                previousPrice,
+                newPrice,
+                change.priceDiffPercent,
+                extracted.currency
+              );
+              await database.insert(activityLogs).values({
                 userId: competitor.userId,
-                payload: {
+                action: `price_change.${change.changeType}`,
+                entityType: "price_change",
+                entityId: pc.id,
+                detail: timelineEvent,
+                metadata: {
+                  productId: product.id,
+                  competitorId: competitor.id,
+                  previousPrice:
+                    previousPrice != null ? String(previousPrice) : null,
+                  newPrice: newPrice != null ? String(newPrice) : null,
+                  confidence: extracted.confidence,
+                },
+              } as InsertActivityLog);
+
+              // Create alert for significant changes
+              if (
+                change.priceDiffPercent !== null &&
+                Math.abs(change.priceDiffPercent) >= 2
+              ) {
+                const alertType =
+                  change.changeType === "price_decrease"
+                    ? "price_drop"
+                    : "price_increase";
+                const severity: "high" | "medium" =
+                  Math.abs(change.priceDiffPercent) >= 10 ? "high" : "medium";
+                await database.insert(alerts).values({
+                  userId: competitor.userId,
+                  productId: product.id,
+                  competitorProductId: competitorProduct.id,
                   alertType,
                   severity,
                   title: `${change.changeType === "price_decrease" ? "Price Drop" : "Price Increase"} Detected`,
                   message: timelineEvent,
-                },
-              });
+                  triggerPrice: newPrice != null ? String(newPrice) : null,
+                  triggerCondition:
+                    change.changeType === "price_decrease" ? "below" : "above",
+                });
 
-              // G3 — Threshold alert: check user's notification preferences
-              try {
-                const prefs = await database
-                  .select()
-                  .from(notificationPreferences)
-                  .where(eq(notificationPreferences.userId, competitor.userId))
-                  .limit(1);
-                if (prefs[0]) {
-                  const thresholdPct =
-                    change.changeType === "price_decrease"
-                      ? Number(prefs[0].priceDropThreshold)
-                      : Number(prefs[0].priceIncreaseThreshold);
-                  if (
-                    thresholdPct > 0 &&
-                    Math.abs(change.priceDiffPercent) >= thresholdPct
-                  ) {
-                    await database.insert(alerts).values({
-                      userId: competitor.userId,
-                      productId: product.id,
-                      competitorProductId: competitorProduct.id,
-                      alertType: "threshold",
-                      severity,
-                      title: `Threshold ${change.changeType === "price_decrease" ? "Drop" : "Increase"} Exceeded`,
-                      message: `${product.title} ${change.changeType === "price_decrease" ? "dropped" : "rose"} ${Math.abs(change.priceDiffPercent).toFixed(1)}% at ${competitor.name}, exceeding your ${thresholdPct}% threshold.`,
-                      triggerPrice: newPrice != null ? String(newPrice) : null,
-                      triggerCondition:
-                        change.changeType === "price_decrease"
-                          ? "below"
-                          : "above",
-                    });
+                notificationBroadcaster.broadcast({
+                  type: "alert_created",
+                  userId: competitor.userId,
+                  payload: {
+                    alertType,
+                    severity,
+                    title: `${change.changeType === "price_decrease" ? "Price Drop" : "Price Increase"} Detected`,
+                    message: timelineEvent,
+                  },
+                });
 
-                    notificationBroadcaster.broadcast({
-                      type: "alert_created",
-                      userId: competitor.userId,
-                      payload: {
+                // G3 — Threshold alert: check user's notification preferences
+                try {
+                  const prefs = await database
+                    .select()
+                    .from(notificationPreferences)
+                    .where(
+                      eq(notificationPreferences.userId, competitor.userId)
+                    )
+                    .limit(1);
+                  if (prefs[0]) {
+                    const thresholdPct =
+                      change.changeType === "price_decrease"
+                        ? Number(prefs[0].priceDropThreshold)
+                        : Number(prefs[0].priceIncreaseThreshold);
+                    if (
+                      thresholdPct > 0 &&
+                      Math.abs(change.priceDiffPercent) >= thresholdPct
+                    ) {
+                      await database.insert(alerts).values({
+                        userId: competitor.userId,
+                        productId: product.id,
+                        competitorProductId: competitorProduct.id,
                         alertType: "threshold",
                         severity,
                         title: `Threshold ${change.changeType === "price_decrease" ? "Drop" : "Increase"} Exceeded`,
                         message: `${product.title} ${change.changeType === "price_decrease" ? "dropped" : "rose"} ${Math.abs(change.priceDiffPercent).toFixed(1)}% at ${competitor.name}, exceeding your ${thresholdPct}% threshold.`,
-                      },
-                    });
+                        triggerPrice:
+                          newPrice != null ? String(newPrice) : null,
+                        triggerCondition:
+                          change.changeType === "price_decrease"
+                            ? "below"
+                            : "above",
+                      });
+
+                      notificationBroadcaster.broadcast({
+                        type: "alert_created",
+                        userId: competitor.userId,
+                        payload: {
+                          alertType: "threshold",
+                          severity,
+                          title: `Threshold ${change.changeType === "price_decrease" ? "Drop" : "Increase"} Exceeded`,
+                          message: `${product.title} ${change.changeType === "price_decrease" ? "dropped" : "rose"} ${Math.abs(change.priceDiffPercent).toFixed(1)}% at ${competitor.name}, exceeding your ${thresholdPct}% threshold.`,
+                        },
+                      });
+                    }
                   }
+                } catch {
+                  // non-critical
                 }
+              }
+
+              // G2 — Regenerate recommendation for this product
+              try {
+                await recommendationService.generateForProduct(
+                  competitor.userId,
+                  product.id
+                );
               } catch {
-                // non-critical
+                // non-critical — recommendation may fail silently
               }
             }
-
-            // G2 — Regenerate recommendation for this product
-            try {
-              await recommendationService.generateForProduct(
-                competitor.userId,
-                product.id
-              );
-            } catch {
-              // non-critical — recommendation may fail silently
-            }
+            productsProcessed++;
+          } catch (err) {
+            errors++;
+            productsProcessed++;
+            logger.warn(
+              { competitorProductId: competitorProduct.id, url, err },
+              "Error processing competitor product"
+            );
+            await database.insert(scrapeLogs).values({
+              competitorId: competitor.id,
+              competitorProductId: competitorProduct.id,
+              cronRunId: cronRun.id,
+              url,
+              status: "failed",
+              errorMessage: String(err),
+            });
           }
-          productsProcessed++;
-        } catch (err) {
-          errors++;
-          productsProcessed++;
-          logger.warn(
-            { competitorProductId: competitorProduct.id, url, err },
-            "Error processing competitor product"
-          );
-          await database.insert(scrapeLogs).values({
-            competitorId: competitor.id,
-            competitorProductId: competitorProduct.id,
-            cronRunId: cronRun.id,
-            url,
-            status: "failed",
-            errorMessage: String(err),
-          });
         }
-      }
+      );
 
       await database
         .update(cronRuns)
@@ -547,13 +573,31 @@ export const priceMonitoringService = {
       .limit(limit);
   },
 
-  async getSnapshotHistory(competitorProductId: string, limit: number = 30) {
+  async getSnapshotHistory(
+    userId: string,
+    competitorProductId: string,
+    limit: number = 30
+  ) {
     const database = await requireDb();
-    return database
-      .select()
+    const rows = await database
+      .select({ snapshot: priceSnapshots })
       .from(priceSnapshots)
-      .where(eq(priceSnapshots.competitorProductId, competitorProductId))
+      .innerJoin(
+        competitorProducts,
+        eq(priceSnapshots.competitorProductId, competitorProducts.id)
+      )
+      .innerJoin(
+        competitors,
+        eq(competitorProducts.competitorId, competitors.id)
+      )
+      .where(
+        and(
+          eq(priceSnapshots.competitorProductId, competitorProductId),
+          eq(competitors.userId, userId)
+        )
+      )
       .orderBy(desc(priceSnapshots.scrapedAt))
       .limit(limit);
+    return rows.map(row => row.snapshot);
   },
 };

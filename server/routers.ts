@@ -14,7 +14,14 @@ import { pricingEngineRouter } from "./routers/pricing-engine.router";
 import { scoutRouter } from "./routers/scout.router";
 import { wisdomRouter } from "./routers/wisdom.router";
 import { priceRadarRouter } from "./routers/price-radar.router";
+import { notificationRouter } from "./routers/notification.router";
+import { accountRouter } from "./routers/account.router";
+import { billingRouter } from "./routers/billing.router";
+import { reportRouter } from "./routers/report.router";
+import { analyticsRouter } from "./routers/analytics.router";
 import { protectedProcedure } from "./_core/trpc";
+import { TRPCError } from "@trpc/server";
+import { publicShopifyStoreColumns } from "./_core/public-views";
 import { z } from "zod";
 import { shopifyStores } from "../drizzle/schema";
 import { eq, and } from "drizzle-orm";
@@ -37,6 +44,11 @@ export const appRouter = router({
   scout: scoutRouter,
   wisdom: wisdomRouter,
   priceRadar: priceRadarRouter,
+  notifications: notificationRouter,
+  account: accountRouter,
+  billing: billingRouter,
+  reports: reportRouter,
+  analytics: analyticsRouter,
 
   // ── Shopify store management (tRPC) ──────────────────────────────────────
   shopify: router({
@@ -46,12 +58,15 @@ export const appRouter = router({
     listStores: protectedProcedure.query(async ({ ctx }) => {
       const database = await db.getDb();
       if (!database) return [];
-      return database.query.shopifyStores.findMany({
-        where: and(
-          eq(shopifyStores.userId, ctx.user!.id),
-          eq(shopifyStores.isActive, true)
-        ),
-      });
+      return database
+        .select(publicShopifyStoreColumns)
+        .from(shopifyStores)
+        .where(
+          and(
+            eq(shopifyStores.userId, ctx.user!.id),
+            eq(shopifyStores.isActive, true)
+          )
+        );
     }),
 
     /**
@@ -98,11 +113,19 @@ export const appRouter = router({
         const database = await db.getDb();
         if (!database) throw new Error("Database not available");
 
-        const existing = await database.query.shopifyStores.findFirst({
-          where: eq(shopifyStores.shopDomain, input.shop),
-        });
+        const [existing] = await database
+          .select({ id: shopifyStores.id, userId: shopifyStores.userId })
+          .from(shopifyStores)
+          .where(eq(shopifyStores.shopDomain, input.shop))
+          .limit(1);
 
         if (existing) {
+          if (existing.userId !== ctx.user!.id) {
+            throw new TRPCError({
+              code: "CONFLICT",
+              message: "Store is already connected to another account",
+            });
+          }
           await database
             .update(shopifyStores)
             .set({
@@ -111,7 +134,12 @@ export const appRouter = router({
               isActive: true,
               updatedAt: new Date(),
             })
-            .where(eq(shopifyStores.id, existing.id));
+            .where(
+              and(
+                eq(shopifyStores.id, existing.id),
+                eq(shopifyStores.userId, ctx.user!.id)
+              )
+            );
           return {
             success: true,
             storeId: existing.id,
@@ -224,7 +252,9 @@ export const appRouter = router({
 
           // Parse Link header for cursor-based pagination
           const linkHeader: string = resp.headers.get("link") || "";
-          const nextMatch: RegExpMatchArray | null = linkHeader.match(/<([^>]+)>;\s*rel="next"/);
+          const nextMatch: RegExpMatchArray | null = linkHeader.match(
+            /<([^>]+)>;\s*rel="next"/
+          );
           nextUrl = nextMatch ? nextMatch[1] : null;
         }
 

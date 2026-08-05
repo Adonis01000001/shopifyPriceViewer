@@ -1,8 +1,9 @@
 import { drizzle } from "drizzle-orm/node-postgres";
-import { Pool, type PoolConfig } from "pg";
+import { Pool, type PoolClient, type PoolConfig } from "pg";
 import * as schema from "../drizzle/schema";
 import { dbRelations } from "../drizzle/relations";
 import { logger } from "./_core/logger";
+import { ENV } from "./_core/env";
 
 // Relational schema: Drizzle tables + relation definitions, passed to
 // drizzle() so the relational query builder (db.query.<table>) is typed.
@@ -18,7 +19,7 @@ function getPool(): Pool | null {
     const isProduction = process.env.NODE_ENV === "production";
     const poolConfig: PoolConfig = {
       connectionString: process.env.DATABASE_URL,
-      max: 10,
+      max: ENV.databasePoolMax,
       idleTimeoutMillis: 30000,
       connectionTimeoutMillis: 5000,
     };
@@ -70,14 +71,16 @@ export async function closeDb(): Promise<void> {
 export async function testConnection(): Promise<boolean> {
   const pool = getPool();
   if (!pool) return false;
+  let client: PoolClient | undefined;
   try {
-    const client = await pool.connect();
+    client = await pool.connect();
     await client.query("SELECT 1");
-    client.release();
     logger.debug("Database connection test passed");
     return true;
   } catch (error) {
     logger.error({ err: error }, "Database connection test failed");
     return false;
+  } finally {
+    client?.release();
   }
 }

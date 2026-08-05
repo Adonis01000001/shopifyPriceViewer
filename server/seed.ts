@@ -95,13 +95,20 @@ async function seed() {
     let userId: string;
 
     if (existingUsers.length === 0) {
+      const seedAdminEmail = process.env.SEED_ADMIN_EMAIL;
+      const seedAdminPassword = process.env.SEED_ADMIN_PASSWORD;
+      if (!seedAdminEmail || !seedAdminPassword) {
+        throw new Error(
+          "SEED_ADMIN_EMAIL and SEED_ADMIN_PASSWORD are required when creating the first seed user"
+        );
+      }
       logger.info("👤 Creating default admin user...");
-      const passwordHash = await bcrypt.hash("admin123", 12);
+      const passwordHash = await bcrypt.hash(seedAdminPassword, 12);
       const [user] = await db
         .insert(schema.users)
         .values({
           openId: "local_admin_001",
-          email: "admin@example.com",
+          email: seedAdminEmail,
           passwordHash,
           name: "Admin User",
           loginMethod: "email",
@@ -125,7 +132,7 @@ async function seed() {
         storeName: "PriceVision Demo Store",
         currency: "USD",
         isActive: true,
-        scopes: "read_products,write_products",
+        scopes: "read_products",
       })
       .onConflictDoUpdate({
         target: schema.shopifyStores.shopDomain,

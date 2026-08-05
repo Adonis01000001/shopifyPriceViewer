@@ -17,18 +17,24 @@ export function verifyShopifyHmac(
     .update(message)
     .digest("hex");
 
-  if (digest.length !== hmac.length) return false;
+  if (!/^[a-f0-9]{64}$/i.test(hmac) || digest.length !== hmac.length)
+    return false;
 
   return crypto.timingSafeEqual(Buffer.from(digest), Buffer.from(hmac));
 }
 
 /** Verify Shopify webhook HMAC signature. */
 export function verifyWebhookHmac(data: Buffer, hmacHeader: string): boolean {
+  const provided = hmacHeader?.trim();
+  if (!provided) return false;
   const digest = crypto
     .createHmac("sha256", ENV.shopifyApiSecret)
     .update(data)
-    .digest("hex");
-  return crypto.timingSafeEqual(Buffer.from(digest), Buffer.from(hmacHeader));
+    .digest("base64");
+  const expectedBuffer = Buffer.from(digest, "utf8");
+  const providedBuffer = Buffer.from(provided, "utf8");
+  if (expectedBuffer.length !== providedBuffer.length) return false;
+  return crypto.timingSafeEqual(expectedBuffer, providedBuffer);
 }
 
 /** Validate that a string is a proper Shopify myshopify.com domain. */

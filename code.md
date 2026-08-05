@@ -1,6 +1,6 @@
 # PriceVision — Code Explanation
 
-This document explains how the codebase is organized and how the main pieces fit together. It complements `REVIEW.md` (which documents the feature/UI surface) by focusing on the *code*: entry points, data flow, and the key modules you'll touch when extending the app.
+This document explains how the codebase is organized and how the main pieces fit together. It complements `REVIEW.md` (which documents the feature/UI surface) by focusing on the _code_: entry points, data flow, and the key modules you'll touch when extending the app.
 
 ---
 
@@ -31,8 +31,13 @@ Three things are wired up here:
 
 ```ts
 const trpcClient = trpc.createClient({
-  links: [httpBatchLink({ url: "/api/trpc", transformer: superjson,
-    fetch: (input, init) => fetch(input, { ...init, credentials: "include" }) })],
+  links: [
+    httpBatchLink({
+      url: "/api/trpc",
+      transformer: superjson,
+      fetch: (input, init) => fetch(input, { ...init, credentials: "include" }),
+    }),
+  ],
 });
 ```
 
@@ -54,9 +59,10 @@ Exports the typed `trpc` proxy generated from the server's `AppRouter` type. Thi
 Every page follows the same shape:
 
 ```tsx
-const utils = trpc.useUtils();                       // for cache invalidation
-const products = trpc.products.list.useQuery();      // READ  (React Query)
-const generate = trpc.recommendations.generate.useMutation({  // WRITE
+const utils = trpc.useUtils(); // for cache invalidation
+const products = trpc.products.list.useQuery(); // READ  (React Query)
+const generate = trpc.recommendations.generate.useMutation({
+  // WRITE
   onSuccess: () => utils.recommendations.list.invalidate(),
 });
 ```
@@ -109,15 +115,15 @@ Procedures either return data directly (simple cases) or delegate to a **service
 
 `server/services/` holds the logic. Routers are thin; services do the work. Key services:
 
-| Service | Responsibility |
-| --- | --- |
-| `product.service.ts` | CRUD + status calc (optimal/under/over/alert) for products |
-| `competitor.service.ts` | Competitor stores, CSV import, product matching |
-| `pricing-engine.service.ts` | Computes recommended prices / deltas, price-index math |
-| `scout.service.ts` | Looks up competitor prices via Firecrawl + SerpApi + Exa, with an HTML fallback |
-| `email.service.ts` | SMTP sending (encrypted password at rest) |
-| `shopify.service.ts` | Shopify OAuth + product sync |
-| `cron-scheduler.service.ts` | Periodic price monitoring jobs |
+| Service                     | Responsibility                                                                  |
+| --------------------------- | ------------------------------------------------------------------------------- |
+| `product.service.ts`        | CRUD + status calc (optimal/under/over/alert) for products                      |
+| `competitor.service.ts`     | Competitor stores, CSV import, product matching                                 |
+| `pricing-engine.service.ts` | Computes recommended prices / deltas, price-index math                          |
+| `scout.service.ts`          | Looks up competitor prices via Firecrawl + SerpApi + Exa, with an HTML fallback |
+| `email.service.ts`          | SMTP sending (encrypted password at rest)                                       |
+| `shopify.service.ts`        | Shopify OAuth + product sync                                                    |
+| `cron-scheduler.service.ts` | Periodic price monitoring jobs                                                  |
 
 ### Scout service — how price lookup works (`scout.service.ts`)
 
@@ -145,7 +151,10 @@ The result is a `ScoutResult` with `prices: ScoutPrice[]`, `status` (`success`/`
 - `drizzle/config.ts` — DrizzleKit config (migrations).
 - `shared/` — `const.ts` (cookie name, session expiry) and `types.ts` (types usable on both sides). `UNAUTHED_ERR_MSG` lives in `shared/const.ts` and is what the client checks to trigger a redirect.
 
-Migrations: `pnpm db:push`. Seed: `pnpm db:seed` (creates admin `admin@example.com` / `admin123` + sample data).
+Migrations: use `pnpm db:generate` after schema changes and `pnpm db:migrate` to
+apply committed migrations. `pnpm db:push` is for local development only. Seed:
+`pnpm db:seed` requires `SEED_ADMIN_EMAIL` and `SEED_ADMIN_PASSWORD`; it does
+not contain a default production credential.
 
 ---
 
@@ -181,12 +190,12 @@ All changes keep `pnpm check` (tsc) clean.
 
 ## 10. Where to Start When Extending
 
-| I want to… | Start here |
-| --- | --- |
-| Add an API endpoint | `server/routers/<domain>.router.ts` (+ a service method) |
-| Change a DB table | `drizzle/schema.ts` -> `pnpm db:push` |
-| Add a dashboard page | `client/src/pages/dashboard/<Name>.tsx` + route in `App.tsx` + nav item in `DashboardLayout.tsx` |
-| Change pricing logic | `server/services/pricing-engine.service.ts` |
-| Change competitor price lookup | `server/services/scout.service.ts` |
-| Change auth/session rules | `server/_core/auth/*`, `server/_core/context.ts`, `shared/const.ts` |
-| Tweak styling/theme | `client/src/index.css` |
+| I want to…                     | Start here                                                                                       |
+| ------------------------------ | ------------------------------------------------------------------------------------------------ |
+| Add an API endpoint            | `server/routers/<domain>.router.ts` (+ a service method)                                         |
+| Change a DB table              | `drizzle/schema.ts` -> `pnpm db:push`                                                            |
+| Add a dashboard page           | `client/src/pages/dashboard/<Name>.tsx` + route in `App.tsx` + nav item in `DashboardLayout.tsx` |
+| Change pricing logic           | `server/services/pricing-engine.service.ts`                                                      |
+| Change competitor price lookup | `server/services/scout.service.ts`                                                               |
+| Change auth/session rules      | `server/_core/auth/*`, `server/_core/context.ts`, `shared/const.ts`                              |
+| Tweak styling/theme            | `client/src/index.css`                                                                           |

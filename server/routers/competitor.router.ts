@@ -16,6 +16,7 @@ import {
   scoopCompetitorProducts,
 } from "../../drizzle/schema";
 import { requireDb } from "../_core/db-assert";
+import { entitlementService } from "../services/entitlement.service";
 
 const competitorFeedProductIdSchema = z.string().refine(
   value => {
@@ -78,6 +79,7 @@ export const competitorRouter = router({
       })
     )
     .mutation(async ({ ctx, input }) => {
+      await entitlementService.assertCanAdd(ctx.user!.id, "competitors");
       const competitor = await competitorService.create({
         userId: ctx.user!.id,
         ...input,
@@ -112,6 +114,11 @@ export const competitorRouter = router({
     )
     .mutation(async ({ ctx, input }) => {
       const userId = ctx.user!.id;
+      await entitlementService.assertCanAdd(
+        userId,
+        "competitors",
+        input.competitors.length
+      );
       const rows = input.competitors.map(c => ({
         userId,
         name: c.name,
@@ -146,9 +153,7 @@ export const competitorRouter = router({
               reviewCount: z.number().int().min(0).nullable(),
               availability: z.string().trim().max(64).nullable(),
               seller: z.string().trim().max(255).nullable(),
-              condition: z
-                .enum(["new", "refurbished", "used"])
-                .nullable(),
+              condition: z.enum(["new", "refurbished", "used"]).nullable(),
               shipping: z.string().trim().max(500).nullable(),
               productUrl: z.string().url().max(2_000),
               imageUrl: z.string().url().max(2_000).nullable(),
@@ -193,8 +198,8 @@ export const competitorRouter = router({
     .input(z.object({ id: z.string().uuid() }))
     .mutation(async ({ ctx, input }) => {
       await competitorService.delete(ctx.user!.id, input.id);
-       return { success: true };
-     }),
+      return { success: true };
+    }),
 
   moveScoopProduct: protectedProcedure
     .input(
@@ -269,7 +274,7 @@ export const competitorRouter = router({
       })
     )
     .mutation(async ({ ctx, input }) => {
-      const product = await competitorService.addProduct({
+      const product = await competitorService.addProduct(ctx.user!.id, {
         ...input,
         isVerified: false,
         isActive: true,

@@ -1,16 +1,18 @@
-import { eq, and, desc, sql, ilike, or } from "drizzle-orm";
+import { eq, and, desc, sql, ilike, or, inArray } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 import { requireDb } from "../_core/db-assert";
 import {
   products,
   productEmbeddings,
   shopifyStores,
+  competitors,
   competitorProducts,
   type Product,
   type InsertProduct,
   type CompetitorProduct,
 } from "../../drizzle/schema";
 import { normalizeName } from "../../shared/validation";
+import { publicShopifyStoreColumns } from "../_core/public-views";
 
 export const productService = {
   async getByUserId(
@@ -68,6 +70,29 @@ export const productService = {
 
   async create(data: InsertProduct): Promise<Product> {
     const database = await requireDb();
+    const storeId = data.storeId;
+    if (!storeId) {
+      throw new TRPCError({
+        code: "NOT_FOUND",
+        message: "Store not found",
+      });
+    }
+    const [ownedStore] = await database
+      .select({ id: shopifyStores.id })
+      .from(shopifyStores)
+      .where(
+        and(
+          eq(shopifyStores.id, storeId),
+          eq(shopifyStores.userId, data.userId)
+        )
+      )
+      .limit(1);
+    if (!ownedStore) {
+      throw new TRPCError({
+        code: "NOT_FOUND",
+        message: "Store not found",
+      });
+    }
 
     // Normalize SKU (trim/uppercase) — empty becomes undefined.
     const normalizedSku = this.normalizeSku(data.sku);
@@ -107,7 +132,8 @@ export const productService = {
     const database = await requireDb();
 
     // Normalize SKU if provided.
-    const normalizedSku = data.sku !== undefined ? this.normalizeSku(data.sku) : undefined;
+    const normalizedSku =
+      data.sku !== undefined ? this.normalizeSku(data.sku) : undefined;
 
     // Duplicate SKU check (exclude current product).
     if (normalizedSku) {
@@ -131,7 +157,10 @@ export const productService = {
       }
     }
 
-    const updateData: Partial<InsertProduct> = { ...data, updatedAt: new Date() as any };
+    const updateData: Partial<InsertProduct> = {
+      ...data,
+      updatedAt: new Date() as any,
+    };
     if (data.sku !== undefined) {
       updateData.sku = normalizedSku;
     }
@@ -160,14 +189,30 @@ export const productService = {
     return this.update(userId, productId, { isTracked });
   },
 
-  async getCompetitorPrices(productId: string): Promise<CompetitorProduct[]> {
+  async getCompetitorPrices(
+    userId: string,
+    productId: string
+  ): Promise<CompetitorProduct[]> {
     const database = await requireDb();
+    const [ownedProduct] = await database
+      .select({ id: products.id })
+      .from(products)
+      .where(and(eq(products.id, productId), eq(products.userId, userId)))
+      .limit(1);
+    if (!ownedProduct) return [];
     return database
       .select()
       .from(competitorProducts)
       .where(
         and(
           eq(competitorProducts.productId, productId),
+          inArray(
+            competitorProducts.competitorId,
+            database
+              .select({ id: competitors.id })
+              .from(competitors)
+              .where(eq(competitors.userId, userId))
+          ),
           eq(competitorProducts.isActive, true)
         )
       );
@@ -212,7 +257,7 @@ export const productService = {
   async getStores(userId: string) {
     const database = await requireDb();
     return database
-      .select()
+      .select(publicShopifyStoreColumns)
       .from(shopifyStores)
       .where(
         and(eq(shopifyStores.userId, userId), eq(shopifyStores.isActive, true))
@@ -234,10 +279,7 @@ export const productService = {
    * Find an active product by SKU for a specific user.
    * Returns the first match or undefined.
    */
-  async findBySku(
-    userId: string,
-    sku: string
-  ): Promise<Product | undefined> {
+  async findBySku(userId: string, sku: string): Promise<Product | undefined> {
     const database = await requireDb();
     const result = await database
       .select()
@@ -257,10 +299,7 @@ export const productService = {
    * Find an active product by normalized name for a specific user.
    * Used for duplicate-name detection when SKU is empty.
    */
-  async findByName(
-    userId: string,
-    name: string
-  ): Promise<Product | undefined> {
+  async findByName(userId: string, name: string): Promise<Product | undefined> {
     const database = await requireDb();
     const normalized = normalizeName(name);
     // Use ILIKE on a trimmed lowercase version. We compare against a
@@ -281,13 +320,37 @@ export const productService = {
 
   async upsertStore(data: typeof shopifyStores.$inferInsert) {
     const database = await requireDb();
+    const [existing] = await database
+      .select({ id: shopifyStores.id, userId: shopifyStores.userId })
+      .from(shopifyStores)
+      .where(eq(shopifyStores.shopDomain, data.shopDomain))
+      .limit(1);
+
+    if (existing && existing.userId !== data.userId) {
+      throw new TRPCError({
+        code: "CONFLICT",
+        message: "Store is already connected to another account",
+      });
+    }
+
+    if (existing) {
+      const { userId: _userId, ...updateData } = data;
+      const result = await database
+        .update(shopifyStores)
+        .set({ ...updateData, updatedAt: new Date() })
+        .where(
+          and(
+            eq(shopifyStores.id, existing.id),
+            eq(shopifyStores.userId, data.userId)
+          )
+        )
+        .returning();
+      return result[0];
+    }
+
     const result = await database
       .insert(shopifyStores)
       .values(data)
-      .onConflictDoUpdate({
-        target: shopifyStores.shopDomain,
-        set: { ...data, updatedAt: new Date() },
-      })
       .returning();
     return result[0];
   },
@@ -295,6 +358,37 @@ export const productService = {
   async bulkUpsertProducts(items: InsertProduct[]): Promise<number> {
     if (items.length === 0) return 0;
     const database = await requireDb();
+    const userIds = new Set(items.map(item => item.userId));
+    if (userIds.size !== 1) {
+      throw new TRPCError({
+        code: "BAD_REQUEST",
+        message: "Bulk sync must contain products for one account",
+      });
+    }
+    const userId = items[0].userId;
+    const rawStoreIds = items.map(item => item.storeId);
+    if (rawStoreIds.some(storeId => !storeId)) {
+      throw new TRPCError({
+        code: "BAD_REQUEST",
+        message: "Every product must reference a store",
+      });
+    }
+    const storeIds = Array.from(new Set(rawStoreIds as string[]));
+    const ownedStores = await database
+      .select({ id: shopifyStores.id })
+      .from(shopifyStores)
+      .where(
+        and(
+          eq(shopifyStores.userId, userId),
+          inArray(shopifyStores.id, storeIds)
+        )
+      );
+    if (ownedStores.length !== storeIds.length) {
+      throw new TRPCError({
+        code: "NOT_FOUND",
+        message: "One or more stores were not found",
+      });
+    }
     const result = await database
       .insert(products)
       .values(items)

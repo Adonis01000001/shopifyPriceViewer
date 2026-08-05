@@ -1,6 +1,6 @@
 # Shopify Price Intelligence (PriceVision)
 
-A full-stack SaaS platform for competitive price monitoring and optimization, integrated with Shopify. Monitors competitor prices in real-time, provides AI-powered pricing recommendations, and automates alerts.
+A full-stack SaaS platform for competitive price monitoring and optimization, integrated with Shopify. It tracks scheduled competitor price observations, provides AI-powered pricing recommendations, and automates alerts.
 
 ## Tech Stack
 
@@ -50,7 +50,7 @@ shopify-price-viwer/
 - **Price History** — Historical price records with trend analysis
 - **Pricing Recommendations** — Automated pricing suggestions based on competitor analysis
 - **Alerts** — Price drop/increase alerts, threshold notifications
-- **Dashboard** — KPIs, pricing insights, category mix, inventory sync status
+- **Dashboard** — KPIs, pricing insights, category mix, and next-best actions
 - **Email Notifications** — Configurable SMTP settings with encrypted credentials at rest
 
 ## Development
@@ -58,14 +58,27 @@ shopify-price-viwer/
 ```bash
 pnpm dev          # Start dev server (Express + Vite)
 pnpm check        # TypeScript type check
+pnpm lint         # ESLint
 pnpm test         # Run tests (vitest)
-pnpm db:push      # Run Drizzle migrations
+pnpm db:generate  # Generate a migration after schema changes
+pnpm db:migrate   # Apply committed Drizzle migrations
+pnpm db:push      # Local development only; do not use in production
 pnpm db:seed      # Seed database
+pnpm smoke        # Smoke-test a running deployment (set SMOKE_BASE_URL)
 ```
+
+## Version 1.0 release documentation
+
+- [Launch readiness checklist](docs/LAUNCH-READINESS-CHECKLIST.md)
+- [Production deployment runbook](docs/RELEASE-DEPLOYMENT.md)
+- [Legal and privacy release inputs](docs/LEGAL-PRIVACY-INPUTS.md)
+
+The application is not approved for public paid release until every blocker in
+the launch checklist has an owner, evidence, and a completed staging test.
 
 ### Prerequisites
 
-- Node.js 18+
+- Node.js 22+
 - pnpm 10+
 - PostgreSQL 14+
 
@@ -87,7 +100,7 @@ SHOPIFY_API_SECRET=your_shopify_secret
 node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
 ```
 
-3. Run migrations and seed:
+3. Run local migrations and seed:
 
 ```bash
 pnpm db:push
@@ -183,6 +196,12 @@ All API endpoints are exposed via tRPC at `/api/trpc`.
 Key tables: `users`, `products`, `competitors`, `competitor_products`, `price_history`, `alerts`, `recommendations`, `shopify_stores`, `email_configs`, `notification_preferences`, `activity_logs`, `refresh_tokens`, `scrape_jobs`, `product_embeddings`.
 
 See `drizzle/schema.ts` for full schema definition.
+
+## Product and scaling strategy
+
+- [Phase 3 SaaS Transformation](docs/PHASE-3-SAAS-TRANSFORMATION-2026-08.md)
+- [Phase 4 Commercial SaaS Launch](docs/PHASE-4-COMMERCIAL-SAAS-LAUNCH-2026-08.md)
+- [Technical Audit and Implementation Status](docs/TECHNICAL-AUDIT-2026-08.md)
 
 ## License
 

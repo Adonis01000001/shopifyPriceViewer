@@ -8,6 +8,7 @@ export type TrpcContext = {
   req: CreateExpressContextOptions["req"];
   res: CreateExpressContextOptions["res"];
   user: User | null;
+  requestId: string | undefined;
 };
 
 function createDevUser(): User {
@@ -53,5 +54,9 @@ export async function createContext(
     req: opts.req,
     res: opts.res,
     user,
+    requestId:
+      typeof opts.res.locals.requestId === "string"
+        ? opts.res.locals.requestId
+        : undefined,
   };
 }

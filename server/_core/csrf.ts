@@ -1,5 +1,5 @@
 import { doubleCsrf } from "csrf-csrf";
-import type { Request } from "express";
+import type { NextFunction, Request, Response } from "express";
 import { ENV } from "./env";
 
 const CSRF_SECRET = process.env.JWT_SECRET ?? "change-me-in-production";
@@ -23,7 +23,11 @@ export { doubleCsrfProtection };
  * Middleware to attach a fresh CSRF token to response locals.
  * Use in routes that need to provide a token to the frontend.
  */
-export function csrfTokenMiddleware(req: any, res: any, next: any) {
+export function csrfTokenMiddleware(
+  req: Request,
+  res: Response,
+  next: NextFunction
+) {
   res.locals.csrfToken = generateCsrfToken(req, res);
   next();
 }

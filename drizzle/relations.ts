@@ -1,6 +1,10 @@
 import { relations } from "drizzle-orm";
 import {
   users,
+  subscriptions,
+  billingEvents,
+  reportRuns,
+  notificationDeliveries,
   emailConfigs,
   notificationPreferences,
   shopifyStores,
@@ -18,7 +22,10 @@ import {
   scoopCompetitorProducts,
 } from "./schema";
 
-export const usersRelations = relations(users, ({ many }) => ({
+export const usersRelations = relations(users, ({ many, one }) => ({
+  subscription: one(subscriptions),
+  reportRuns: many(reportRuns),
+  notificationDeliveries: many(notificationDeliveries),
   emailConfigs: many(emailConfigs),
   notificationPreferences: many(notificationPreferences),
   shopifyStores: many(shopifyStores),
@@ -31,6 +38,37 @@ export const usersRelations = relations(users, ({ many }) => ({
   scoopSearchResults: many(scoopSearchResults),
   scoopCompetitorProducts: many(scoopCompetitorProducts),
 }));
+
+export const subscriptionsRelations = relations(subscriptions, ({ one }) => ({
+  user: one(users, {
+    fields: [subscriptions.userId],
+    references: [users.id],
+  }),
+}));
+
+export const billingEventsRelations = relations(billingEvents, () => ({}));
+
+export const reportRunsRelations = relations(reportRuns, ({ one, many }) => ({
+  user: one(users, {
+    fields: [reportRuns.userId],
+    references: [users.id],
+  }),
+  deliveries: many(notificationDeliveries),
+}));
+
+export const notificationDeliveriesRelations = relations(
+  notificationDeliveries,
+  ({ one }) => ({
+    user: one(users, {
+      fields: [notificationDeliveries.userId],
+      references: [users.id],
+    }),
+    reportRun: one(reportRuns, {
+      fields: [notificationDeliveries.reportRunId],
+      references: [reportRuns.id],
+    }),
+  })
+);
 
 export const emailConfigsRelations = relations(emailConfigs, ({ one }) => ({
   user: one(users, {
@@ -91,10 +129,10 @@ export const competitorsRelations = relations(competitors, ({ one, many }) => ({
     fields: [competitors.userId],
     references: [users.id],
   }),
-    competitorProducts: many(competitorProducts),
-    scoopSearchResults: many(scoopSearchResults),
-    scoopCompetitorProducts: many(scoopCompetitorProducts),
-    scrapeJobs: many(scrapeJobs),
+  competitorProducts: many(competitorProducts),
+  scoopSearchResults: many(scoopSearchResults),
+  scoopCompetitorProducts: many(scoopCompetitorProducts),
+  scrapeJobs: many(scrapeJobs),
 }));
 
 export const competitorProductsRelations = relations(
@@ -219,6 +257,10 @@ export const scoopCompetitorProductsRelations = relations(
 // names Drizzle infers from pgTable calls in schema.ts.
 export const dbRelations = {
   users: usersRelations,
+  subscriptions: subscriptionsRelations,
+  billingEvents: billingEventsRelations,
+  reportRuns: reportRunsRelations,
+  notificationDeliveries: notificationDeliveriesRelations,
   emailConfigs: emailConfigsRelations,
   notificationPreferences: notificationPreferencesRelations,
   shopifyStores: shopifyStoresRelations,

@@ -76,7 +76,6 @@ class SDKServer {
       throw ForbiddenError("User not found");
     }
 
-    await this.upsertUser({ openId: user.openId, lastSignedIn: new Date() });
     return user;
   }
 }

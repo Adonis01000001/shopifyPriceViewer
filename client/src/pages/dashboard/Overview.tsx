@@ -1,28 +1,27 @@
 import { Badge } from "@/components/ui/badge";
-import {
-  Cell,
-  Pie,
-  PieChart,
-  ResponsiveContainer,
-  Tooltip,
-} from "recharts";
+import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip } from "recharts";
 import { trpc } from "@/lib/trpc";
 import {
   AlertTriangle,
+  ArrowRight,
   Bell,
   CheckCircle,
   DollarSign,
   LineChart,
   Package,
   RefreshCw,
+  Sparkles,
   TrendingDown,
   TrendingUp,
   Users,
   X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { useMemo } from "react";
+import { useEffect, useMemo, useRef } from "react";
+import { useLocation } from "wouter";
 import { PricingDashboardSummary } from "@/components/dashboard/PricingRecommendationWidget";
+import { UpgradePrompt } from "@/components/dashboard/UpgradePrompt";
+import { useProductAnalytics } from "@/lib/analytics";
 import { toast } from "sonner";
 
 const CHART_COLORS = [
@@ -47,13 +46,18 @@ function timeAgo(date: Date | string): string {
 }
 
 export default function Overview() {
+  const [, setLocation] = useLocation();
   const utils = trpc.useUtils();
   const { data: products } = trpc.products.list.useQuery();
   const { data: productStats } = trpc.products.stats.useQuery();
   const { data: competitorStats } = trpc.competitors.stats.useQuery();
   const { data: alertStats } = trpc.alerts.stats.useQuery();
-  const { data: competitors } = trpc.competitors.list.useQuery({ limit: 10 });
+  const { data: actionCenter } = trpc.intelligence.actionCenter.useQuery();
+  const { data: accountUsage } = trpc.account.usage.useQuery();
   const { data: user } = trpc.auth.me.useQuery();
+  const track = useProductAnalytics();
+  const firstValueTracked = useRef(false);
+  const dashboardViewTracked = useRef(false);
   const isAdmin = user?.role === "admin";
   // Admins see all pending recommendations; regular users see only their own
   const adminQuery = trpc.recommendations.listAll.useQuery(
@@ -76,6 +80,7 @@ export default function Overview() {
       utils.recommendations.list.invalidate();
       utils.recommendations.stats.invalidate();
       utils.products.list.invalidate();
+      utils.intelligence.actionCenter.invalidate();
       toast.success("Pricing insight approved");
     },
   });
@@ -83,6 +88,7 @@ export default function Overview() {
     onSuccess: () => {
       utils.recommendations.list.invalidate();
       utils.recommendations.stats.invalidate();
+      utils.intelligence.actionCenter.invalidate();
       toast.success("Pricing insight dismissed");
     },
   });
@@ -90,6 +96,7 @@ export default function Overview() {
     onSuccess: () => {
       utils.alerts.list.invalidate();
       utils.alerts.stats.invalidate();
+      utils.intelligence.actionCenter.invalidate();
     },
   });
 
@@ -97,85 +104,29 @@ export default function Overview() {
     onSuccess: () => {
       utils.recommendations.list.invalidate();
       utils.recommendations.listAll.invalidate();
+      utils.intelligence.actionCenter.invalidate();
       toast.success("Recommendation generated");
     },
-    onError: (err) => toast.error(err.message || "Failed to generate"),
+    onError: err => toast.error(err.message || "Failed to generate"),
   });
 
-  // Fetch feed data for each competitor
-  const competitorList = useMemo(() => competitors ?? [], [competitors]);
-  const feedQueries = trpc.useQueries(t =>
-    competitorList.map(comp =>
-      t.competitors.feed({ competitorId: comp.id }, { enabled: !!comp.id })
-    )
-  );
-
-  // Build movement items from all competitor feeds
+  // Build movement items from the tenant-scoped Action Center query.
   const movementItems = useMemo(() => {
-    const items: {
-      id: string;
-      type: "price_drop" | "price_increase" | "new_match";
-      competitorName: string;
-      productTitle: string;
-      oldPrice?: string;
-      newPrice: string;
-      date: Date;
-    }[] = [];
-
-    feedQueries.forEach((q, idx) => {
-      const feed = q.data;
-      if (!feed) return;
-      const compName = competitorList[idx]?.name ?? "Unknown";
-
-      // Price changes from competitor products
-      for (const cp of feed.products ?? []) {
-        const hasPrevious =
-          cp.previousPrice != null && cp.previousPrice !== cp.price;
-        if (hasPrevious) {
-          const direction =
-            Number(cp.price) < Number(cp.previousPrice)
-              ? "price_drop"
-              : "price_increase";
-          items.push({
-            id: `cp-${cp.id}`,
-            type: direction,
-            competitorName: compName,
-            productTitle: cp.competitorProductTitle || "Untitled",
-            oldPrice: String(cp.previousPrice),
-            newPrice: String(cp.price),
-            date: cp.lastPriceUpdate
-              ? new Date(cp.lastPriceUpdate)
-              : new Date(cp.updatedAt),
-          });
-        } else {
-          items.push({
-            id: `cp-${cp.id}`,
-            type: "new_match",
-            competitorName: compName,
-            productTitle: cp.competitorProductTitle || "Untitled",
-            newPrice: String(cp.price),
-            date: new Date(cp.createdAt),
-          });
-        }
-      }
-
-      // Price history entries
-      for (const ph of feed.priceHistory ?? []) {
-        items.push({
-          id: `ph-${ph.id}`,
-          type: "price_drop",
-          competitorName: compName,
-          productTitle: `Price recorded`,
-          newPrice: String(ph.price),
-          date: new Date(ph.recordedAt),
-        });
-      }
-    });
-
-    // Sort by date descending, take top 12
-    items.sort((a, b) => b.date.getTime() - a.date.getTime());
-    return items.slice(0, 12);
-  }, [feedQueries, competitorList]);
+    return (actionCenter?.recentChanges ?? []).map(change => ({
+      id: change.id,
+      type:
+        change.changeType === "price_decrease"
+          ? ("price_drop" as const)
+          : change.changeType === "price_increase"
+            ? ("price_increase" as const)
+            : ("new_match" as const),
+      competitorName: change.competitorName,
+      productTitle: change.productTitle,
+      oldPrice: change.previousPrice ?? undefined,
+      newPrice: change.newPrice ?? "0",
+      date: new Date(change.detectedAt),
+    }));
+  }, [actionCenter?.recentChanges]);
 
   const allProducts = useMemo(() => products ?? [], [products]);
   const productById = useMemo(
@@ -218,16 +169,116 @@ export default function Overview() {
     : "0.00";
   const activeAlerts = alertStats?.unread ?? 0;
   const competitorsTracked = competitorStats?.total ?? 0;
+  const changesLast24Hours = actionCenter?.totals.changesLast24Hours ?? 0;
+  const topRecommendation = actionCenter?.pendingRecommendations[0];
+  const topAlert = actionCenter?.unreadAlerts[0];
+  const topMovement = actionCenter?.recentChanges[0];
+  const showAiUpgrade = accountUsage?.plan.id === "free";
+
+  useEffect(() => {
+    if (dashboardViewTracked.current) return;
+    dashboardViewTracked.current = true;
+    track("dashboard_viewed", { surface: "overview" });
+  }, [track]);
+
+  useEffect(() => {
+    if (
+      firstValueTracked.current ||
+      !actionCenter ||
+      (actionCenter.totals.pendingRecommendations === 0 &&
+        actionCenter.totals.unreadAlerts === 0 &&
+        actionCenter.totals.changesLast24Hours === 0)
+    ) {
+      return;
+    }
+    firstValueTracked.current = true;
+    track("first_value_reached", {
+      activation_path: "dashboard_action_center",
+      signal_type: topRecommendation
+        ? "recommendation"
+        : topAlert
+          ? "alert"
+          : "competitor_movement",
+    });
+  }, [actionCenter, topAlert, topRecommendation, track]);
 
   return (
     <div className="space-y-6">
       <div className="flex flex-col gap-1">
         <h2 className="text-2xl font-extrabold text-primary">Overview</h2>
         <p className="text-muted-foreground text-sm max-w-2xl">
-          Strategic dashboard for Shopify store intelligence. Real-time pricing
-          index and competitive landscape monitoring.
+          Your next pricing decision, backed by scheduled competitor monitoring
+          and evidence from your store.
         </p>
       </div>
+
+      {/* Merchant-first action center: one obvious decision before the metrics. */}
+      <section className="glass-panel rounded-lg border border-primary/20 bg-primary/[0.06] p-5">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex items-start gap-3">
+            <div className="rounded-lg bg-primary/15 p-2 text-primary">
+              <Sparkles className="h-4 w-4" aria-hidden="true" />
+            </div>
+            <div>
+              <p className="label-caps text-[10px] text-primary">NEXT BEST ACTION</p>
+              <h3 className="mt-1 text-sm font-semibold">
+                {topRecommendation
+                  ? `Review ${topRecommendation.productTitle}`
+                  : topAlert
+                    ? topAlert.title
+                    : topMovement
+                      ? `${topMovement.competitorName} moved on ${topMovement.productTitle}`
+                      : totalProducts === 0
+                        ? "Connect your store to get your first pricing signal"
+                        : "Your pricing workspace is ready for a competitor scan"}
+              </h3>
+              <p className="mt-1 max-w-2xl text-xs text-muted-foreground">
+                {topRecommendation
+                  ? `${topRecommendation.reason} ${Number(topRecommendation.currentPrice).toFixed(2)} → ${Number(topRecommendation.recommendedPrice).toFixed(2)}.`
+                  : topAlert
+                    ? topAlert.message
+                    : topMovement
+                      ? `Detected ${changesLast24Hours} competitor movement${changesLast24Hours === 1 ? "" : "s"} in the last 24 hours.`
+                      : "Add a competitor and we’ll surface the price changes that deserve your attention."}
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
+            className="inline-flex shrink-0 items-center justify-center gap-1.5 rounded-md bg-primary px-3 py-2 text-[11px] font-bold text-primary-foreground transition hover:brightness-110"
+            onClick={() =>
+              setLocation(
+                topRecommendation
+                  ? "/products"
+                  : topAlert
+                    ? "/alerts"
+                    : topMovement
+                      ? "/competitors"
+                      : "/products"
+              )
+            }
+          >
+            {topRecommendation
+              ? "Review recommendation"
+              : topAlert
+                ? "Open alerts"
+                : topMovement
+                  ? "Review movement"
+                  : "Open products"}
+            <ArrowRight className="h-3.5 w-3.5" aria-hidden="true" />
+          </button>
+        </div>
+      </section>
+
+      {showAiUpgrade && (
+        <UpgradePrompt
+          feature="ai_recommendations"
+          plan="Pro"
+          title="Turn competitor movement into a price decision"
+          description="Pro explains why a product should move, shows the evidence behind the recommendation, and keeps the decision in your hands."
+          metric="Value signal: fewer spreadsheet checks and faster pricing reviews."
+        />
+      )}
 
       {/* KPI Row */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
@@ -259,10 +310,7 @@ export default function Overview() {
           <p className="text-2xl font-bold font-mono tracking-tight leading-none">
             ${avgPrice}
           </p>
-          <div className="flex items-center gap-1">
-            <TrendingUp className="h-3 w-3 text-primary" />
-            <span className="text-xs font-mono text-primary">+5.2%</span>
-          </div>
+          <p className="text-xs text-muted-foreground/60">Portfolio average</p>
         </div>
         <div className="glass-card p-5 flex flex-col gap-3">
           <div className="flex justify-between items-start">
@@ -294,7 +342,11 @@ export default function Overview() {
           </p>
           <div className="flex items-center gap-1 text-primary">
             <CheckCircle className="h-3 w-3" />
-            <span className="text-xs font-mono">All stable</span>
+            <span className="text-xs font-mono">
+              {changesLast24Hours > 0
+                ? `${changesLast24Hours} movement${changesLast24Hours === 1 ? "" : "s"} today`
+                : "No movements in 24h"}
+            </span>
           </div>
         </div>
       </div>
@@ -426,8 +478,12 @@ export default function Overview() {
                               {(product.title ?? "P").charAt(0)}
                             </div>
                             <div>
-                              <p className="text-[13px] font-medium">{product.title ?? "Untitled"}</p>
-                              <p className="text-[10px] label-caps text-muted-foreground">{product.sku || product.category || "No SKU"}</p>
+                              <p className="text-[13px] font-medium">
+                                {product.title ?? "Untitled"}
+                              </p>
+                              <p className="text-[10px] label-caps text-muted-foreground">
+                                {product.sku || product.category || "No SKU"}
+                              </p>
                             </div>
                           </div>
                         </td>
@@ -435,19 +491,29 @@ export default function Overview() {
                           ${Number(product.price).toFixed(2)}
                         </td>
                         <td className="px-5 py-3">
-                          <span className="font-mono text-[13px] text-muted-foreground">—</span>
+                          <span className="font-mono text-[13px] text-muted-foreground">
+                            —
+                          </span>
                         </td>
                         <td className="px-5 py-3">
-                          <span className="font-mono text-[13px] text-muted-foreground">—</span>
+                          <span className="font-mono text-[13px] text-muted-foreground">
+                            —
+                          </span>
                         </td>
                         <td className="px-5 py-3">
                           <div className="flex justify-end">
                             <button
                               className="px-3 py-1 bg-primary/10 text-primary text-[10px] font-bold label-caps rounded hover:bg-primary/20 disabled:opacity-50"
-                              onClick={() => generateRecommendation.mutate({ productId: product.id })}
+                              onClick={() =>
+                                generateRecommendation.mutate({
+                                  productId: product.id,
+                                })
+                              }
                               disabled={generateRecommendation.isPending}
                             >
-                              {generateRecommendation.isPending ? "..." : "GENERATE"}
+                              {generateRecommendation.isPending
+                                ? "..."
+                                : "GENERATE"}
                             </button>
                           </div>
                         </td>
@@ -459,7 +525,8 @@ export default function Overview() {
                         colSpan={5}
                         className="py-10 text-center text-muted-foreground text-sm"
                       >
-                        No products yet. Add products to start tracking pricing insights.
+                        No products yet. Add products to start tracking pricing
+                        insights.
                       </td>
                     </tr>
                   )}
@@ -469,7 +536,7 @@ export default function Overview() {
             <div className="p-3 border-t border-white/[0.04] text-center">
               <button
                 className="text-primary label-caps text-[11px] hover:underline"
-                onClick={() => window.location.href = "/products"}
+                onClick={() => (window.location.href = "/products")}
               >
                 VIEW ALL RECOMMENDATIONS
               </button>
@@ -485,11 +552,12 @@ export default function Overview() {
               <h3 className="text-[15px] font-semibold">Competitor Movement</h3>
             </div>
             <div className="p-3">
-              {competitorList.length === 0 ? (
+              {movementItems.length === 0 ? (
                 <div className="py-8 text-center text-muted-foreground text-sm">
-                  <p className="font-medium mb-1">No competitors yet</p>
+                  <p className="font-medium mb-1">No recent movements</p>
                   <p className="text-xs">
-                    Add competitors to see their price movements here.
+                    Movements will appear here as monitored competitors change
+                    price.
                   </p>
                 </div>
               ) : movementItems.length > 0 ? (
@@ -705,52 +773,21 @@ export default function Overview() {
             </div>
           )}
         </div>
-        <div className="glass-card p-5 rounded-lg">
-          <div className="flex justify-between items-center mb-4">
-            <h4 className="text-[14px] font-semibold">Inventory Sync Status</h4>
-            <CheckCircle className="h-4 w-4 text-primary" />
-          </div>
-          <div className="space-y-4">
-            <div>
-              <div className="flex justify-between mb-1.5">
-                <span className="text-[12px] text-muted-foreground">
-                  Primary Shopify API
-                </span>
-                <span className="text-[11px] font-mono text-primary">
-                  HEALTHY (12ms)
-                </span>
-              </div>
-              <div className="w-full h-1.5 bg-surface-container-highest rounded-full overflow-hidden">
-                <div className="h-full bg-primary rounded-full w-full" />
-              </div>
-            </div>
-            <div>
-              <div className="flex justify-between mb-1.5">
-                <span className="text-[12px] text-muted-foreground">
-                  Scraping Cluster
-                </span>
-                <span className="text-[11px] font-mono text-[#21a732]">
-                  DEGRADED (240ms)
-                </span>
-              </div>
-              <div className="w-full h-1.5 bg-surface-container-highest rounded-full overflow-hidden">
-                <div className="h-full bg-[#63e063] rounded-full w-[65%]" />
-              </div>
-            </div>
-            <div>
-              <div className="flex justify-between mb-1.5">
-                <span className="text-[12px] text-muted-foreground">
-                  Price Index Engine
-                </span>
-                <span className="text-[11px] font-mono text-primary">
-                  OPTIMAL (8ms)
-                </span>
-              </div>
-              <div className="w-full h-1.5 bg-surface-container-highest rounded-full overflow-hidden">
-                <div className="h-full bg-primary rounded-full w-[92%]" />
-              </div>
-            </div>
-          </div>
+        <div className="glass-card rounded-lg p-5">
+          <h4 className="text-[14px] font-semibold mb-4">Decision hygiene</h4>
+          <p className="text-xs leading-relaxed text-muted-foreground">
+            Recommendations are suggestions, not automatic price changes. Review
+            the evidence and approve only the products that fit your margin and
+            inventory strategy.
+          </p>
+          <button
+            type="button"
+            className="mt-4 inline-flex items-center gap-1 text-[11px] font-bold label-caps text-primary hover:underline"
+            onClick={() => setLocation("/products")}
+          >
+            Review product controls
+            <ArrowRight className="h-3 w-3" aria-hidden="true" />
+          </button>
         </div>
       </div>
     </div>

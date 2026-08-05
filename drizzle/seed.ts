@@ -102,7 +102,7 @@ async function seed() {
     userId,
     shopDomain: "demo-store.myshopify.com",
     accessToken: "shpat_demo_access_token_xxxxxxxx",
-    scopes: "read_products,read_orders,write_products",
+    scopes: "read_products",
     storeName: "Demo Electronics Store",
     storeEmail: "admin@demostore.com",
     currency: "USD",

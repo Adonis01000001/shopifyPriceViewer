@@ -20,6 +20,41 @@ const queryClient = new QueryClient({
   },
 });
 
+let csrfToken: string | null = null;
+let csrfTokenRequest: Promise<string> | null = null;
+
+async function getCsrfToken(): Promise<string> {
+  if (csrfToken) return csrfToken;
+  if (!csrfTokenRequest) {
+    csrfTokenRequest = globalThis
+      .fetch("/api/csrf-token", {
+        credentials: "include",
+        headers: { Accept: "application/json" },
+      })
+      .then(async response => {
+        if (!response.ok) {
+          throw new Error(
+            "Unable to initialize CSRF protection (" + response.status + ")"
+          );
+        }
+        const payload: unknown = await response.json();
+        if (
+          !payload ||
+          typeof payload !== "object" ||
+          typeof (payload as { csrfToken?: unknown }).csrfToken !== "string"
+        ) {
+          throw new Error("CSRF endpoint returned an invalid token");
+        }
+        csrfToken = (payload as { csrfToken: string }).csrfToken;
+        return csrfToken;
+      })
+      .finally(() => {
+        csrfTokenRequest = null;
+      });
+  }
+  return csrfTokenRequest;
+}
+
 const redirectToLoginIfUnauthorized = (error: unknown) => {
   if (!(error instanceof TRPCClientError)) return;
   if (typeof window === "undefined") return;
@@ -52,10 +87,16 @@ const trpcClient = trpc.createClient({
     httpBatchLink({
       url: "/api/trpc",
       transformer: superjson,
-      fetch(input, init) {
+      async fetch(input, init) {
+        const method = (init?.method ?? "GET").toUpperCase();
+        const headers = new Headers(init?.headers);
+        if (!["GET", "HEAD", "OPTIONS"].includes(method)) {
+          headers.set("x-csrf-token", await getCsrfToken());
+        }
         return globalThis.fetch(input, {
           ...(init ?? {}),
           credentials: "include",
+          headers,
         });
       },
     }),

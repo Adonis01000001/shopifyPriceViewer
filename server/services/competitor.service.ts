@@ -1,16 +1,10 @@
-import {
-  eq,
-  and,
-  desc,
-  sql,
-  ilike,
-  or,
-  inArray,
-} from "drizzle-orm";
+import { eq, and, desc, sql, ilike, or, inArray } from "drizzle-orm";
 import { requireDb } from "../_core/db-assert";
+import { TRPCError } from "@trpc/server";
 import {
   competitors,
   competitorProducts,
+  products,
   priceHistory,
   scrapeJobs,
   activityLogs,
@@ -80,10 +74,7 @@ async function getMergedProductCounts(
       ),
   ]);
 
-  const matchedByCompetitor = new Map<
-    string,
-    typeof matchedProducts
-  >();
+  const matchedByCompetitor = new Map<string, typeof matchedProducts>();
   for (const product of matchedProducts) {
     const rows = matchedByCompetitor.get(product.competitorId) ?? [];
     rows.push(product);
@@ -104,8 +95,7 @@ async function getMergedProductCounts(
         competitor,
         matchedByCompetitor.get(competitor.id) ?? [],
         radarProducts
-      ) +
-        (scoopUrlsByCompetitor.get(competitor.id)?.size ?? 0)
+      ) + (scoopUrlsByCompetitor.get(competitor.id)?.size ?? 0)
     );
   }
   return counts;
@@ -129,8 +119,7 @@ export const competitorService = {
     const counts = await getMergedProductCounts(userId, rows);
     return rows.map(competitor => ({
       ...competitor,
-      productsTracked:
-        counts.get(competitor.id) ?? competitor.productsTracked,
+      productsTracked: counts.get(competitor.id) ?? competitor.productsTracked,
     }));
   },
 
@@ -205,10 +194,7 @@ export const competitorService = {
       );
   },
 
-  async getProducts(
-    userId: string,
-    competitorId: string
-  ) {
+  async getProducts(userId: string, competitorId: string) {
     // Verify ownership
     const comp = await this.getById(userId, competitorId);
     if (!comp) return [];
@@ -265,25 +251,25 @@ export const competitorService = {
       matchedProducts,
       radarProducts
     ).map(({ product, displayName }) => ({
-          id: `price-radar:${product.id}`,
-          competitorId,
-          productId: null,
-          competitorProductUrl: product.productUrl,
-          competitorProductTitle: displayName,
-          competitorSku: product.sku,
-          price: product.price,
-          currency: product.currency ?? "USD",
-          matchScore: product.extractionConfidence,
-          matchMethod: "price-radar",
-          isVerified: false,
-          isActive: true,
-          previousPrice: product.previousPrice,
-          lastPriceUpdate: product.lastSeenAt,
-          lastScrapedAt: product.lastSeenAt,
-          createdAt: product.firstSeenAt,
-          updatedAt: product.lastSeenAt,
-          source: "price-radar" as const,
-        }));
+      id: `price-radar:${product.id}`,
+      competitorId,
+      productId: null,
+      competitorProductUrl: product.productUrl,
+      competitorProductTitle: displayName,
+      competitorSku: product.sku,
+      price: product.price,
+      currency: product.currency ?? "USD",
+      matchScore: product.extractionConfidence,
+      matchMethod: "price-radar",
+      isVerified: false,
+      isActive: true,
+      previousPrice: product.previousPrice,
+      lastPriceUpdate: product.lastSeenAt,
+      lastScrapedAt: product.lastSeenAt,
+      createdAt: product.firstSeenAt,
+      updatedAt: product.lastSeenAt,
+      source: "price-radar" as const,
+    }));
 
     const scoopRows = scoopProducts.map(product => ({
       id: `scoop:${product.id}`,
@@ -325,8 +311,42 @@ export const competitorService = {
     );
   },
 
-  async addProduct(data: InsertCompetitorProduct): Promise<CompetitorProduct> {
+  async addProduct(
+    userId: string,
+    data: InsertCompetitorProduct
+  ): Promise<CompetitorProduct> {
     const database = await requireDb();
+    const [ownedCompetitor] = await database
+      .select({ id: competitors.id })
+      .from(competitors)
+      .where(
+        and(
+          eq(competitors.id, data.competitorId),
+          eq(competitors.userId, userId)
+        )
+      )
+      .limit(1);
+    if (!ownedCompetitor) {
+      throw new TRPCError({
+        code: "NOT_FOUND",
+        message: "Competitor not found",
+      });
+    }
+    if (data.productId) {
+      const [ownedProduct] = await database
+        .select({ id: products.id })
+        .from(products)
+        .where(
+          and(eq(products.id, data.productId), eq(products.userId, userId))
+        )
+        .limit(1);
+      if (!ownedProduct) {
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "Product not found",
+        });
+      }
+    }
     const result = await database
       .insert(competitorProducts)
       .values(data)
@@ -396,6 +416,51 @@ export const competitorService = {
     data: Partial<InsertCompetitorProduct>
   ): Promise<CompetitorProduct | undefined> {
     const database = await requireDb();
+    const [current] = await database
+      .select({
+        id: competitorProducts.id,
+        competitorId: competitorProducts.competitorId,
+        productId: competitorProducts.productId,
+      })
+      .from(competitorProducts)
+      .innerJoin(
+        competitors,
+        eq(competitorProducts.competitorId, competitors.id)
+      )
+      .where(
+        and(
+          eq(competitorProducts.id, productId),
+          eq(competitors.userId, userId)
+        )
+      )
+      .limit(1);
+    if (!current) return undefined;
+
+    const productIds = [current.productId, data.productId].filter(
+      (value): value is string => Boolean(value)
+    );
+    if (productIds.length > 0) {
+      const ownedProducts = await database
+        .select({ id: products.id })
+        .from(products)
+        .where(
+          and(eq(products.userId, userId), inArray(products.id, productIds))
+        );
+      if (ownedProducts.length !== new Set(productIds).size) return undefined;
+    }
+    if (data.competitorId) {
+      const [ownedCompetitor] = await database
+        .select({ id: competitors.id })
+        .from(competitors)
+        .where(
+          and(
+            eq(competitors.id, data.competitorId),
+            eq(competitors.userId, userId)
+          )
+        )
+        .limit(1);
+      if (!ownedCompetitor) return undefined;
+    }
     const result = await database
       .update(competitorProducts)
       .set({ ...data, updatedAt: new Date() })

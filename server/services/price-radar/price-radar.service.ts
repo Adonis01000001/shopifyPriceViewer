@@ -23,6 +23,7 @@ const USER_AGENT =
   "PriceRadarBot/1.0 (+https://example.invalid/price-radar; competitor-price-monitoring)";
 const MAX_RESPONSE_BYTES = 5 * 1024 * 1024;
 const activeRuns = new Map<string, AbortController>();
+const activeRunPromises = new Set<Promise<void>>();
 const hostLastRequest = new Map<string, number>();
 
 const sleep = (ms: number, signal?: AbortSignal) =>
@@ -69,7 +70,10 @@ async function rateLimitHost(
   signal: AbortSignal
 ) {
   const host = new URL(urlValue).host;
-  const wait = Math.max(0, (hostLastRequest.get(host) ?? 0) + delayMs - Date.now());
+  const wait = Math.max(
+    0,
+    (hostLastRequest.get(host) ?? 0) + delayMs - Date.now()
+  );
   if (wait) await sleep(wait, signal);
   hostLastRequest.set(host, Date.now());
 }
@@ -99,7 +103,8 @@ async function fetchHttp(
           signal: combined,
           headers: {
             "User-Agent": USER_AGENT,
-            Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.5",
+            Accept:
+              "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.5",
             "Accept-Language": "en-US,en;q=0.8",
           },
         });
@@ -115,7 +120,9 @@ async function fetchHttp(
           throw new Error(`Retryable HTTP ${response.status}`);
         }
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
-        const contentLength = Number(response.headers.get("content-length") ?? 0);
+        const contentLength = Number(
+          response.headers.get("content-length") ?? 0
+        );
         if (contentLength > MAX_RESPONSE_BYTES)
           throw new Error("Response exceeds 5 MB limit");
         const html = await response.text();
@@ -159,7 +166,16 @@ async function renderBrowser(
   try {
     const page = await context.newPage();
     signal.addEventListener("abort", () => void page.close(), { once: true });
-    await page.route("**/*", route => {
+    await page.route("**/*", async route => {
+      const requestUrl = route.request().url();
+      if (/^https?:/i.test(requestUrl)) {
+        try {
+          await assertPublicUrl(requestUrl);
+        } catch {
+          await route.abort("blockedbyclient");
+          return;
+        }
+      }
       const type = route.request().resourceType();
       if (["media", "font"].includes(type)) void route.abort();
       else void route.continue();
@@ -168,10 +184,14 @@ async function renderBrowser(
       waitUntil: "domcontentloaded",
       timeout: policy.requestTimeoutMs,
     });
-    await page.waitForLoadState("networkidle", { timeout: 5_000 }).catch(() => undefined);
+    await page
+      .waitForLoadState("networkidle", { timeout: 5_000 })
+      .catch(() => undefined);
+    const finalUrl = page.url();
+    await assertPublicUrl(finalUrl);
     return {
       requestedUrl: url,
-      finalUrl: page.url(),
+      finalUrl,
       statusCode: response?.status() ?? 200,
       contentType: response?.headers()["content-type"] ?? "text/html",
       html: await page.content(),
@@ -191,14 +211,24 @@ async function loadRobots(
   signal: AbortSignal
 ) {
   if (!policy.respectRobotsTxt)
-    return { disallow: [], crawlDelayMs: null, sitemaps: [] as string[], raw: null };
+    return {
+      disallow: [],
+      crawlDelayMs: null,
+      sitemaps: [] as string[],
+      raw: null,
+    };
   const url = new URL("/robots.txt", rootUrl).toString();
   try {
     const page = await fetchHttp(url, { ...policy, maxRetries: 0 }, signal, 0);
     const parsed = parseRobotsTxt(page.html);
     return { ...parsed, raw: page.html };
   } catch {
-    return { disallow: [], crawlDelayMs: null, sitemaps: [] as string[], raw: null };
+    return {
+      disallow: [],
+      crawlDelayMs: null,
+      sitemaps: [] as string[],
+      raw: null,
+    };
   }
 }
 
@@ -215,7 +245,13 @@ async function executeCrawl(input: {
   ];
   const visited = new Set<string>();
   const queued = new Set<string>([input.rootUrl]);
-  const progress = { queued: 1, visited: 0, succeeded: 0, failed: 0, productsExtracted: 0 };
+  const progress = {
+    queued: 1,
+    visited: 0,
+    succeeded: 0,
+    failed: 0,
+    productsExtracted: 0,
+  };
   const robots = await loadRobots(input.rootUrl, input.policy, input.signal);
   await priceRadarRepository.updateSource(input.userId, input.sourceId, {
     robotsTxt: robots.raw ?? undefined,
@@ -227,7 +263,12 @@ async function executeCrawl(input: {
   ]) {
     const canonical = canonicalizeUrl(sitemap, input.rootUrl);
     if (canonical && !queued.has(canonical)) {
-      queue.push({ url: canonical, depth: 0, referrerUrl: input.rootUrl, kindHint: "sitemap" });
+      queue.push({
+        url: canonical,
+        depth: 0,
+        referrerUrl: input.rootUrl,
+        kindHint: "sitemap",
+      });
       queued.add(canonical);
       progress.queued++;
     }
@@ -257,9 +298,15 @@ async function executeCrawl(input: {
     progress.visited++;
     let fetched: PriceRadarFetchedPage | undefined;
     try {
-      fetched = await fetchHttp(item.url, input.policy, input.signal, crawlDelay);
+      fetched = await fetchHttp(
+        item.url,
+        input.policy,
+        input.signal,
+        crawlDelay
+      );
       if (/xml/i.test(fetched.contentType) || item.kindHint === "sitemap") {
-        for (const url of extractSitemapUrls(fetched.html, input.rootUrl)) enqueue(url, item);
+        for (const url of extractSitemapUrls(fetched.html, input.rootUrl))
+          enqueue(url, item);
         await priceRadarRepository.recordPage({
           ...input,
           item,
@@ -286,7 +333,12 @@ async function executeCrawl(input: {
             executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH,
           });
         }
-        fetched = await renderBrowser(browser, item.url, input.policy, input.signal);
+        fetched = await renderBrowser(
+          browser,
+          item.url,
+          input.policy,
+          input.signal
+        );
         extractionStarted = Date.now();
         extraction = extractProductData(fetched.html, fetched.finalUrl);
       }
@@ -296,7 +348,10 @@ async function executeCrawl(input: {
         page: fetched,
         pageKind: extraction.pageKind,
         status: "success",
-        metadata: { methods: extraction.methods, warnings: extraction.warnings },
+        metadata: {
+          methods: extraction.methods,
+          warnings: extraction.warnings,
+        },
       });
       if (!page) return;
       let productId: string | undefined;
@@ -348,7 +403,10 @@ async function executeCrawl(input: {
         retryable: /timeout|429|5\d\d/i.test(message),
         retryCount: fetched?.retryCount ?? input.policy.maxRetries,
       });
-      logger.warn({ jobId: input.jobId, url: item.url, error }, "Price Radar page failed");
+      logger.warn(
+        { jobId: input.jobId, url: item.url, error },
+        "Price Radar page failed"
+      );
     }
   };
 
@@ -364,7 +422,9 @@ async function executeCrawl(input: {
         progress.visited + running.size < input.policy.maxPages
       ) {
         const item = queue.shift()!;
-        const promise = processItem(item).finally(() => running.delete(promise));
+        const promise = processItem(item).finally(() =>
+          running.delete(promise)
+        );
         running.add(promise);
       }
       if (running.size) await Promise.race(running);
@@ -415,7 +475,10 @@ export const priceRadarService = {
       input.userId,
       domain
     );
-    if (existing) throw new Error("already active: A source for this domain already exists");
+    if (existing)
+      throw new Error(
+        "already active: A source for this domain already exists"
+      );
     if (
       input.competitorId &&
       !(await priceRadarRepository.assertCompetitorOwnership(
@@ -437,7 +500,8 @@ export const priceRadarService = {
       name: input.name,
       domain,
       baseUrl,
-      crawlDelayMs: input.crawlDelayMs ?? DEFAULT_PRICE_RADAR_POLICY.minRequestIntervalMs,
+      crawlDelayMs:
+        input.crawlDelayMs ?? DEFAULT_PRICE_RADAR_POLICY.minRequestIntervalMs,
     });
   },
 
@@ -469,28 +533,55 @@ export const priceRadarService = {
     const controller = new AbortController();
     activeRuns.set(job.id, controller);
     queueMicrotask(() => {
-      void priceRadarRepository.updateJob(job.id, {
-        status: "running",
-        startedAt: new Date(),
-      });
-      void executeCrawl({
-        userId,
-        sourceId,
-        jobId: job.id,
-        rootUrl: source.baseUrl,
-        policy,
-        signal: controller.signal,
-      })
-        .catch(async error => {
-          logger.error({ jobId: job.id, error }, "Price Radar crawl failed");
+      const run = (async () => {
+        try {
           await priceRadarRepository.updateJob(job.id, {
-            status: controller.signal.aborted ? "cancelled" : "failed",
-            errorMessage:
-              error instanceof Error ? error.message.slice(0, 2_000) : "Unknown crawl error",
-            completedAt: new Date(),
+            status: "running",
+            startedAt: new Date(),
           });
-        })
-        .finally(() => activeRuns.delete(job.id));
+          await executeCrawl({
+            userId,
+            sourceId,
+            jobId: job.id,
+            rootUrl: source.baseUrl,
+            policy,
+            signal: controller.signal,
+          });
+        } catch (error) {
+          logger.error({ jobId: job.id, error }, "Price Radar crawl failed");
+          try {
+            await priceRadarRepository.updateJob(job.id, {
+              status: controller.signal.aborted ? "cancelled" : "failed",
+              errorMessage:
+                error instanceof Error
+                  ? error.message.slice(0, 2_000)
+                  : "Unknown crawl error",
+              completedAt: new Date(),
+            });
+          } catch (finalizationError) {
+            logger.error(
+              { jobId: job.id, error: finalizationError },
+              "Price Radar crawl status update failed"
+            );
+          }
+        }
+      })();
+
+      activeRunPromises.add(run);
+      void run.then(
+        () => {
+          activeRuns.delete(job.id);
+          activeRunPromises.delete(run);
+        },
+        error => {
+          logger.error(
+            { jobId: job.id, error },
+            "Price Radar crawl runner failed unexpectedly"
+          );
+          activeRuns.delete(job.id);
+          activeRunPromises.delete(run);
+        }
+      );
     });
     return job;
   },
@@ -509,4 +600,16 @@ export const priceRadarService = {
   listJobs: priceRadarRepository.listJobs,
   listProducts: priceRadarRepository.listProducts,
   listErrors: priceRadarRepository.listErrors,
+
+  async shutdown(): Promise<void> {
+    for (const controller of Array.from(activeRuns.values()))
+      controller.abort();
+    if (activeRunPromises.size > 0) {
+      logger.info(
+        { activeCrawls: activeRunPromises.size },
+        "Waiting for active Price Radar crawls to finish"
+      );
+      await Promise.allSettled(Array.from(activeRunPromises));
+    }
+  },
 };

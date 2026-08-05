@@ -30,7 +30,9 @@ export const priceRadarRepository = {
     const [row] = await db
       .select({ id: competitors.id })
       .from(competitors)
-      .where(and(eq(competitors.id, competitorId), eq(competitors.userId, userId)))
+      .where(
+        and(eq(competitors.id, competitorId), eq(competitors.userId, userId))
+      )
       .limit(1);
     return !!row;
   },
@@ -57,7 +59,10 @@ export const priceRadarRepository = {
     crawlDelayMs: number;
   }) {
     const db = await requireDb();
-    const [source] = await db.insert(priceRadarSources).values(input).returning();
+    const [source] = await db
+      .insert(priceRadarSources)
+      .values(input)
+      .returning();
     return source;
   },
 
@@ -168,7 +173,9 @@ export const priceRadarRepository = {
     const [job] = await db
       .select()
       .from(priceRadarJobs)
-      .where(and(eq(priceRadarJobs.id, jobId), eq(priceRadarJobs.userId, userId)))
+      .where(
+        and(eq(priceRadarJobs.id, jobId), eq(priceRadarJobs.userId, userId))
+      )
       .limit(1);
     return job;
   },
@@ -329,15 +336,21 @@ export const priceRadarRepository = {
     await db.insert(priceRadarCrawlErrors).values(input);
   },
 
-  async listJobs(userId: string, limit: number, offset: number) {
+  async listJobs(
+    userId: string,
+    options: { sourceId?: string; limit: number; offset: number }
+  ) {
     const db = await requireDb();
+    const conditions = [eq(priceRadarJobs.userId, userId)];
+    if (options.sourceId)
+      conditions.push(eq(priceRadarJobs.sourceId, options.sourceId));
     return db
       .select()
       .from(priceRadarJobs)
-      .where(eq(priceRadarJobs.userId, userId))
+      .where(and(...conditions))
       .orderBy(desc(priceRadarJobs.createdAt))
-      .limit(limit)
-      .offset(offset);
+      .limit(options.limit)
+      .offset(options.offset);
   },
 
   async listProducts(

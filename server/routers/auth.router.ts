@@ -3,13 +3,24 @@ import { TRPCError } from "@trpc/server";
 import bcrypt from "bcrypt";
 import { eq } from "drizzle-orm";
 import { nanoid } from "nanoid";
-import { COOKIE_NAME, REFRESH_COOKIE_NAME, SESSION_EXPIRY_MS, REFRESH_TOKEN_EXPIRY_MS } from "@shared/const";
+import {
+  COOKIE_NAME,
+  REFRESH_COOKIE_NAME,
+  SESSION_EXPIRY_MS,
+  REFRESH_TOKEN_EXPIRY_MS,
+} from "@shared/const";
 import { getSessionCookieOptions } from "../_core/cookies";
 import { publicProcedure, router } from "../_core/trpc";
 import { sdk } from "../_core/sdk";
+import { toPublicUser } from "../_core/public-views";
 import { users } from "../../drizzle/schema";
 import * as db from "../db";
-import { createRefreshToken, rotateRefreshToken, revokeAllUserTokens, revokeRefreshToken } from "../_core/auth/refresh-token";
+import {
+  createRefreshToken,
+  rotateRefreshToken,
+  revokeAllUserTokens,
+  revokeRefreshToken,
+} from "../_core/auth/refresh-token";
 
 const SALT_ROUNDS = 12;
 
@@ -17,7 +28,11 @@ function getCookieOptions(ctx: { req: any; res: any }) {
   return getSessionCookieOptions(ctx.req);
 }
 
-async function setSessionCookies(ctx: { req: any; res: any }, openId: string, name: string) {
+async function setSessionCookies(
+  ctx: { req: any; res: any },
+  openId: string,
+  name: string
+) {
   const token = await sdk.createSessionToken(openId, { name });
   const opts = getCookieOptions(ctx);
   ctx.res.cookie(COOKIE_NAME, token, { ...opts, maxAge: SESSION_EXPIRY_MS });
@@ -27,13 +42,19 @@ async function setSessionCookies(ctx: { req: any; res: any }, openId: string, na
 async function setRefreshCookie(ctx: { req: any; res: any }, userId: string) {
   const raw = await createRefreshToken(userId);
   const opts = getCookieOptions(ctx);
-  ctx.res.cookie(REFRESH_COOKIE_NAME, raw, { ...opts, maxAge: REFRESH_TOKEN_EXPIRY_MS, path: "/api/trpc" });
+  ctx.res.cookie(REFRESH_COOKIE_NAME, raw, {
+    ...opts,
+    maxAge: REFRESH_TOKEN_EXPIRY_MS,
+    path: "/api/trpc",
+  });
   return raw;
 }
 
 export const authRouter = router({
   /** Return the currently authenticated user (null if not logged in). */
-  me: publicProcedure.query(opts => opts.ctx.user),
+  me: publicProcedure.query(({ ctx }) =>
+    ctx.user ? toPublicUser(ctx.user) : null
+  ),
 
   /** Register a new user with email + password. */
   register: publicProcedure
@@ -164,11 +185,17 @@ export const authRouter = router({
   refreshSession: publicProcedure.mutation(async ({ ctx }) => {
     const raw = ctx.req.cookies?.[REFRESH_COOKIE_NAME];
     if (!raw) {
-      throw new TRPCError({ code: "UNAUTHORIZED", message: "No refresh token" });
+      throw new TRPCError({
+        code: "UNAUTHORIZED",
+        message: "No refresh token",
+      });
     }
     const result = await rotateRefreshToken(raw);
     if (!result) {
-      throw new TRPCError({ code: "UNAUTHORIZED", message: "Invalid or expired refresh token" });
+      throw new TRPCError({
+        code: "UNAUTHORIZED",
+        message: "Invalid or expired refresh token",
+      });
     }
     const user = await sdk.getUserById(result.userId);
     if (!user) {
@@ -177,7 +204,9 @@ export const authRouter = router({
     await setSessionCookies(ctx, user.openId!, user.name || "");
     const opts = getCookieOptions(ctx);
     ctx.res.cookie(REFRESH_COOKIE_NAME, result.newRefresh, {
-      ...opts, maxAge: REFRESH_TOKEN_EXPIRY_MS, path: "/api/trpc",
+      ...opts,
+      maxAge: REFRESH_TOKEN_EXPIRY_MS,
+      path: "/api/trpc",
     });
     return { success: true };
   }),
@@ -189,7 +218,11 @@ export const authRouter = router({
     const raw = ctx.req.cookies?.[REFRESH_COOKIE_NAME];
     if (raw) {
       revokeRefreshToken(raw);
-      ctx.res.clearCookie(REFRESH_COOKIE_NAME, { ...opts, maxAge: -1, path: "/api/trpc" });
+      ctx.res.clearCookie(REFRESH_COOKIE_NAME, {
+        ...opts,
+        maxAge: -1,
+        path: "/api/trpc",
+      });
     }
     return { success: true } as const;
   }),

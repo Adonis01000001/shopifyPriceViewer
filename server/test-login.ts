@@ -10,11 +10,18 @@ const db = drizzle({ client: pool, schema });
 
 async function main() {
   try {
+    const testEmail = process.env.TEST_LOGIN_EMAIL;
+    const testPassword = process.env.TEST_LOGIN_PASSWORD;
+    if (!testEmail || !testPassword) {
+      throw new Error(
+        "TEST_LOGIN_EMAIL and TEST_LOGIN_PASSWORD are required for the test login helper"
+      );
+    }
     // Step 1: Find user
     const [user] = await db
       .select()
       .from(schema.users)
-      .where(eq(schema.users.email, "admin@example.com"))
+      .where(eq(schema.users.email, testEmail))
       .limit(1);
 
     console.log("User found:", user ? user.email : "NOT FOUND");
@@ -26,7 +33,7 @@ async function main() {
     }
 
     // Step 2: Verify password
-    const isValid = await bcrypt.compare("admin123", user.passwordHash);
+    const isValid = await bcrypt.compare(testPassword, user.passwordHash);
     console.log("Password valid:", isValid);
 
     if (!isValid) {

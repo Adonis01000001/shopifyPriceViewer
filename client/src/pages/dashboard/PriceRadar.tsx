@@ -126,12 +126,10 @@ function SourceRow({
 }) {
   const [showJobs, setShowJobs] = useState(false);
   const { data: jobs } = trpc.priceRadar.history.useQuery(
-    { limit: 20 },
+    { sourceId: source.id, limit: 20 },
     { enabled: showJobs, refetchInterval: showJobs ? 3_000 : false }
   );
-  const sourceJobs = (jobs ?? []).filter(
-    (j: any) => j.sourceId === source.id
-  );
+  const sourceJobs = jobs ?? [];
 
   const sb = statusBadge[source.status] ?? statusBadge.active;
   const hasRunning = sourceJobs.some(
@@ -220,12 +218,13 @@ function SourceRow({
       {showJobs && sourceJobs.length > 0 && (
         <div className="divide-y divide-outline-variant/20">
           {sourceJobs.map((job: any) => {
-            const isRunning = job.status === "running" || job.status === "queued";
-            const jb =
-              jobStatusBadge[job.status] ?? {
-                label: job.status.toUpperCase(),
-                className: "bg-muted text-muted-foreground border-outline-variant",
-              };
+            const isRunning =
+              job.status === "running" || job.status === "queued";
+            const jb = jobStatusBadge[job.status] ?? {
+              label: job.status.toUpperCase(),
+              className:
+                "bg-muted text-muted-foreground border-outline-variant",
+            };
             return (
               <div
                 key={job.id}
@@ -281,11 +280,16 @@ function SourceRow({
 export default function PriceRadar() {
   const [createOpen, setCreateOpen] = useState(false);
   const [deleteId, setDeleteId] = useState<string | null>(null);
-  const [crawlingSources, setCrawlingSources] = useState<Set<string>>(new Set());
+  const [crawlingSources, setCrawlingSources] = useState<Set<string>>(
+    new Set()
+  );
 
   const { data: info } = trpc.priceRadar.info.useQuery();
-  const { data: sources, isLoading: sourcesLoading, refetch: refetchSources } =
-    trpc.priceRadar.sources.useQuery();
+  const {
+    data: sources,
+    isLoading: sourcesLoading,
+    refetch: refetchSources,
+  } = trpc.priceRadar.sources.useQuery();
   const { data: products } = trpc.priceRadar.products.useQuery({ limit: 50 });
   const { data: jobs } = trpc.priceRadar.history.useQuery({ limit: 100 });
 
@@ -296,7 +300,7 @@ export default function PriceRadar() {
       form.reset();
       refetchSources();
     },
-    onError: (err) => {
+    onError: err => {
       toast.error(err.message || "Failed to create source");
     },
   });
@@ -307,7 +311,7 @@ export default function PriceRadar() {
       setDeleteId(null);
       refetchSources();
     },
-    onError: (err) => {
+    onError: err => {
       toast.error(err.message || "Failed to delete source");
     },
   });
@@ -317,7 +321,7 @@ export default function PriceRadar() {
       toast.success(`Crawl started — ${data.pagesQueued} pages queued`);
       refetchSources();
     },
-    onError: (err) => {
+    onError: err => {
       toast.error(err.message || "Failed to start crawl");
     },
   });
@@ -327,7 +331,7 @@ export default function PriceRadar() {
       toast.success("Crawl cancelled");
       refetchSources();
     },
-    onError: (err) => {
+    onError: err => {
       toast.error(err.message || "Failed to cancel crawl");
     },
   });
@@ -346,11 +350,11 @@ export default function PriceRadar() {
 
   const handleStartCrawl = useCallback(
     async (sourceId: string) => {
-      setCrawlingSources((prev) => new Set(prev).add(sourceId));
+      setCrawlingSources(prev => new Set(prev).add(sourceId));
       try {
         await startCrawl.mutateAsync({ sourceId });
       } finally {
-        setCrawlingSources((prev) => {
+        setCrawlingSources(prev => {
           const n = new Set(prev);
           n.delete(sourceId);
           return n;
@@ -435,14 +439,14 @@ export default function PriceRadar() {
                     )}
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="crawlDelayMs">
-                      Crawl delay (ms)
-                    </Label>
+                    <Label htmlFor="crawlDelayMs">Crawl delay (ms)</Label>
                     <Input
                       id="crawlDelayMs"
                       type="number"
                       placeholder="300"
-                      {...form.register("crawlDelayMs", { valueAsNumber: true })}
+                      {...form.register("crawlDelayMs", {
+                        valueAsNumber: true,
+                      })}
                     />
                     <p className="text-[10px] text-muted-foreground">
                       Min interval between requests. Higher = more polite but
@@ -458,10 +462,7 @@ export default function PriceRadar() {
                   >
                     Cancel
                   </Button>
-                  <Button
-                    type="submit"
-                    disabled={createSource.isPending}
-                  >
+                  <Button type="submit" disabled={createSource.isPending}>
                     {createSource.isPending ? (
                       <>
                         <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
@@ -515,9 +516,7 @@ export default function PriceRadar() {
       {sourcesLoading && (
         <div className="flex items-center justify-center py-16">
           <Loader2 className="h-8 w-8 text-primary animate-spin" />
-          <span className="ml-3 text-muted-foreground">
-            Loading sources...
-          </span>
+          <span className="ml-3 text-muted-foreground">Loading sources...</span>
         </div>
       )}
 
@@ -528,7 +527,7 @@ export default function PriceRadar() {
               key={source.id}
               source={source}
               onStartCrawl={() => handleStartCrawl(source.id)}
-              onCancelCrawl={(jobId) => cancelCrawl.mutate({ jobId })}
+              onCancelCrawl={jobId => cancelCrawl.mutate({ jobId })}
               onDelete={() => setDeleteId(source.id)}
               crawling={crawlingSources.has(source.id)}
             />
@@ -577,7 +576,10 @@ export default function PriceRadar() {
                   {formatPrice(p.price, p.currency)}
                 </span>
                 {p.productUrl && (
-                  <ExternalLink className="h-4 w-4 text-primary shrink-0" aria-hidden="true" />
+                  <ExternalLink
+                    className="h-4 w-4 text-primary shrink-0"
+                    aria-hidden="true"
+                  />
                 )}
               </div>
             ))}
@@ -602,8 +604,8 @@ export default function PriceRadar() {
               discovers product pages, and extracts pricing data
             </p>
             <p>
-              • Crawls respect{" "}
-              <strong>robots.txt</strong> and use configurable rate limits
+              • Crawls respect <strong>robots.txt</strong> and use configurable
+              rate limits
             </p>
             <p>
               • Found products are stored with their prices, availability, SKU,
@@ -627,7 +629,7 @@ export default function PriceRadar() {
       {/* Delete confirmation */}
       <AlertDialog
         open={!!deleteId}
-        onOpenChange={(o) => !o && setDeleteId(null)}
+        onOpenChange={o => !o && setDeleteId(null)}
       >
         <AlertDialogContent>
           <AlertDialogHeader>
@@ -640,7 +642,9 @@ export default function PriceRadar() {
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
             <AlertDialogAction
-              onClick={() => deleteId && deleteSource.mutate({ sourceId: deleteId })}
+              onClick={() =>
+                deleteId && deleteSource.mutate({ sourceId: deleteId })
+              }
               className="bg-destructive text-destructive-foreground hover:brightness-110"
             >
               Delete

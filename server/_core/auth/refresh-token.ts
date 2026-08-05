@@ -21,7 +21,11 @@ export async function createRefreshToken(userId: string): Promise<string> {
       expiresAt,
     });
   } catch (err) {
-    console.error("[createRefreshToken] insert failed for userId=", userId, err);
+    console.error(
+      "[createRefreshToken] insert failed for userId=",
+      userId,
+      err
+    );
     throw err;
   }
   return raw;
@@ -33,32 +37,33 @@ export async function rotateRefreshToken(
   const oldHash = hashToken(oldRaw);
   const database = await requireDb();
 
-  // Find the token record — must be non-revoked and not expired
-  const now = new Date();
-  const result = await database
-    .select()
-    .from(refreshTokens)
-    .where(
-      and(
-        eq(refreshTokens.tokenHash, oldHash),
-        isNull(refreshTokens.revokedAt),
-        gt(refreshTokens.expiresAt, now)
+  return database.transaction(async tx => {
+    const now = new Date();
+    // The conditional UPDATE is the single-use gate. Concurrent requests can
+    // no longer both read the same token as valid before revoking it.
+    const [existing] = await tx
+      .update(refreshTokens)
+      .set({ revokedAt: now })
+      .where(
+        and(
+          eq(refreshTokens.tokenHash, oldHash),
+          isNull(refreshTokens.revokedAt),
+          gt(refreshTokens.expiresAt, now)
+        )
       )
-    )
-    .limit(1);
-  const existing = result[0];
+      .returning({ userId: refreshTokens.userId });
 
-  if (!existing) return null;
+    if (!existing) return null;
 
-  // Revoke the old token (single-use rotation)
-  await database
-    .update(refreshTokens)
-    .set({ revokedAt: now })
-    .where(eq(refreshTokens.id, existing.id));
+    const newRaw = crypto.randomBytes(32).toString("hex");
+    await tx.insert(refreshTokens).values({
+      userId: existing.userId,
+      tokenHash: hashToken(newRaw),
+      expiresAt: new Date(Date.now() + REFRESH_TOKEN_EXPIRY_MS),
+    });
 
-  // Issue a new refresh token
-  const newRaw = await createRefreshToken(existing.userId);
-  return { newRefresh: newRaw, userId: existing.userId };
+    return { newRefresh: newRaw, userId: existing.userId };
+  });
 }
 
 export function revokeRefreshToken(raw: string): void {
