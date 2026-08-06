@@ -22,12 +22,24 @@ const Settings = lazy(() => import("./pages/dashboard/Settings"));
 
 function DashboardPageFallback() {
   return (
-    <div className="flex min-h-[50vh] items-center justify-center">
+    <div className="flex min-h-[50vh] items-center justify-center px-6">
       <div
-        className="h-8 w-8 animate-spin rounded-full border-2 border-primary/20 border-t-primary"
+        className="w-full max-w-xl space-y-4"
         role="status"
         aria-label="Loading page"
-      />
+      >
+        <div className="h-3 w-28 animate-pulse rounded-full bg-primary/20" />
+        <div className="h-9 w-64 animate-pulse rounded-lg bg-muted" />
+        <div className="h-4 w-96 max-w-full animate-pulse rounded-full bg-muted/70" />
+        <div className="grid gap-4 pt-4 sm:grid-cols-3">
+          {Array.from({ length: 3 }).map((_, index) => (
+            <div
+              key={index}
+              className="h-28 animate-pulse rounded-xl border border-border/70 bg-card/60"
+            />
+          ))}
+        </div>
+      </div>
     </div>
   );
 }
@@ -39,26 +51,18 @@ function AuthGuard({ children }: { children: React.ReactNode }) {
 
   if (isLoading) {
     return (
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          height: "100vh",
-          background:
-            "linear-gradient(135deg, #0f0b2e 0%, #1a1145 40%, #0d1b3e 100%)",
-        }}
-      >
+      <div className="flex min-h-screen items-center justify-center bg-background px-6">
         <div
-          style={{
-            width: 36,
-            height: 36,
-            border: "3px solid rgba(255,255,255,0.15)",
-            borderTopColor: "#818cf8",
-            borderRadius: "50%",
-            animation: "auth-spin 0.7s linear infinite",
-          }}
-        />
+          className="flex items-center gap-3"
+          role="status"
+          aria-label="Checking session"
+        >
+          <div className="h-9 w-9 animate-pulse rounded-xl bg-primary/15 ring-1 ring-primary/25" />
+          <div className="space-y-2">
+            <div className="h-3 w-24 animate-pulse rounded-full bg-muted" />
+            <div className="h-2 w-32 animate-pulse rounded-full bg-muted/70" />
+          </div>
+        </div>
       </div>
     );
   }

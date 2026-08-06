@@ -100,7 +100,7 @@ export default function Auth() {
                   strokeWidth="1.2"
                 />
               </svg>
-              <span className="auth-logo__text">PriceVision</span>
+              <span className="auth-logo__text">PriceIntel</span>
             </div>
 
             <TypewriterEffectSmooth
@@ -170,7 +170,9 @@ export default function Auth() {
                   </svg>
                 </div>
                 <div>
-                  <div className="auth-feature__title">Explainable Recommendations</div>
+                  <div className="auth-feature__title">
+                    Explainable Recommendations
+                  </div>
                   <div className="auth-feature__desc">
                     See the evidence behind a price decision
                   </div>
@@ -217,34 +219,51 @@ export default function Auth() {
               </h2>
               <p className="auth-form-header__subtitle">
                 {mode === "login"
-                  ? "Sign in to your PriceVision dashboard"
+                  ? "Sign in to your PriceIntel dashboard"
                   : "Connect Shopify and see your first actionable signal in under five minutes."}
               </p>
             </div>
 
             {/* Tab selector */}
-            <div className="auth-tabs" role="tablist">
+            <div
+              className="auth-tabs"
+              role="tablist"
+              aria-label="Account access mode"
+            >
               <button
+                id="auth-login-tab"
                 className={`auth-tab ${mode === "login" ? "auth-tab--active" : ""}`}
                 onClick={() => setMode("login")}
                 type="button"
                 role="tab"
                 aria-selected={mode === "login"}
+                aria-controls="auth-form"
               >
                 Sign In
               </button>
               <button
+                id="auth-register-tab"
                 className={`auth-tab ${mode === "register" ? "auth-tab--active" : ""}`}
                 onClick={() => setMode("register")}
                 type="button"
                 role="tab"
                 aria-selected={mode === "register"}
+                aria-controls="auth-form"
               >
                 Sign Up
               </button>
             </div>
 
-            <form className="auth-form" onSubmit={handleSubmit}>
+            <form
+              id="auth-form"
+              className="auth-form"
+              onSubmit={handleSubmit}
+              aria-busy={isLoading}
+              role="tabpanel"
+              aria-labelledby={
+                mode === "login" ? "auth-login-tab" : "auth-register-tab"
+              }
+            >
               {mode === "register" && (
                 <div className="auth-field">
                   <label className="auth-label" htmlFor="auth-name">
@@ -307,7 +326,13 @@ export default function Auth() {
                 disabled={isLoading}
               >
                 {isLoading ? (
-                  <span className="auth-submit__loader" />
+                  <span
+                    className="auth-submit__loader"
+                    role="status"
+                    aria-label={
+                      mode === "login" ? "Signing in" : "Creating account"
+                    }
+                  />
                 ) : mode === "login" ? (
                   "Sign In"
                 ) : (

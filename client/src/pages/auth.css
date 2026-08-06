@@ -326,6 +326,7 @@
 
 .auth-tab {
   flex: 1;
+  min-height: 44px;
   padding: 9px 0;
   border: none;
   border-radius: 8px;
@@ -342,6 +343,13 @@
   background: var(--color-primary);
   color: var(--color-primary-foreground);
   box-shadow: 0 2px 12px -3px rgba(186, 0, 92, 0.3);
+}
+
+.auth-tab:focus-visible,
+.auth-submit:focus-visible,
+.auth-link:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 3px;
 }
 
 /* ── Form fields ─────────────────────────────────────── */
@@ -365,6 +373,7 @@
 
 .auth-input {
   width: 100%;
+  min-height: 44px;
   padding: 11px 14px;
   font-size: 0.9375rem;
   color: var(--color-on-surface);
@@ -396,6 +405,7 @@
 /* ── Submit button ───────────────────────────────────── */
 .auth-submit {
   width: 100%;
+  min-height: 44px;
   padding: 12px 0;
   margin-top: 0.5rem;
   font-size: 0.9375rem;

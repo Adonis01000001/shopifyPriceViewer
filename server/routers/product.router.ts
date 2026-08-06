@@ -237,6 +237,20 @@ export const productRouter = router({
     productService.getCompetitorPricesForUser(ctx.user!.id)
   ),
 
+  dismissCompetitorMapping: protectedProcedure
+    .input(
+      z.object({
+        productId: z.string().uuid(),
+        competitorId: z.string().uuid(),
+        sourceType: z.enum(["price-radar", "scoop"]),
+        sourceProductId: z.string().uuid(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      await productService.dismissCompetitorMapping(ctx.user!.id, input);
+      return { success: true };
+    }),
+
   stats: protectedProcedure.query(async ({ ctx }) => {
     return productService.getStats(ctx.user!.id);
   }),

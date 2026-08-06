@@ -1,11 +1,26 @@
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
-import { analyzePortfolio } from "../services/wisdom.service";
+import {
+  analyzePortfolio,
+  getLatestWisdomAnalysis,
+  saveWisdomAnalysis,
+} from "../services/wisdom.service";
 import { entitlementService } from "../services/entitlement.service";
 
 export const wisdomRouter = router({
-  analyze: protectedProcedure.query(async ({ ctx }) => {
+  latest: protectedProcedure.query(async ({ ctx }) => {
     await entitlementService.assertFeature(ctx.user!.id, "advancedAnalytics");
-    return analyzePortfolio(ctx.user!.id);
+    return getLatestWisdomAnalysis(ctx.user!.id);
+  }),
+
+  analyze: protectedProcedure.mutation(async ({ ctx }) => {
+    await entitlementService.assertFeature(ctx.user!.id, "advancedAnalytics");
+    const result = await analyzePortfolio(ctx.user!.id);
+
+    // A failed or incomplete run must never replace the user's last good
+    // result. The client can continue displaying the latest saved output.
+    if (result.error || !result.analysis) return result;
+
+    return saveWisdomAnalysis(ctx.user!.id, result);
   }),
 });

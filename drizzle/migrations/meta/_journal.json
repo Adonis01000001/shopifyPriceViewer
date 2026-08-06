@@ -141,6 +141,27 @@
       "when": 1785898187491,
       "tag": "0019_overrated_rick_jones",
       "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1785981211184,
+      "tag": "0020_auto_competitor_name_links",
+      "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1785981789744,
+      "tag": "0021_automatic_mapping_provenance",
+      "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "7",
+      "when": 1786043090797,
+      "tag": "0022_path_of_wisdom_results",
+      "breakpoints": true
     }
   ]
 }

@@ -1,4 +1,3 @@
-import { useState } from "react";
 import { trpc } from "@/lib/trpc";
 import { cn } from "@/lib/utils";
 import {
@@ -40,45 +39,96 @@ type WisdomData = {
   } | null;
   error: string | null;
   productCount: number;
+  savedAt?: string | Date;
 };
 
 export default function PathOfWisdom() {
   const [, navigate] = useLocation();
-  const [hasAnalyzed, setHasAnalyzed] = useState(false);
-  const { data, isLoading, refetch, isFetching } = trpc.wisdom.analyze.useQuery(undefined, {
-    enabled: false,
+  const latestQuery = trpc.wisdom.latest.useQuery();
+  const { data, isLoading } = latestQuery;
+  const analyzeMutation = trpc.wisdom.analyze.useMutation({
+    onSuccess: async result => {
+      if (!result.error && result.analysis) {
+        await latestQuery.refetch();
+      }
+    },
   });
+  const wisdomData = data as WisdomData | null | undefined;
+  const hasSavedResult = Boolean(wisdomData?.analysis);
+  const loadError = latestQuery.error?.message ?? null;
+  const runError =
+    analyzeMutation.data?.error ?? analyzeMutation.error?.message ?? null;
 
-  const wisdomData = data as WisdomData | undefined;
-
-  const handleAnalyze = async () => {
-    setHasAnalyzed(true);
-    refetch();
-  };
-
-  const handleRerun = () => {
-    setHasAnalyzed(false);
+  const handleAnalyze = () => {
+    analyzeMutation.reset();
+    analyzeMutation.mutate();
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-8">
       {/* Header */}
-      <div className="flex items-start justify-between">
-        <div className="flex flex-col gap-1">
+      <div className="page-header">
+        <div>
+          <p className="page-kicker">Explainable AI</p>
           <div className="flex items-center gap-3">
-            <div className="h-9 w-9 rounded-lg bg-primary/15 flex items-center justify-center">
-              <Brain className="h-5 w-5 text-primary" />
-            </div>
-            <h2 className="text-2xl font-extrabold text-primary">Path of Wisdom</h2>
+            <h2 className="page-title flex items-center gap-3">
+              <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary/15 ring-1 ring-primary/20">
+                <Brain className="h-5 w-5 text-primary" />
+              </span>
+              Path of Wisdom
+            </h2>
             <Sparkles className="h-4 w-4 text-yellow-400" />
           </div>
-          <p className="text-muted-foreground text-sm">
+          <p className="page-description">
             AI-powered portfolio pricing analysis and strategic recommendations
           </p>
         </div>
       </div>
 
-      {!hasAnalyzed ? (
+      {isLoading || (!hasSavedResult && analyzeMutation.isPending) ? (
+        <div className="glass-panel rounded-lg p-16 text-center">
+          <div className="max-w-md mx-auto space-y-6">
+            <div className="h-16 w-16 rounded-2xl bg-primary/10 flex items-center justify-center mx-auto animate-pulse">
+              <Brain className="h-8 w-8 text-primary" />
+            </div>
+            <div className="space-y-3">
+              <div className="flex items-center justify-center gap-2">
+                <RefreshCw className="h-4 w-4 text-primary animate-spin" />
+                <span className="text-sm font-medium text-primary">
+                  {isLoading
+                    ? "Loading your latest analysis..."
+                    : "Consulting the Path of Wisdom..."}
+                </span>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                {isLoading
+                  ? "Retrieving your saved result"
+                  : "Analyzing products, processing market data, and generating strategic recommendations"}
+              </p>
+            </div>
+          </div>
+        </div>
+      ) : !hasSavedResult && loadError ? (
+        <div className="glass-panel rounded-lg p-12 text-center">
+          <AlertTriangle className="h-8 w-8 text-yellow-500 mx-auto mb-3" />
+          <p className="text-sm text-muted-foreground mb-4">{loadError}</p>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => latestQuery.refetch()}
+          >
+            Try Again
+          </Button>
+        </div>
+      ) : !hasSavedResult && runError ? (
+        <div className="glass-panel rounded-lg p-12 text-center">
+          <AlertTriangle className="h-8 w-8 text-yellow-500 mx-auto mb-3" />
+          <p className="text-sm text-muted-foreground mb-4">{runError}</p>
+          <Button variant="outline" size="sm" onClick={handleAnalyze}>
+            Try Again
+          </Button>
+        </div>
+      ) : !hasSavedResult ? (
         <div className="glass-panel rounded-lg p-16 text-center">
           <div className="max-w-md mx-auto space-y-6">
             <div className="h-16 w-16 rounded-2xl bg-primary/10 flex items-center justify-center mx-auto">
@@ -89,9 +139,10 @@ export default function PathOfWisdom() {
                 Ready for Strategic Insights
               </h3>
               <p className="text-sm text-muted-foreground leading-relaxed">
-                Analyze your entire product portfolio through AI. The Path of Wisdom
-                examines your products, competitor data, and market position to deliver
-                strategic pricing recommendations with detailed reasoning.
+                Analyze your entire product portfolio through AI. The Path of
+                Wisdom examines your products, competitor data, and market
+                position to deliver strategic pricing recommendations with
+                detailed reasoning.
               </p>
             </div>
             <Button
@@ -104,41 +155,44 @@ export default function PathOfWisdom() {
             </Button>
           </div>
         </div>
-      ) : isLoading || isFetching ? (
-        <div className="glass-panel rounded-lg p-16 text-center">
-          <div className="max-w-md mx-auto space-y-6">
-            <div className="h-16 w-16 rounded-2xl bg-primary/10 flex items-center justify-center mx-auto animate-pulse">
-              <Brain className="h-8 w-8 text-primary" />
-            </div>
-            <div className="space-y-3">
-              <div className="flex items-center justify-center gap-2">
-                <RefreshCw className="h-4 w-4 text-primary animate-spin" />
-                <span className="text-sm font-medium text-primary">
-                  Consulting the Path of Wisdom...
-                </span>
-              </div>
-              <p className="text-xs text-muted-foreground">
-                Analyzing products, processing market data, and generating strategic recommendations
-              </p>
-            </div>
-          </div>
-        </div>
-      ) : wisdomData?.error ? (
-        <div className="glass-panel rounded-lg p-12 text-center">
-          <AlertTriangle className="h-8 w-8 text-yellow-500 mx-auto mb-3" />
-          <p className="text-sm text-muted-foreground mb-4">{wisdomData.error}</p>
-          <Button variant="outline" size="sm" onClick={handleRerun}>
-            Try Again
-          </Button>
-        </div>
       ) : wisdomData?.analysis ? (
         <div className="space-y-6">
+          {analyzeMutation.isPending && (
+            <div className="rounded-lg border border-primary/20 bg-primary/5 px-4 py-3 text-sm text-primary flex items-center gap-2">
+              <RefreshCw className="h-4 w-4 animate-spin" />
+              Generating a fresh analysis. Your saved result remains available
+              until the new run succeeds.
+            </div>
+          )}
+          {!analyzeMutation.isPending && loadError && (
+            <div className="rounded-lg border border-yellow-500/20 bg-yellow-500/5 px-4 py-3 text-sm text-yellow-200 flex items-center justify-between gap-3">
+              <span>Could not refresh the saved analysis. The last loaded result is still shown.</span>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => latestQuery.refetch()}
+              >
+                Retry
+              </Button>
+            </div>
+          )}
+          {!analyzeMutation.isPending && runError && (
+            <div className="rounded-lg border border-yellow-500/20 bg-yellow-500/5 px-4 py-3 text-sm text-yellow-200 flex items-center justify-between gap-3">
+              <span>{runError} Your previous saved analysis is still shown.</span>
+              <Button variant="outline" size="sm" onClick={handleAnalyze}>
+                Try Again
+              </Button>
+            </div>
+          )}
           {/* Summary Card */}
           <div className="glass-panel rounded-lg overflow-hidden border border-primary/10">
             <div className="px-5 py-3 border-b border-white/[0.04] bg-surface-container/50 flex items-center gap-2">
               <BarChart3 className="h-4 w-4 text-primary" />
               <h3 className="text-[14px] font-semibold">Executive Summary</h3>
-              <Badge variant="outline" className="ml-auto text-[10px] font-mono">
+              <Badge
+                variant="outline"
+                className="ml-auto text-[10px] font-mono"
+              >
                 {wisdomData.productCount} products
               </Badge>
             </div>
@@ -228,7 +282,7 @@ export default function PathOfWisdom() {
                 {wisdomData.analysis.productRecommendations.length} products
               </Badge>
             </div>
-            {wisdomData.analysis.productRecommendations.map((rec) => {
+            {wisdomData.analysis.productRecommendations.map(rec => {
               const priceChange = rec.priceChange;
               const confidenceColor =
                 rec.confidence === "high"
@@ -317,8 +371,8 @@ export default function PathOfWisdom() {
                                 : "text-muted-foreground"
                           )}
                         >
-                          {priceChange > 0 ? "+" : ""}
-                          ${Math.abs(priceChange).toFixed(2)} (
+                          {priceChange > 0 ? "+" : ""}$
+                          {Math.abs(priceChange).toFixed(2)} (
                           {rec.priceChangePercent > 0 ? "+" : ""}
                           {rec.priceChangePercent.toFixed(1)}%)
                         </span>
@@ -364,7 +418,8 @@ export default function PathOfWisdom() {
               variant="outline"
               size="sm"
               className="gap-2"
-              onClick={handleRerun}
+              onClick={handleAnalyze}
+              disabled={analyzeMutation.isPending}
             >
               <RefreshCw className="h-3.5 w-3.5" />
               Run Fresh Analysis

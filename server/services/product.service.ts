@@ -7,12 +7,18 @@ import {
   shopifyStores,
   competitors,
   competitorProducts,
+  competitorProductDismissals,
+  priceRadarProducts,
+  priceRadarSources,
+  scoopCompetitorProducts,
   type Product,
   type InsertProduct,
   type CompetitorProduct,
 } from "../../drizzle/schema";
 import { normalizeName } from "../../shared/validation";
 import { publicShopifyStoreColumns } from "../_core/public-views";
+import { getVisibleRadarProducts } from "./competitor-product-count";
+import { normalizeCompetitorDomain } from "./price-radar/url-policy";
 
 function validateProductTitle(title: string | undefined): void {
   if (title !== undefined && title.trim().length < 2) {
@@ -231,39 +237,421 @@ export const productService = {
 
   async getCompetitorPricesForUser(userId: string) {
     const database = await requireDb();
-    return database
-      .select({
-        id: competitorProducts.id,
-        productId: competitorProducts.productId,
-        competitorId: competitorProducts.competitorId,
-        competitorName: competitors.name,
-        competitorDomain: competitors.domain,
-        title: competitorProducts.competitorProductTitle,
-        sku: competitorProducts.competitorSku,
-        price: competitorProducts.price,
-        currency: competitorProducts.currency,
-        url: competitorProducts.competitorProductUrl,
-        matchScore: competitorProducts.matchScore,
-        isVerified: competitorProducts.isVerified,
-        lastPriceUpdate: competitorProducts.lastPriceUpdate,
-        lastScrapedAt: competitorProducts.lastScrapedAt,
-        updatedAt: competitorProducts.updatedAt,
-      })
-      .from(competitorProducts)
-      .innerJoin(products, eq(competitorProducts.productId, products.id))
-      .innerJoin(
-        competitors,
-        eq(competitorProducts.competitorId, competitors.id)
+    const [
+      matchedRows,
+      catalogProducts,
+      competitorRows,
+      radarRows,
+      scoopRows,
+      dismissals,
+    ] = await Promise.all([
+      database
+        .select({
+          id: competitorProducts.id,
+          productId: competitorProducts.productId,
+          competitorId: competitorProducts.competitorId,
+          competitorName: competitors.name,
+          competitorDomain: competitors.domain,
+          title: competitorProducts.competitorProductTitle,
+          sku: competitorProducts.competitorSku,
+          price: competitorProducts.price,
+          currency: competitorProducts.currency,
+          url: competitorProducts.competitorProductUrl,
+          matchScore: competitorProducts.matchScore,
+          sourceType: competitorProducts.sourceType,
+          sourceProductId: competitorProducts.sourceProductId,
+          isVerified: competitorProducts.isVerified,
+          lastPriceUpdate: competitorProducts.lastPriceUpdate,
+          lastScrapedAt: competitorProducts.lastScrapedAt,
+          updatedAt: competitorProducts.updatedAt,
+        })
+        .from(competitorProducts)
+        .innerJoin(products, eq(competitorProducts.productId, products.id))
+        .innerJoin(
+          competitors,
+          eq(competitorProducts.competitorId, competitors.id)
+        )
+        .where(
+          and(
+            eq(products.userId, userId),
+            eq(products.isActive, true),
+            eq(competitors.userId, userId),
+            eq(competitorProducts.isActive, true)
+          )
+        ),
+      database
+        .select({ id: products.id, title: products.title })
+        .from(products)
+        .where(and(eq(products.userId, userId), eq(products.isActive, true))),
+      database
+        .select({
+          id: competitors.id,
+          name: competitors.name,
+          domain: competitors.domain,
+        })
+        .from(competitors)
+        .where(eq(competitors.userId, userId)),
+      database
+        .select({
+          sourceProductId: priceRadarProducts.id,
+          sourceCompetitorId: priceRadarSources.competitorId,
+          sourceDomain: priceRadarSources.domain,
+          title: priceRadarProducts.name,
+          sku: priceRadarProducts.sku,
+          price: priceRadarProducts.price,
+          currency: priceRadarProducts.currency,
+          url: priceRadarProducts.productUrl,
+          matchScore: priceRadarProducts.extractionConfidence,
+          lastPriceUpdate: priceRadarProducts.lastSeenAt,
+          lastScrapedAt: priceRadarProducts.lastSeenAt,
+          updatedAt: priceRadarProducts.updatedAt,
+          structuredMetadata: priceRadarProducts.structuredMetadata,
+        })
+        .from(priceRadarProducts)
+        .innerJoin(
+          priceRadarSources,
+          eq(priceRadarProducts.sourceId, priceRadarSources.id)
+        )
+        .where(
+          and(
+            eq(priceRadarProducts.userId, userId),
+            eq(priceRadarProducts.isActive, true),
+            eq(priceRadarSources.userId, userId),
+            eq(priceRadarSources.isActive, true)
+          )
+        ),
+      database
+        .select({
+          sourceProductId: scoopCompetitorProducts.id,
+          competitorId: scoopCompetitorProducts.competitorId,
+          competitorName: competitors.name,
+          competitorDomain: competitors.domain,
+          title: scoopCompetitorProducts.productName,
+          sku: sql<string | null>`null`,
+          price: scoopCompetitorProducts.price,
+          currency: scoopCompetitorProducts.currency,
+          url: scoopCompetitorProducts.productUrl,
+          matchScore: scoopCompetitorProducts.confidenceScore,
+          lastPriceUpdate: scoopCompetitorProducts.lastSeenAt,
+          lastScrapedAt: scoopCompetitorProducts.lastSeenAt,
+          updatedAt: scoopCompetitorProducts.lastSeenAt,
+        })
+        .from(scoopCompetitorProducts)
+        .innerJoin(
+          competitors,
+          eq(scoopCompetitorProducts.competitorId, competitors.id)
+        )
+        .where(
+          and(
+            eq(scoopCompetitorProducts.userId, userId),
+            eq(scoopCompetitorProducts.isActive, true),
+            eq(competitors.userId, userId)
+          )
+        ),
+      database
+        .select({
+          productId: competitorProductDismissals.productId,
+          competitorId: competitorProductDismissals.competitorId,
+          sourceType: competitorProductDismissals.sourceType,
+          sourceProductId: competitorProductDismissals.sourceProductId,
+        })
+        .from(competitorProductDismissals)
+        .where(eq(competitorProductDismissals.userId, userId)),
+    ]);
+
+    const dismissedKeys = new Set(
+      dismissals.map(dismissal =>
+        [
+          dismissal.productId,
+          dismissal.competitorId,
+          dismissal.sourceType,
+          dismissal.sourceProductId,
+        ].join(":")
       )
+    );
+    const productsByName = new Map<string, Array<{ id: string }>>();
+    for (const product of catalogProducts) {
+      const normalizedTitle = normalizeName(product.title);
+      if (!normalizedTitle) continue;
+      const matches = productsByName.get(normalizedTitle) ?? [];
+      matches.push({ id: product.id });
+      productsByName.set(normalizedTitle, matches);
+    }
+
+    const linkedUrls = new Set(
+      matchedRows
+        .filter(row => row.url)
+        .map(row => `${row.competitorId}:${row.url}`)
+    );
+    const matchedPairs = new Set(
+      matchedRows.map(row => `${row.productId}:${row.competitorId}`)
+    );
+    const automaticPairKeys = new Set<string>();
+    const radarCandidates = radarRows.flatMap(row => {
+      const matchingCompetitors = competitorRows.filter(
+        competitor =>
+          row.sourceCompetitorId === competitor.id ||
+          normalizeCompetitorDomain(row.sourceDomain) ===
+            normalizeCompetitorDomain(competitor.domain)
+      );
+
+      return matchingCompetitors.flatMap(competitor => {
+        const visibleProduct = getVisibleRadarProducts(
+          competitor,
+          matchedRows
+            .filter(matchedRow => matchedRow.competitorId === competitor.id)
+            .map(matchedRow => ({
+              competitorProductUrl: matchedRow.url,
+            })),
+          [
+            {
+              name: row.title,
+              productUrl: row.url,
+              sourceCompetitorId: row.sourceCompetitorId,
+              sourceDomain: row.sourceDomain,
+              structuredMetadata: row.structuredMetadata,
+            },
+          ]
+        )[0];
+        if (!visibleProduct) return [];
+
+        return [
+          {
+            ...row,
+            competitorId: competitor.id,
+            competitorName: competitor.name,
+            competitorDomain: competitor.domain,
+            title: visibleProduct.displayName,
+            source: "price-radar" as const,
+          },
+        ];
+      });
+    });
+    const automaticMappings = [
+      ...radarCandidates,
+      ...scoopRows.map(row => ({ ...row, source: "scoop" as const })),
+    ].flatMap(candidate => {
+      const candidatePrice = candidate.price;
+      if (
+        !candidate.competitorId ||
+        !candidate.title ||
+        !candidatePrice ||
+        !candidate.url
+      ) {
+        return [];
+      }
+      if (linkedUrls.has(`${candidate.competitorId}:${candidate.url}`)) {
+        return [];
+      }
+
+      const matchingProducts =
+        productsByName.get(normalizeName(candidate.title)) ?? [];
+      return matchingProducts.flatMap(product => {
+        const pairKey = `${product.id}:${candidate.competitorId}`;
+        if (matchedPairs.has(pairKey) || automaticPairKeys.has(pairKey)) {
+          return [];
+        }
+        const dismissalKey = [
+          product.id,
+          candidate.competitorId,
+          candidate.source,
+          candidate.sourceProductId,
+        ].join(":");
+        if (dismissedKeys.has(dismissalKey)) return [];
+        automaticPairKeys.add(pairKey);
+
+        return [
+          {
+            id: `auto:${candidate.source}:${candidate.sourceProductId}:${product.id}`,
+            productId: product.id,
+            competitorId: candidate.competitorId,
+            competitorName: candidate.competitorName,
+            competitorDomain: candidate.competitorDomain,
+            title: candidate.title,
+            sku: candidate.sku,
+            price: candidatePrice,
+            currency: candidate.currency,
+            url: candidate.url,
+            matchScore: 1,
+            isVerified: false,
+            lastPriceUpdate: candidate.lastPriceUpdate,
+            lastScrapedAt: candidate.lastScrapedAt,
+            updatedAt: candidate.updatedAt,
+            source: candidate.source,
+            sourceProductId: candidate.sourceProductId,
+            isAutomatic: true,
+          },
+        ];
+      });
+    });
+
+    if (automaticMappings.length > 0) {
+      await database
+        .insert(competitorProducts)
+        .values(
+          automaticMappings.map(mapping => ({
+            competitorId: mapping.competitorId,
+            productId: mapping.productId,
+            competitorProductUrl: mapping.url,
+            competitorProductTitle: mapping.title,
+            competitorSku: mapping.sku,
+            price: mapping.price,
+            currency: mapping.currency ?? "USD",
+            matchScore: mapping.matchScore,
+            matchMethod: "auto-name",
+            sourceType: mapping.source,
+            sourceProductId: mapping.sourceProductId,
+            isVerified: false,
+            isActive: true,
+            lastPriceUpdate: mapping.lastPriceUpdate,
+            lastScrapedAt: mapping.lastScrapedAt,
+            updatedAt: mapping.updatedAt,
+          }))
+        )
+        .onConflictDoNothing();
+    }
+
+    return [
+      ...matchedRows.map(row => ({
+        ...row,
+        source:
+          row.sourceType === "price-radar"
+            ? ("price-radar" as const)
+            : row.sourceType === "scoop"
+              ? ("scoop" as const)
+              : ("matched" as const),
+        isAutomatic:
+          row.sourceType === "price-radar" || row.sourceType === "scoop",
+      })),
+      ...automaticMappings,
+    ].sort(
+      (left, right) =>
+        new Date(right.updatedAt).getTime() - new Date(left.updatedAt).getTime()
+    );
+  },
+
+  async dismissCompetitorMapping(
+    userId: string,
+    data: {
+      productId: string;
+      competitorId: string;
+      sourceType: "price-radar" | "scoop";
+      sourceProductId: string;
+    }
+  ): Promise<void> {
+    const database = await requireDb();
+    const [ownedProduct] = await database
+      .select({ id: products.id })
+      .from(products)
       .where(
         and(
+          eq(products.id, data.productId),
           eq(products.userId, userId),
-          eq(products.isActive, true),
-          eq(competitors.userId, userId),
-          eq(competitorProducts.isActive, true)
+          eq(products.isActive, true)
         )
       )
-      .orderBy(desc(competitorProducts.updatedAt));
+      .limit(1);
+    if (!ownedProduct) {
+      throw new TRPCError({
+        code: "NOT_FOUND",
+        message: "Product not found",
+      });
+    }
+
+    const [ownedCompetitor] = await database
+      .select({ id: competitors.id, domain: competitors.domain })
+      .from(competitors)
+      .where(
+        and(
+          eq(competitors.id, data.competitorId),
+          eq(competitors.userId, userId)
+        )
+      )
+      .limit(1);
+    if (!ownedCompetitor) {
+      throw new TRPCError({
+        code: "NOT_FOUND",
+        message: "Competitor product not found",
+      });
+    }
+
+    if (data.sourceType === "price-radar") {
+      const [sourceProduct] = await database
+        .select({
+          id: priceRadarProducts.id,
+          sourceCompetitorId: priceRadarSources.competitorId,
+          sourceDomain: priceRadarSources.domain,
+        })
+        .from(priceRadarProducts)
+        .innerJoin(
+          priceRadarSources,
+          eq(priceRadarProducts.sourceId, priceRadarSources.id)
+        )
+        .where(
+          and(
+            eq(priceRadarProducts.id, data.sourceProductId),
+            eq(priceRadarProducts.userId, userId),
+            eq(priceRadarProducts.isActive, true),
+            eq(priceRadarSources.userId, userId),
+            eq(priceRadarSources.isActive, true)
+          )
+        )
+        .limit(1);
+      const belongsToCompetitor =
+        sourceProduct &&
+        (sourceProduct.sourceCompetitorId === data.competitorId ||
+          normalizeCompetitorDomain(sourceProduct.sourceDomain) ===
+            normalizeCompetitorDomain(ownedCompetitor.domain));
+      if (!belongsToCompetitor) {
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "Competitor product not found",
+        });
+      }
+    } else {
+      const [sourceProduct] = await database
+        .select({ id: scoopCompetitorProducts.id })
+        .from(scoopCompetitorProducts)
+        .where(
+          and(
+            eq(scoopCompetitorProducts.id, data.sourceProductId),
+            eq(scoopCompetitorProducts.userId, userId),
+            eq(scoopCompetitorProducts.competitorId, data.competitorId),
+            eq(scoopCompetitorProducts.isActive, true)
+          )
+        )
+        .limit(1);
+      if (!sourceProduct) {
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "Competitor product not found",
+        });
+      }
+    }
+
+    await database.transaction(async transaction => {
+      await transaction
+        .insert(competitorProductDismissals)
+        .values({
+          userId,
+          productId: data.productId,
+          competitorId: data.competitorId,
+          sourceType: data.sourceType,
+          sourceProductId: data.sourceProductId,
+        })
+        .onConflictDoNothing();
+
+      await transaction
+        .delete(competitorProducts)
+        .where(
+          and(
+            eq(competitorProducts.productId, data.productId),
+            eq(competitorProducts.competitorId, data.competitorId),
+            eq(competitorProducts.sourceType, data.sourceType),
+            eq(competitorProducts.sourceProductId, data.sourceProductId)
+          )
+        );
+    });
   },
 
   async getStats(userId: string) {

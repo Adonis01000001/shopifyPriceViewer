@@ -9,7 +9,14 @@ import {
 } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { trpc } from "@/lib/trpc";
-import { Empty, EmptyHeader, EmptyTitle, EmptyDescription, EmptyMedia, EmptyContent } from "@/components/ui/empty";
+import {
+  Empty,
+  EmptyHeader,
+  EmptyTitle,
+  EmptyDescription,
+  EmptyMedia,
+  EmptyContent,
+} from "@/components/ui/empty";
 import { PageSkeleton } from "@/components/dashboard/PageSkeleton";
 import {
   AlertTriangle,
@@ -143,7 +150,11 @@ export default function Alerts() {
   const [searchQuery, setSearchQuery] = useState("");
   const [activeTab, setActiveTab] = useState("all");
 
-  const { data: alerts, isLoading, error } = trpc.alerts.list.useQuery({
+  const {
+    data: alerts,
+    isLoading,
+    error,
+  } = trpc.alerts.list.useQuery({
     unreadOnly: false,
     limit: 100,
   });
@@ -159,12 +170,15 @@ export default function Alerts() {
 
   if (error) {
     return (
-      <div className="space-y-6">
-        <div className="flex flex-col gap-1">
-          <h2 className="text-2xl font-extrabold text-primary">Alerts</h2>
-          <p className="text-muted-foreground text-sm">Failed to load alerts.</p>
+      <div className="space-y-8">
+        <div className="page-header">
+          <div>
+            <p className="page-kicker">Attention queue</p>
+            <h2 className="page-title">Alerts</h2>
+            <p className="page-description">Failed to load alerts.</p>
+          </div>
         </div>
-        <div className="glass-panel rounded-lg p-12 text-center">
+        <div className="glass-card rounded-2xl p-8 text-center sm:p-12">
           <p className="text-[#ffb4ab] text-sm">{error.message}</p>
         </div>
       </div>
@@ -193,16 +207,21 @@ export default function Alerts() {
 
   if (allAlerts.length === 0) {
     return (
-      <div className="space-y-6">
-        <div className="flex flex-col gap-1">
-          <h2 className="text-2xl font-extrabold text-primary">Alerts</h2>
-          <p className="text-muted-foreground text-sm">
-            No alerts yet. Alerts will appear when price changes or threshold
-            breaches are detected.
-          </p>
+      <div className="space-y-8">
+        <div className="page-header">
+          <div>
+            <p className="page-kicker">Attention queue</p>
+            <h2 className="page-title">Alerts</h2>
+            <p className="page-description">
+              No alerts yet. Alerts will appear when price changes or threshold
+              breaches are detected.
+            </p>
+          </div>
         </div>
         <Empty>
-          <EmptyMedia variant="icon"><ShieldCheck className="h-6 w-6" /></EmptyMedia>
+          <EmptyMedia variant="icon">
+            <ShieldCheck className="h-6 w-6" />
+          </EmptyMedia>
           <EmptyHeader>
             <EmptyTitle>All clear</EmptyTitle>
             <EmptyDescription>
@@ -221,12 +240,15 @@ export default function Alerts() {
   }
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-col gap-1">
-        <h2 className="text-2xl font-extrabold text-primary">Alerts</h2>
-        <p className="text-muted-foreground text-sm">
-          Monitor price changes, competitor movements, and threshold breaches.
-        </p>
+    <div className="space-y-8">
+      <div className="page-header">
+        <div>
+          <p className="page-kicker">Attention queue</p>
+          <h2 className="page-title">Alerts</h2>
+          <p className="page-description">
+            Monitor price changes, competitor movements, and threshold breaches.
+          </p>
+        </div>
       </div>
 
       {/* Summary Cards */}

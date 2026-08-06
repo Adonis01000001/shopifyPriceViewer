@@ -549,6 +549,13 @@ function ProductRadarCard({
     },
     onError: error => toast.error(error.message || "Failed to remove link"),
   });
+  const dismissMapping = trpc.products.dismissCompetitorMapping.useMutation({
+    onSuccess: () => {
+      void utils.products.getCompetitorMappings.invalidate();
+      toast.success("Automatic competitor match hidden");
+    },
+    onError: error => toast.error(error.message || "Failed to hide match"),
+  });
 
   const openAddDialog = () => {
     setEditingMapping(null);
@@ -631,6 +638,11 @@ function ProductRadarCard({
                   aria-hidden="true"
                 />
                 <div className="min-w-0 flex-1">
+                  {mapping.isAutomatic && (
+                    <span className="mb-1 inline-flex rounded-full bg-primary/10 px-1.5 py-0.5 text-[9px] font-semibold text-primary">
+                      AUTO-MATCHED
+                    </span>
+                  )}
                   <p className="text-[12px] font-medium truncate">
                     {mapping.competitorName}
                     {mapping.title ? ` · ${mapping.title}` : ""}
@@ -654,27 +666,51 @@ function ProductRadarCard({
                       View
                     </a>
                   )}
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="ghost"
-                    className="h-8 w-8 p-0"
-                    aria-label={`Edit ${mapping.title || "competitor product"}`}
-                    onClick={() => openEditDialog(mapping)}
-                  >
-                    <Pencil className="h-3.5 w-3.5" />
-                  </Button>
+                  {!mapping.isAutomatic && (
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="ghost"
+                      className="h-8 w-8 p-0"
+                      aria-label={`Edit ${mapping.title || "competitor product"}`}
+                      onClick={() => openEditDialog(mapping)}
+                    >
+                      <Pencil className="h-3.5 w-3.5" />
+                    </Button>
+                  )}
                   <Button
                     type="button"
                     size="sm"
                     variant="ghost"
                     className="h-8 w-8 p-0 text-muted-foreground hover:text-destructive"
-                    aria-label={`Remove ${mapping.title || "competitor product"}`}
-                    disabled={removeMapping.isPending}
+                    aria-label={`${mapping.isAutomatic ? "Hide" : "Remove"} ${mapping.title || "competitor product"}`}
+                    disabled={
+                      removeMapping.isPending || dismissMapping.isPending
+                    }
                     onClick={() => {
+                      const shouldRemove = window.confirm(
+                        mapping.isAutomatic
+                          ? "Hide this automatic match?"
+                          : "Remove this competitor product link?"
+                      );
+                      if (!shouldRemove) return;
+
+                      const sourceProductId = mapping.sourceProductId;
+                      const competitorId = mapping.competitorId;
                       if (
-                        window.confirm("Remove this competitor product link?")
+                        mapping.isAutomatic &&
+                        competitorId &&
+                        sourceProductId &&
+                        (mapping.source === "price-radar" ||
+                          mapping.source === "scoop")
                       ) {
+                        dismissMapping.mutate({
+                          productId: mapping.productId,
+                          competitorId,
+                          sourceType: mapping.source,
+                          sourceProductId,
+                        });
+                      } else {
                         removeMapping.mutate({
                           competitorProductId: mapping.id,
                         });
@@ -697,7 +733,8 @@ function ProductRadarCard({
               No competitor products linked
             </p>
             <p className="text-[11px] mt-1">
-              Add a competitor listing to start monitoring this product.
+              Matching competitor names are linked automatically. Add a listing
+              manually when you need a different match.
             </p>
           </div>
         )}
@@ -758,6 +795,7 @@ export default function PriceRadar() {
     refetch: refetchMappings,
   } = trpc.products.getCompetitorMappings.useQuery(undefined, {
     staleTime: 1000 * 60,
+    refetchOnMount: "always",
   });
   const { data: jobs } = trpc.priceRadar.history.useQuery({ limit: 100 });
 
@@ -863,23 +901,27 @@ export default function PriceRadar() {
     }
     return grouped;
   }, [competitorMappings]);
+  const automaticMappingCount = (competitorMappings ?? []).filter(
+    mapping => mapping.isAutomatic
+  ).length;
   const jobsList = jobs ?? [];
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-8">
       {/* Header */}
-      <div className="flex flex-col gap-1">
-        <div className="flex items-center justify-between">
-          <div>
-            <h2 className="text-2xl font-extrabold text-primary flex items-center gap-2">
-              <Radar className="h-6 w-6" />
-              Price Radar
-            </h2>
-            <p className="text-muted-foreground text-sm mt-1">
-              Crawl competitor websites to discover and track their product
-              prices automatically.
-            </p>
-          </div>
+      <div className="page-header">
+        <div>
+          <p className="page-kicker">Competitive monitoring</p>
+          <h2 className="page-title flex items-center gap-2">
+            <Radar className="h-6 w-6 text-primary" />
+            Price Radar
+          </h2>
+          <p className="page-description">
+            Connect competitor listings to your catalog and keep the price
+            changes that matter in view.
+          </p>
+        </div>
+        <div>
           <Dialog open={createOpen} onOpenChange={setCreateOpen}>
             <DialogTrigger asChild>
               <Button
@@ -1003,15 +1045,22 @@ export default function PriceRadar() {
       {/* Product catalog and competitor mappings */}
       <section aria-labelledby="radar-mappings-title">
         <div className="flex flex-col gap-1 mb-4">
-          <h3
-            id="radar-mappings-title"
-            className="text-lg font-bold text-primary"
-          >
-            Product monitoring
-          </h3>
+          <div className="flex flex-wrap items-center gap-2">
+            <h3
+              id="radar-mappings-title"
+              className="text-lg font-bold text-primary"
+            >
+              Product monitoring
+            </h3>
+            <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-semibold text-primary">
+              {automaticMappingCount} automatic{" "}
+              {automaticMappingCount === 1 ? "match" : "matches"}
+            </span>
+          </div>
           <p className="text-xs text-muted-foreground">
-            Every product below comes from your Products catalog. Link one or
-            more competitor listings to compare prices and track changes.
+            Every product below comes from your Products catalog. Exact matching
+            competitor names are linked automatically; you can hide incorrect
+            matches or add a different listing manually.
           </p>
         </div>
         <div className="relative max-w-md mb-4">

@@ -10,6 +10,7 @@ import {
   competitors,
   competitorProducts,
   serpApiScouts,
+  pathOfWisdomResults,
 } from "../../drizzle/schema";
 import { eq, and, desc } from "drizzle-orm";
 
@@ -48,6 +49,19 @@ export interface WisdomAnalysis {
   topOpportunities: string[];
   keyRisks: string[];
   productRecommendations: WisdomProductRecommendation[];
+}
+
+export interface WisdomAnalysisResult {
+  analysis: WisdomAnalysis | null;
+  error: string | null;
+  productCount: number;
+}
+
+export interface SavedWisdomAnalysis {
+  analysis: WisdomAnalysis;
+  error: null;
+  productCount: number;
+  savedAt: Date;
 }
 
 function buildProductsContext(products: WisdomProductInput[]): string {
@@ -185,11 +199,9 @@ async function fetchCompetitorPrices(productId: string): Promise<{
   };
 }
 
-export async function analyzePortfolio(userId: string): Promise<{
-  analysis: WisdomAnalysis | null;
-  error: string | null;
-  productCount: number;
-}> {
+export async function analyzePortfolio(
+  userId: string
+): Promise<WisdomAnalysisResult> {
   const userProducts = await productService.getByUserId(userId);
   const tracked = userProducts.filter(p => p.isTracked && p.isActive);
 
@@ -272,4 +284,68 @@ export async function analyzePortfolio(userId: string): Promise<{
     logger.error({ err }, "Wisdom analysis failed");
     return { analysis: null, error: "AI analysis failed", productCount: tracked.length };
   }
+}
+
+/**
+ * Read the latest successful result for a user. Failed runs are never stored,
+ * so this remains the last known-good output across sessions and devices.
+ */
+export async function getLatestWisdomAnalysis(
+  userId: string
+): Promise<SavedWisdomAnalysis | null> {
+  const database = await requireDb();
+  const [saved] = await database
+    .select()
+    .from(pathOfWisdomResults)
+    .where(eq(pathOfWisdomResults.userId, userId))
+    .limit(1);
+
+  if (!saved) return null;
+
+  return {
+    analysis: saved.output as WisdomAnalysis,
+    error: null,
+    productCount: saved.productCount,
+    savedAt: saved.updatedAt,
+  };
+}
+
+/**
+ * Replace the user's latest result atomically after a successful analysis.
+ * The caller must only pass a result with a non-null analysis.
+ */
+export async function saveWisdomAnalysis(
+  userId: string,
+  result: WisdomAnalysisResult
+): Promise<SavedWisdomAnalysis> {
+  if (result.error || !result.analysis) {
+    throw new Error("Only successful Path of Wisdom results can be saved");
+  }
+
+  const database = await requireDb();
+  const now = new Date();
+
+  await database
+    .insert(pathOfWisdomResults)
+    .values({
+      userId,
+      output: result.analysis,
+      productCount: result.productCount,
+      updatedAt: now,
+    })
+    .onConflictDoUpdate({
+      target: pathOfWisdomResults.userId,
+      set: {
+        output: result.analysis,
+        productCount: result.productCount,
+        updatedAt: now,
+      },
+    });
+
+  const saved = await getLatestWisdomAnalysis(userId);
+  if (!saved) {
+    throw new Error("Path of Wisdom result was not available after saving");
+  }
+
+  return saved;
 }

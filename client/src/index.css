@@ -45,6 +45,7 @@
 }
 
 :root {
+  color-scheme: light;
   --font-sans: "DM Sans", ui-sans-serif, system-ui, sans-serif;
   --font-mono: "JetBrains Mono", ui-monospace, monospace;
   --radius: 0.5rem;
@@ -106,6 +107,7 @@
 }
 
 .dark {
+  color-scheme: dark;
   --background: #121014;
   --foreground: #f8f4f6;
 
@@ -187,6 +189,22 @@
   }
   body {
     @apply bg-background text-foreground;
+    min-width: 320px;
+    min-height: 100vh;
+    overflow-x: hidden;
+    line-height: 1.5;
+    background-image:
+      radial-gradient(
+        circle at 8% -12%,
+        color-mix(in srgb, var(--primary) 10%, transparent),
+        transparent 32rem
+      ),
+      radial-gradient(
+        circle at 100% 0%,
+        color-mix(in srgb, var(--color-tertiary) 5%, transparent),
+        transparent 28rem
+      );
+    background-attachment: fixed;
     font-feature-settings: "cv02", "cv03", "cv04", "cv11";
   }
 
@@ -271,10 +289,82 @@
     backdrop-filter: blur(8px);
     -webkit-backdrop-filter: blur(8px);
   }
+  .glass-card {
+    transition:
+      border-color 180ms ease,
+      background-color 180ms ease,
+      box-shadow 180ms ease,
+      transform 180ms ease;
+  }
+  .glass-card:hover {
+    border-color: color-mix(in srgb, var(--primary) 34%, var(--border));
+    box-shadow: 0 12px 30px -24px
+      color-mix(in srgb, var(--primary) 55%, transparent);
+    transform: translateY(-1px);
+  }
   html:not(.dark) .glass-card,
   html:not(.dark) .glass-panel {
     background: var(--card);
     border-color: var(--border);
+  }
+
+  .page-header {
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 1rem;
+    min-width: 0;
+  }
+  .page-header > * {
+    min-width: 0;
+  }
+  .page-kicker {
+    color: var(--primary);
+    font-family: var(--font-mono);
+    font-size: 0.65rem;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    line-height: 1;
+    text-transform: uppercase;
+  }
+  .page-title {
+    margin-top: 0.5rem;
+    color: var(--foreground);
+    font-size: clamp(1.65rem, 2vw, 2.1rem);
+    font-weight: 700;
+    letter-spacing: -0.04em;
+    line-height: 1.1;
+  }
+  .page-description {
+    max-width: 46rem;
+    margin-top: 0.55rem;
+    color: var(--muted-foreground);
+    font-size: 0.875rem;
+    line-height: 1.6;
+  }
+  .surface-toolbar {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    border: 1px solid color-mix(in srgb, var(--border) 78%, transparent);
+    border-radius: 0.75rem;
+    background: color-mix(
+      in srgb,
+      var(--color-surface-container-low) 84%,
+      transparent
+    );
+    padding: 0.75rem;
+  }
+  .surface-toolbar > * {
+    min-width: 0;
+  }
+  .panel-heading {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    border-bottom: 1px solid color-mix(in srgb, var(--border) 65%, transparent);
+    padding: 1rem 1.25rem;
   }
 
   /* Data typography */
@@ -306,48 +396,43 @@
     animation: flash-rose 2s ease-out;
   }
   @keyframes flash-green {
-    0% { background-color: rgba(99, 224, 99, 0.2); }
-    100% { background-color: transparent; }
+    0% {
+      background-color: rgba(99, 224, 99, 0.2);
+    }
+    100% {
+      background-color: transparent;
+    }
   }
   @keyframes flash-amber {
-    0% { background-color: rgba(254, 214, 57, 0.25); }
-    100% { background-color: transparent; }
+    0% {
+      background-color: rgba(254, 214, 57, 0.25);
+    }
+    100% {
+      background-color: transparent;
+    }
   }
   @keyframes flash-rose {
-    0% { background-color: rgba(255, 77, 148, 0.2); }
-    100% { background-color: transparent; }
+    0% {
+      background-color: rgba(255, 77, 148, 0.2);
+    }
+    100% {
+      background-color: transparent;
+    }
   }
 
-  /* Button enhancements */
-  .btn,
-  button {
-    transition: all 0.2s ease;
-    position: relative;
-    overflow: hidden;
-  }
-  .btn::after,
-  button::after {
-    content: '';
-    position: absolute;
-    inset: 0;
-    background: currentColor;
-    opacity: 0;
-    transition: opacity 0.2s ease;
-  }
-  .btn:hover::after,
-  button:hover::after {
-    opacity: 0.08;
-  }
-  .btn:active,
-  button:active {
-    transform: scale(0.97);
+  /* Keep interaction feedback local to the component that owns the control. */
+  button,
+  [role="button"] {
+    -webkit-tap-highlight-color: transparent;
   }
 
   /* Input enhancements */
   input,
   textarea,
   select {
-    transition: border-color 0.2s ease, box-shadow 0.2s ease;
+    transition:
+      border-color 0.2s ease,
+      box-shadow 0.2s ease;
   }
   input:focus,
   textarea:focus,
@@ -377,22 +462,39 @@
     color: var(--foreground);
   }
 
-  /* Link underline animation */
+  /* Link styling stays explicit so icon-only controls do not gain surprise underlines. */
   a {
-    text-decoration: none;
-    position: relative;
+    color: inherit;
   }
-  a::after {
-    content: '';
-    position: absolute;
-    bottom: -1px;
-    left: 0;
-    width: 0;
-    height: 1px;
-    background: currentColor;
-    transition: width 0.3s ease;
+
+  .text-link {
+    color: var(--primary);
+    text-underline-offset: 3px;
   }
-  a:hover::after {
-    width: 100%;
+  .text-link:hover {
+    text-decoration: underline;
+  }
+}
+
+@media (max-width: 639px) {
+  .page-header {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .surface-toolbar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
   }
 }

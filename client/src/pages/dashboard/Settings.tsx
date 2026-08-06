@@ -72,7 +72,8 @@ export default function Settings() {
   });
   const portalMutation = trpc.billing.portal.useMutation({
     onSuccess: ({ url }) => window.location.assign(url),
-    onError: error => toast.error(error.message || "Unable to open billing portal"),
+    onError: error =>
+      toast.error(error.message || "Unable to open billing portal"),
   });
   const cancelMutation = trpc.billing.cancel.useMutation({
     onSuccess: async result => {
@@ -86,7 +87,8 @@ export default function Settings() {
           : "Subscription cancellation reversed"
       );
     },
-    onError: error => toast.error(error.message || "Unable to update subscription"),
+    onError: error =>
+      toast.error(error.message || "Unable to update subscription"),
   });
 
   const [name, setName] = useState(user?.name ?? "");
@@ -117,12 +119,15 @@ export default function Settings() {
     : [];
 
   return (
-    <div className="space-y-6 max-w-3xl">
-      <div className="flex flex-col gap-1">
-        <h2 className="text-2xl font-extrabold text-primary">Settings</h2>
-        <p className="text-muted-foreground text-sm">
-          Manage your account, connected stores, and preferences.
-        </p>
+    <div className="space-y-8 max-w-3xl">
+      <div className="page-header">
+        <div>
+          <p className="page-kicker">Workspace configuration</p>
+          <h2 className="page-title">Settings</h2>
+          <p className="page-description">
+            Manage your account, connected stores, and preferences.
+          </p>
+        </div>
       </div>
 
       {/* Account Section */}
@@ -301,7 +306,9 @@ export default function Settings() {
                   >
                     <span className="flex flex-col items-start gap-0.5">
                       <span className="text-xs font-semibold">
-                        {isCurrent ? `${plan.name} plan` : `Choose ${plan.name}`}
+                        {isCurrent
+                          ? `${plan.name} plan`
+                          : `Choose ${plan.name}`}
                       </span>
                       <span className="text-[10px] font-normal text-muted-foreground">
                         {isCurrent

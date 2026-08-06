@@ -13,15 +13,29 @@ import {
   YAxis,
 } from "recharts";
 import { trpc } from "@/lib/trpc";
-import { Empty, EmptyHeader, EmptyTitle, EmptyDescription, EmptyMedia } from "@/components/ui/empty";
+import {
+  Empty,
+  EmptyHeader,
+  EmptyTitle,
+  EmptyDescription,
+  EmptyMedia,
+} from "@/components/ui/empty";
 import { PageSkeleton } from "@/components/dashboard/PageSkeleton";
-import { TrendingUp, Target, Zap, BarChart3, BarChart4, ShoppingBag } from "lucide-react";
+import {
+  TrendingUp,
+  Target,
+  Zap,
+  BarChart3,
+  BarChart4,
+  ShoppingBag,
+} from "lucide-react";
 import { useMemo } from "react";
 
 export default function Analytics() {
   const { data: products, isLoading } = trpc.products.list.useQuery();
   const { data: recStats } = trpc.recommendations.stats.useQuery();
-  const { data: competitorProducts } = trpc.competitors.getProductsForAnalytics.useQuery();
+  const { data: competitorProducts } =
+    trpc.competitors.getProductsForAnalytics.useQuery();
 
   const allProducts = useMemo(() => products ?? [], [products]);
 
@@ -68,7 +82,16 @@ export default function Analytics() {
       .sort((a, b) => Number(b.price) - Number(a.price))
       .slice(0, 20);
     const colorMap: Record<string, string> = {};
-    const colors = ["var(--chart-1)", "var(--chart-2)", "var(--chart-3)", "var(--chart-4)", "var(--chart-5)", "var(--primary)", "#c084fc", "#f97316"];
+    const colors = [
+      "var(--chart-1)",
+      "var(--chart-2)",
+      "var(--chart-3)",
+      "var(--chart-4)",
+      "var(--chart-5)",
+      "var(--primary)",
+      "#c084fc",
+      "#f97316",
+    ];
     let colorIdx = 0;
     for (const p of sorted) {
       if (!colorMap[p.competitorName]) {
@@ -77,7 +100,10 @@ export default function Analytics() {
       }
     }
     return sorted.map(p => ({
-      label: (p.productTitle?.length ?? 0) > 40 ? (p.productTitle?.slice(0, 37) ?? "") + "..." : (p.productTitle || "—"),
+      label:
+        (p.productTitle?.length ?? 0) > 40
+          ? (p.productTitle?.slice(0, 37) ?? "") + "..."
+          : p.productTitle || "—",
       price: Number(p.price),
       competitor: p.competitorName,
       fill: colorMap[p.competitorName],
@@ -106,18 +132,21 @@ export default function Analytics() {
 
   if (allProducts.length === 0) {
     return (
-      <div className="space-y-6">
-        <div className="flex flex-col gap-1">
-          <h2 className="text-2xl font-extrabold text-primary">
-            Analytics & Reports
-          </h2>
-          <p className="text-muted-foreground text-sm">
-            Analytics will be available once you have products and data
-            flowing.
-          </p>
+      <div className="space-y-8">
+        <div className="page-header">
+          <div>
+            <p className="page-kicker">Performance intelligence</p>
+            <h2 className="page-title">Analytics &amp; reports</h2>
+            <p className="page-description">
+              Analytics will be available once you have products and data
+              flowing.
+            </p>
+          </div>
         </div>
         <Empty>
-          <EmptyMedia variant="icon"><BarChart4 className="h-6 w-6" /></EmptyMedia>
+          <EmptyMedia variant="icon">
+            <BarChart4 className="h-6 w-6" />
+          </EmptyMedia>
           <EmptyHeader>
             <EmptyTitle>No data yet</EmptyTitle>
             <EmptyDescription>
@@ -131,14 +160,15 @@ export default function Analytics() {
   }
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-col gap-1">
-        <h2 className="text-2xl font-extrabold text-primary">
-          Analytics & Reports
-        </h2>
-        <p className="text-muted-foreground text-sm">
-          Performance breakdown of pricing strategies and market positioning.
-        </p>
+    <div className="space-y-8">
+      <div className="page-header">
+        <div>
+          <p className="page-kicker">Performance intelligence</p>
+          <h2 className="page-title">Analytics &amp; reports</h2>
+          <p className="page-description">
+            Performance breakdown of pricing strategies and market positioning.
+          </p>
+        </div>
       </div>
 
       {/* KPI Row */}
@@ -420,7 +450,9 @@ export default function Analytics() {
       <div className="glass-panel rounded-lg overflow-hidden">
         <div className="px-5 py-4 border-b border-white/[0.04] bg-surface-container/50 flex items-center gap-2">
           <ShoppingBag className="h-4 w-4 text-primary" />
-          <h3 className="text-[15px] font-semibold">Competitor Products & Prices</h3>
+          <h3 className="text-[15px] font-semibold">
+            Competitor Products & Prices
+          </h3>
           {competitorProducts && (
             <span className="ml-auto text-[11px] text-muted-foreground font-mono">
               {competitorProducts.length} products
@@ -429,7 +461,10 @@ export default function Analytics() {
         </div>
         <div className="p-5">
           {compProductsChart.length > 0 ? (
-            <ResponsiveContainer width="100%" height={Math.min(compProductsChart.length * 28 + 40, 500)}>
+            <ResponsiveContainer
+              width="100%"
+              height={Math.min(compProductsChart.length * 28 + 40, 500)}
+            >
               <BarChart
                 data={compProductsChart}
                 layout="vertical"

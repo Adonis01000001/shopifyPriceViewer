@@ -205,6 +205,36 @@ export const billingEvents = pgTable(
 export type BillingEvent = typeof billingEvents.$inferSelect;
 export type InsertBillingEvent = typeof billingEvents.$inferInsert;
 
+// Stores the latest successfully completed Path of Wisdom result per user.
+// The unique user key makes replacement atomic and prevents duplicate result
+// rows when a user runs the analysis from multiple sessions.
+export const pathOfWisdomResults = pgTable(
+  "path_of_wisdom_results",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    output: jsonb("output").notNull(),
+    productCount: integer("product_count").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  t => ({
+    userIdIdx: uniqueIndex("path_of_wisdom_results_user_id_idx").on(t.userId),
+    updatedAtIdx: index("path_of_wisdom_results_updated_at_idx").on(
+      t.updatedAt
+    ),
+  })
+);
+
+export type PathOfWisdomResult = typeof pathOfWisdomResults.$inferSelect;
+export type InsertPathOfWisdomResult = typeof pathOfWisdomResults.$inferInsert;
+
 export const reportRuns = pgTable(
   "report_runs",
   {
@@ -264,10 +294,9 @@ export const notificationDeliveries = pgTable(
       .notNull(),
   },
   t => ({
-    reportChannelIdx: uniqueIndex("notification_deliveries_report_channel_idx").on(
-      t.reportRunId,
-      t.channel
-    ),
+    reportChannelIdx: uniqueIndex(
+      "notification_deliveries_report_channel_idx"
+    ).on(t.reportRunId, t.channel),
     userCreatedIdx: index("notification_deliveries_user_created_idx").on(
       t.userId,
       t.createdAt
@@ -277,7 +306,8 @@ export const notificationDeliveries = pgTable(
 );
 
 export type NotificationDelivery = typeof notificationDeliveries.$inferSelect;
-export type InsertNotificationDelivery = typeof notificationDeliveries.$inferInsert;
+export type InsertNotificationDelivery =
+  typeof notificationDeliveries.$inferInsert;
 
 // =============================================================================
 // Email Configuration
@@ -566,6 +596,8 @@ export const competitorProducts = pgTable(
     currency: varchar("currency", { length: 3 }).default("USD"),
     matchScore: doublePrecision("match_score").default(0).notNull(),
     matchMethod: varchar("match_method", { length: 64 }).default("manual"),
+    sourceType: varchar("source_type", { length: 32 }),
+    sourceProductId: uuid("source_product_id"),
     isVerified: boolean("is_verified").default(false).notNull(),
     isActive: boolean("is_active").default(true).notNull(),
     previousPrice: decimal("previous_price", { precision: 10, scale: 2 }),
@@ -603,6 +635,54 @@ export const competitorProducts = pgTable(
 
 export type CompetitorProduct = typeof competitorProducts.$inferSelect;
 export type InsertCompetitorProduct = typeof competitorProducts.$inferInsert;
+
+// Automatic Price Radar/Scoop matches dismissed by the merchant.
+// The source product remains in its source catalog so future price updates
+// stay available without recreating a deleted match in the UI.
+export const competitorProductDismissals = pgTable(
+  "competitor_product_dismissals",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    productId: uuid("product_id")
+      .notNull()
+      .references(() => products.id, { onDelete: "cascade" }),
+    competitorId: uuid("competitor_id")
+      .notNull()
+      .references(() => competitors.id, { onDelete: "cascade" }),
+    sourceType: varchar("source_type", { length: 32 }).notNull(),
+    sourceProductId: uuid("source_product_id").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  t => ({
+    userProductIdx: index("competitor_product_dismissals_user_product_idx").on(
+      t.userId,
+      t.productId
+    ),
+    sourceIdx: index("competitor_product_dismissals_source_idx").on(
+      t.sourceType,
+      t.sourceProductId
+    ),
+    uniqueDismissalIdx: uniqueIndex(
+      "competitor_product_dismissals_unique_idx"
+    ).on(
+      t.userId,
+      t.productId,
+      t.competitorId,
+      t.sourceType,
+      t.sourceProductId
+    ),
+  })
+);
+
+export type CompetitorProductDismissal =
+  typeof competitorProductDismissals.$inferSelect;
+export type InsertCompetitorProductDismissal =
+  typeof competitorProductDismissals.$inferInsert;
 
 // =============================================================================
 // Price History

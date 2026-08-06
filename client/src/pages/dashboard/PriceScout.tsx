@@ -24,12 +24,7 @@ import {
   Truck,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import {
-  useState,
-  useCallback,
-  useEffect,
-  type FormEvent,
-} from "react";
+import { useState, useCallback, useEffect, type FormEvent } from "react";
 import { toast } from "sonner";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -58,11 +53,7 @@ interface ScoutResult {
   searchQueries?: string[];
 }
 
-type ScoopRanking =
-  | "relevance"
-  | "lowest_price"
-  | "best_value"
-  | "newest";
+type ScoopRanking = "relevance" | "lowest_price" | "best_value" | "newest";
 
 interface ScoopProduct {
   productName: string;
@@ -126,7 +117,10 @@ function ScoopPanel() {
         maxResults,
       });
       setResult(nextResult);
-      if (nextResult.status !== "failed" && nextResult.productsFound.length > 0) {
+      if (
+        nextResult.status !== "failed" &&
+        nextResult.productsFound.length > 0
+      ) {
         await Promise.all([
           utils.competitors.list.invalidate(),
           utils.competitors.stats.invalidate(),
@@ -159,7 +153,9 @@ function ScoopPanel() {
   const downloadJson = () => {
     if (!result || result.productsFound.length === 0) return;
     const payload = JSON.stringify(result, null, 2);
-    const blob = new Blob([payload], { type: "application/json;charset=utf-8" });
+    const blob = new Blob([payload], {
+      type: "application/json;charset=utf-8",
+    });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     const safeQuery = result.searchQuery
@@ -205,9 +201,9 @@ function ScoopPanel() {
                 </span>
               </div>
               <p className="text-[12px] text-muted-foreground mt-1">
-                Describe any product. Scoop searches multiple providers, verifies
-                public product pages, removes duplicates, and returns grounded
-                structured data.
+                Describe any product. Scoop searches multiple providers,
+                verifies public product pages, removes duplicates, and returns
+                grounded structured data.
               </p>
             </div>
           </div>
@@ -255,9 +251,7 @@ function ScoopPanel() {
             <select
               id="scoop-ranking"
               value={ranking}
-              onChange={event =>
-                setRanking(event.target.value as ScoopRanking)
-              }
+              onChange={event => setRanking(event.target.value as ScoopRanking)}
               className="h-10 w-full rounded-md border border-outline-variant bg-surface-container-lowest px-3 text-[12px] text-foreground focus:outline-none focus:ring-2 focus:ring-primary/40"
             >
               <option value="relevance">Most relevant</option>
@@ -915,8 +909,8 @@ function ProductScoutCard({
           <div className="px-5 py-8 text-center text-muted-foreground">
             <Globe className="h-8 w-8 mx-auto mb-2 opacity-30" />
             <p className="text-[12px]">
-              Click "Scout Web", "SerpAPI", "Exa", or "Radar" to search for
-              this product's price
+              Click "Scout Web", "SerpAPI", "Exa", or "Radar" to search for this
+              product's price
             </p>
           </div>
         )}
@@ -936,13 +930,17 @@ export default function PriceScout() {
   const [serpAllRunning, setSerpAllRunning] = useState(false);
   const [exaScoutingIds, setExaScoutingIds] = useState<Set<string>>(new Set());
   const [exaAllRunning, setExaAllRunning] = useState(false);
-  const [radarScoutingIds, setRadarScoutingIds] = useState<Set<string>>(new Set());
+  const [radarScoutingIds, setRadarScoutingIds] = useState<Set<string>>(
+    new Set()
+  );
   const [radarAllRunning, setRadarAllRunning] = useState(false);
 
   const { data: products, isLoading: productsLoading } =
     trpc.products.list.useQuery(undefined, { staleTime: 1000 * 60 * 5 });
   const { data: scoutHistory, isLoading: scoutHistoryLoading } =
-    trpc.scout.getAllScoutHistory.useQuery(undefined, { staleTime: 1000 * 60 * 5 });
+    trpc.scout.getAllScoutHistory.useQuery(undefined, {
+      staleTime: 1000 * 60 * 5,
+    });
   const scoutMutation = trpc.scout.scoutProduct.useMutation();
   const scoutAllMutation = trpc.scout.scoutAllProducts.useMutation();
   const scoutSerpApiMutation = trpc.scout.scoutProductSerpApi.useMutation();
@@ -1208,20 +1206,22 @@ export default function PriceScout() {
   );
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-8">
       {/* Header */}
-      <div className="flex flex-col gap-1">
-        <div className="flex items-center justify-between">
-          <div>
-            <h2 className="text-2xl font-extrabold text-primary flex items-center gap-2">
-              <Globe className="h-6 w-6" />
-              Price Scout
-            </h2>
-            <p className="text-muted-foreground text-sm mt-1">
-              Search the web to find competitor prices for each of your
-              products.
-            </p>
-          </div>
+      <div className="page-header">
+        <div>
+          <p className="page-kicker">Research workspace</p>
+          <h2 className="page-title flex items-center gap-2">
+            <span className="flex h-9 w-9 items-center justify-center rounded-xl border border-primary/25 bg-primary/10">
+              <Globe className="h-5 w-5" />
+            </span>
+            Price Scout
+          </h2>
+          <p className="page-description">
+            Search the web to find competitor prices for each of your products.
+          </p>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
           <div className="flex items-center gap-2">
             <Button
               size="sm"

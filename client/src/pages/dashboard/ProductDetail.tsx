@@ -30,7 +30,9 @@ function getWisdomFactors(value: unknown): {
     marketContext:
       typeof factors.marketContext === "string" ? factors.marketContext : "",
     riskFactors: Array.isArray(factors.riskFactors)
-      ? factors.riskFactors.filter((risk): risk is string => typeof risk === "string")
+      ? factors.riskFactors.filter(
+          (risk): risk is string => typeof risk === "string"
+        )
       : [],
   };
 }
@@ -59,7 +61,11 @@ export default function ProductDetail() {
   const [, navigate] = useLocation();
   const productId = params?.id;
 
-  const { data: product, isLoading, error } = trpc.products.getById.useQuery(
+  const {
+    data: product,
+    isLoading,
+    error,
+  } = trpc.products.getById.useQuery(
     { id: productId ?? "" },
     { enabled: !!productId }
   );
@@ -82,7 +88,8 @@ export default function ProductDetail() {
         utils.recommendations.getByProduct.invalidate({ productId });
       }
     },
-    onError: error => toast.error(error.message || "Failed to apply recommendation"),
+    onError: error =>
+      toast.error(error.message || "Failed to apply recommendation"),
   });
 
   const wisdomRecommendation = savedRecommendations?.find(recommendation =>
@@ -104,7 +111,11 @@ export default function ProductDetail() {
         </button>
         <div className="glass-panel rounded-lg p-12 text-center">
           <p className="text-[#ffb4ab] text-sm mb-3">{error.message}</p>
-          <Button variant="outline" size="sm" onClick={() => navigate("/products")}>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => navigate("/products")}
+          >
             Return to Products
           </Button>
         </div>
@@ -118,36 +129,51 @@ export default function ProductDetail() {
   const status = statusConfig[product.status] ?? statusConfig.optimal;
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-8">
       {/* Breadcrumb */}
       <button
         onClick={() => navigate("/products")}
-        className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-primary transition-colors"
+        type="button"
+        className="text-link inline-flex items-center gap-1.5 text-sm text-muted-foreground transition-colors"
+        aria-label="Back to products"
       >
         <ArrowLeft className="h-4 w-4" />
         Back to Products
       </button>
 
       {/* Product Header */}
-      <div className="glass-panel rounded-lg overflow-hidden">
-        <div className="p-6 flex items-start gap-5">
-          <div className="w-14 h-14 rounded-xl bg-surface-container-highest border border-outline-variant flex items-center justify-center shrink-0">
+      <div className="glass-card overflow-hidden rounded-2xl">
+        <div className="flex items-start gap-4 p-5 sm:gap-5 sm:p-6">
+          <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-xl border border-outline-variant bg-surface-container-highest">
             {product.imageUrl ? (
-              <img src={product.imageUrl} alt="" className="w-full h-full object-cover rounded-xl" />
+              <img
+                src={product.imageUrl}
+                alt=""
+                className="w-full h-full object-cover rounded-xl"
+              />
             ) : (
               <Package className="h-6 w-6 text-muted-foreground" />
             )}
           </div>
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-3 flex-wrap">
-              <h1 className="text-2xl font-extrabold text-primary truncate">{product.title}</h1>
-              <span className={cn("inline-flex items-center rounded px-2 py-0.5 text-[10px] font-bold label-caps", status.className)}>
+              <h1 className="text-2xl font-extrabold text-primary truncate">
+                {product.title}
+              </h1>
+              <span
+                className={cn(
+                  "inline-flex items-center rounded px-2 py-0.5 text-[10px] font-bold label-caps",
+                  status.className
+                )}
+              >
                 {status.label.toUpperCase()}
               </span>
             </div>
             <div className="flex items-center gap-4 mt-2 text-sm text-muted-foreground flex-wrap">
               {product.sku && (
-                <span className="font-mono text-[12px]">SKU: {product.sku}</span>
+                <span className="font-mono text-[12px]">
+                  SKU: {product.sku}
+                </span>
               )}
               {product.category && <span>{product.category}</span>}
               {product.vendor && <span>{product.vendor}</span>}
@@ -157,11 +183,12 @@ export default function ProductDetail() {
             <p className="text-3xl font-bold font-mono tracking-tight text-primary">
               ${Number(product.price).toFixed(2)}
             </p>
-            {product.compareAtPrice && Number(product.compareAtPrice) > Number(product.price) && (
-              <p className="text-sm font-mono text-muted-foreground line-through">
-                ${Number(product.compareAtPrice).toFixed(2)}
-              </p>
-            )}
+            {product.compareAtPrice &&
+              Number(product.compareAtPrice) > Number(product.price) && (
+                <p className="text-sm font-mono text-muted-foreground line-through">
+                  ${Number(product.compareAtPrice).toFixed(2)}
+                </p>
+              )}
           </div>
         </div>
       </div>
@@ -199,7 +226,8 @@ export default function ProductDetail() {
                       Recommended
                     </p>
                     <p className="mt-1 text-lg font-bold font-mono text-primary">
-                      ${Number(wisdomRecommendation.recommendedPrice).toFixed(2)}
+                      $
+                      {Number(wisdomRecommendation.recommendedPrice).toFixed(2)}
                     </p>
                   </div>
                   <div className="glass-card rounded p-3 col-span-2 sm:col-span-1">
@@ -207,8 +235,8 @@ export default function ProductDetail() {
                       Change
                     </p>
                     <p className="mt-1 text-lg font-bold font-mono">
-                      {Number(wisdomRecommendation.priceChange) > 0 ? "+" : ""}
-                      ${Number(wisdomRecommendation.priceChange).toFixed(2)}
+                      {Number(wisdomRecommendation.priceChange) > 0 ? "+" : ""}$
+                      {Number(wisdomRecommendation.priceChange).toFixed(2)}
                     </p>
                   </div>
                 </div>
@@ -233,7 +261,9 @@ export default function ProductDetail() {
                     {wisdomFactors.riskFactors.map((risk, index) => (
                       <div key={index} className="flex items-start gap-2">
                         <AlertTriangle className="h-3 w-3 text-yellow-500 mt-0.5 shrink-0" />
-                        <p className="text-[11px] text-muted-foreground">{risk}</p>
+                        <p className="text-[11px] text-muted-foreground">
+                          {risk}
+                        </p>
                       </div>
                     ))}
                   </div>
@@ -277,19 +307,24 @@ export default function ProductDetail() {
           </div>
           <div className="divide-y divide-outline-variant/20">
             {competitorPrices && competitorPrices.length > 0 ? (
-              competitorPrices.map((cp) => {
+              competitorPrices.map(cp => {
                 const myPrice = Number(product.price);
                 const cpPrice = Number(cp.price);
                 const diff = cpPrice - myPrice;
                 const diffPct = myPrice > 0 ? (diff / myPrice) * 100 : 0;
                 return (
-                  <div key={cp.id} className="px-5 py-3 flex items-center justify-between hover:bg-white/[0.02] transition-colors">
+                  <div
+                    key={cp.id}
+                    className="px-5 py-3 flex items-center justify-between hover:bg-white/[0.02] transition-colors"
+                  >
                     <div className="min-w-0 flex-1">
                       <p className="text-[13px] font-medium truncate">
                         {cp.title || cp.competitorDomain || "Unknown"}
                       </p>
                       <div className="flex items-center gap-2 mt-0.5">
-                        <span className="text-[11px] text-muted-foreground">{cp.competitorName}</span>
+                        <span className="text-[11px] text-muted-foreground">
+                          {cp.competitorName}
+                        </span>
                         <span className="text-[10px] font-mono text-muted-foreground">
                           match: {Number(cp.matchScore).toFixed(0)}%
                         </span>
@@ -303,21 +338,28 @@ export default function ProductDetail() {
                         {diff > 0 ? (
                           <>
                             <TrendingUp className="h-3 w-3 text-[#ffb4ab]" />
-                            <span className="text-[10px] font-mono text-[#ffb4ab]">+${diff.toFixed(2)}</span>
+                            <span className="text-[10px] font-mono text-[#ffb4ab]">
+                              +${diff.toFixed(2)}
+                            </span>
                           </>
                         ) : diff < 0 ? (
                           <>
                             <TrendingDown className="h-3 w-3 text-[#21a732]" />
-                            <span className="text-[10px] font-mono text-[#21a732]">-${Math.abs(diff).toFixed(2)}</span>
+                            <span className="text-[10px] font-mono text-[#21a732]">
+                              -${Math.abs(diff).toFixed(2)}
+                            </span>
                           </>
                         ) : (
                           <>
                             <Minus className="h-3 w-3 text-muted-foreground" />
-                            <span className="text-[10px] font-mono text-muted-foreground">$0.00</span>
+                            <span className="text-[10px] font-mono text-muted-foreground">
+                              $0.00
+                            </span>
                           </>
                         )}
                         <span className="text-[10px] font-mono text-muted-foreground">
-                          ({diffPct > 0 ? "+" : ""}{diffPct.toFixed(1)}%)
+                          ({diffPct > 0 ? "+" : ""}
+                          {diffPct.toFixed(1)}%)
                         </span>
                       </div>
                     </div>

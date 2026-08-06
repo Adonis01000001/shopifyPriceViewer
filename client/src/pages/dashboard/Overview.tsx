@@ -203,24 +203,33 @@ export default function Overview() {
   }, [actionCenter, topAlert, topRecommendation, track]);
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-col gap-1">
-        <h2 className="text-2xl font-extrabold text-primary">Overview</h2>
-        <p className="text-muted-foreground text-sm max-w-2xl">
-          Your next pricing decision, backed by scheduled competitor monitoring
-          and evidence from your store.
-        </p>
+    <div className="space-y-8">
+      <div className="page-header">
+        <div>
+          <p className="page-kicker">Decision workspace</p>
+          <h2 className="page-title">Overview</h2>
+          <p className="page-description">
+            See what changed, what matters, and which pricing decision deserves
+            your attention next.
+          </p>
+        </div>
+        <div className="hidden items-center gap-2 rounded-full border border-border bg-card/60 px-3 py-1.5 text-xs text-muted-foreground sm:flex">
+          <span className="h-1.5 w-1.5 rounded-full bg-primary" />
+          Monitoring active
+        </div>
       </div>
 
       {/* Merchant-first action center: one obvious decision before the metrics. */}
-      <section className="glass-panel rounded-lg border border-primary/20 bg-primary/[0.06] p-5">
+      <section className="glass-panel rounded-xl border-primary/25 bg-primary/[0.06] p-5 shadow-[0_18px_50px_-36px_var(--primary)] sm:p-6">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex items-start gap-3">
             <div className="rounded-lg bg-primary/15 p-2 text-primary">
               <Sparkles className="h-4 w-4" aria-hidden="true" />
             </div>
             <div>
-              <p className="label-caps text-[10px] text-primary">NEXT BEST ACTION</p>
+              <p className="label-caps text-[10px] text-primary">
+                NEXT BEST ACTION
+              </p>
               <h3 className="mt-1 text-sm font-semibold">
                 {topRecommendation
                   ? `Review ${topRecommendation.productTitle}`
@@ -281,8 +290,8 @@ export default function Overview() {
       )}
 
       {/* KPI Row */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        <div className="glass-card p-5 flex flex-col gap-3">
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4">
+        <div className="glass-card flex flex-col gap-3 p-5">
           <div className="flex justify-between items-start">
             <span className="label-caps text-muted-foreground/60">
               Total Products
@@ -298,7 +307,7 @@ export default function Overview() {
             Across all categories
           </p>
         </div>
-        <div className="glass-card p-5 flex flex-col gap-3">
+        <div className="glass-card flex flex-col gap-3 p-5">
           <div className="flex justify-between items-start">
             <span className="label-caps text-muted-foreground/60">
               Avg. Price
@@ -312,7 +321,7 @@ export default function Overview() {
           </p>
           <p className="text-xs text-muted-foreground/60">Portfolio average</p>
         </div>
-        <div className="glass-card p-5 flex flex-col gap-3">
+        <div className="glass-card flex flex-col gap-3 p-5">
           <div className="flex justify-between items-start">
             <span className="label-caps text-muted-foreground/60">
               Active Alerts
@@ -328,7 +337,7 @@ export default function Overview() {
             {alertStats?.critical ?? 0} critical
           </p>
         </div>
-        <div className="glass-card p-5 flex flex-col gap-3">
+        <div className="glass-card flex flex-col gap-3 p-5">
           <div className="flex justify-between items-start">
             <span className="label-caps text-muted-foreground/60">
               Competitors

@@ -16,8 +16,23 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { trpc } from "@/lib/trpc";
-import { Download, Search, Package, Database, ExternalLink, Zap, RotateCcw } from "lucide-react";
-import { Empty, EmptyHeader, EmptyTitle, EmptyDescription, EmptyMedia, EmptyContent } from "@/components/ui/empty";
+import {
+  Download,
+  Search,
+  Package,
+  Database,
+  ExternalLink,
+  Zap,
+  RotateCcw,
+} from "lucide-react";
+import {
+  Empty,
+  EmptyHeader,
+  EmptyTitle,
+  EmptyDescription,
+  EmptyMedia,
+  EmptyContent,
+} from "@/components/ui/empty";
 import { PageSkeleton } from "@/components/dashboard/PageSkeleton";
 import AddProductDialog from "./AddProductDialog";
 import {
@@ -141,7 +156,12 @@ export default function Products() {
   const [editingPriceVal, setEditingPriceVal] = useState("");
   const priceInputRef = useRef<HTMLInputElement>(null);
 
-  const { data: allProducts, isLoading, refetch, error } = trpc.products.list.useQuery(undefined, {
+  const {
+    data: allProducts,
+    isLoading,
+    refetch,
+    error,
+  } = trpc.products.list.useQuery(undefined, {
     staleTime: 1000 * 60 * 5,
   });
   const { data: stats } = trpc.products.stats.useQuery(undefined, {
@@ -159,20 +179,26 @@ export default function Products() {
     },
   });
 
-  const startEditing = useCallback((productId: string, currentPrice: string) => {
-    setEditingPriceId(productId);
-    setEditingPriceVal(currentPrice);
-    setTimeout(() => priceInputRef.current?.focus(), 50);
-  }, []);
+  const startEditing = useCallback(
+    (productId: string, currentPrice: string) => {
+      setEditingPriceId(productId);
+      setEditingPriceVal(currentPrice);
+      setTimeout(() => priceInputRef.current?.focus(), 50);
+    },
+    []
+  );
 
-  const savePrice = useCallback((productId: string) => {
-    const num = parseFloat(editingPriceVal);
-    if (isNaN(num) || num <= 0) {
-      toast.error("Enter a valid price");
-      return;
-    }
-    updateProductMutation.mutate({ id: productId, price: editingPriceVal });
-  }, [editingPriceVal, updateProductMutation]);
+  const savePrice = useCallback(
+    (productId: string) => {
+      const num = parseFloat(editingPriceVal);
+      if (isNaN(num) || num <= 0) {
+        toast.error("Enter a valid price");
+        return;
+      }
+      updateProductMutation.mutate({ id: productId, price: editingPriceVal });
+    },
+    [editingPriceVal, updateProductMutation]
+  );
 
   const products = useMemo(() => allProducts ?? [], [allProducts]);
   const categories = useMemo(
@@ -222,12 +248,17 @@ export default function Products() {
 
   if (error) {
     return (
-      <div className="space-y-6">
-        <div className="flex flex-col gap-1">
-          <h2 className="text-2xl font-extrabold text-primary">Product Inventory</h2>
-          <p className="text-muted-foreground text-sm">Failed to load products. Please try again.</p>
+      <div className="space-y-8">
+        <div className="page-header">
+          <div>
+            <p className="page-kicker">Catalog / merchandising</p>
+            <h2 className="page-title">Product inventory</h2>
+            <p className="page-description">
+              Failed to load products. Please try again.
+            </p>
+          </div>
         </div>
-        <div className="glass-panel rounded-lg p-12 text-center">
+        <div className="glass-card rounded-2xl p-8 text-center sm:p-12">
           <p className="text-[#ffb4ab] text-sm mb-3">{error.message}</p>
           <Button variant="outline" size="sm" onClick={() => refetch()}>
             <RotateCcw className="h-3.5 w-3.5 mr-1.5" />
@@ -249,17 +280,20 @@ export default function Products() {
 
   if (products.length === 0) {
     return (
-      <div className="space-y-6">
-        <div className="flex flex-col gap-1">
-          <h2 className="text-2xl font-extrabold text-primary">
-            Product Inventory
-          </h2>
-          <p className="text-muted-foreground text-sm">
-            No products tracked yet. Start by connecting your Shopify store.
-          </p>
+      <div className="space-y-8">
+        <div className="page-header">
+          <div>
+            <p className="page-kicker">Catalog / merchandising</p>
+            <h2 className="page-title">Product inventory</h2>
+            <p className="page-description">
+              No products tracked yet. Start by connecting your Shopify store.
+            </p>
+          </div>
         </div>
         <Empty>
-          <EmptyMedia variant="icon"><Package className="h-6 w-6" /></EmptyMedia>
+          <EmptyMedia variant="icon">
+            <Package className="h-6 w-6" />
+          </EmptyMedia>
           <EmptyHeader>
             <EmptyTitle>No products yet</EmptyTitle>
             <EmptyDescription>
@@ -282,15 +316,20 @@ export default function Products() {
   }
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-col gap-1">
-        <h2 className="text-2xl font-extrabold text-primary">
-          Product Inventory
-        </h2>
-        <p className="text-muted-foreground text-sm">
-          Manage {products.length} active listings across your Shopify
-          storefront.
-        </p>
+    <div className="space-y-8">
+      <div className="page-header">
+        <div>
+          <p className="page-kicker">Catalog / merchandising</p>
+          <h2 className="page-title">Product inventory</h2>
+          <p className="page-description">
+            Manage {products.length} active listings and keep your pricing
+            position visible at a glance.
+          </p>
+        </div>
+        <div className="hidden shrink-0 rounded-full border border-border bg-card/60 px-3 py-1.5 text-xs text-muted-foreground sm:block">
+          <span className="data-value text-foreground">{products.length}</span>{" "}
+          active listings
+        </div>
       </div>
 
       {/* Summary Cards */}
@@ -303,7 +342,7 @@ export default function Products() {
             return (
               <div
                 key={status}
-                className="glass-card p-4 flex items-center justify-between hover:border-primary/20 transition-all"
+                className="glass-card p-5 flex items-center justify-between"
               >
                 <div>
                   <p className="text-2xl font-bold font-mono tracking-tight">
@@ -328,19 +367,20 @@ export default function Products() {
       </div>
 
       {/* Filter Bar */}
-      <div className="glass-panel p-4 rounded-lg flex items-center gap-3 flex-wrap">
-        <div className="relative flex-1 min-w-[200px] max-w-xs">
+      <div className="surface-toolbar flex-wrap">
+        <div className="relative w-full flex-1 sm:min-w-[200px] sm:max-w-xs">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input
             name="search-products"
             placeholder="Search products or SKUs..."
+            aria-label="Search products or SKUs"
             className="pl-9 h-9 bg-surface-container border-outline-variant"
             value={searchQuery}
             onChange={e => setSearchQuery(e.target.value)}
           />
         </div>
         <Select value={categoryFilter} onValueChange={setCategoryFilter}>
-          <SelectTrigger className="h-9 w-[150px] bg-surface-container border-outline-variant">
+          <SelectTrigger className="h-9 w-full bg-surface-container border-outline-variant sm:w-[150px]">
             <SelectValue placeholder="Category" />
           </SelectTrigger>
           <SelectContent>
@@ -353,7 +393,7 @@ export default function Products() {
           </SelectContent>
         </Select>
         <Select value={statusFilter} onValueChange={setStatusFilter}>
-          <SelectTrigger className="h-9 w-[130px] bg-surface-container border-outline-variant">
+          <SelectTrigger className="h-9 w-full bg-surface-container border-outline-variant sm:w-[130px]">
             <SelectValue placeholder="Status" />
           </SelectTrigger>
           <SelectContent>
@@ -420,11 +460,19 @@ export default function Products() {
                     >
                       <TableCell className="pl-5 py-3">
                         <div className="flex items-center gap-3">
-                          <div className="w-8 h-8 rounded bg-surface-container-highest border border-outline-variant flex items-center justify-center text-xs font-bold text-muted-foreground">
-                            {product.title.charAt(0)}
-                          </div>
+                          {product.imageUrl ? (
+                            <img
+                              src={product.imageUrl}
+                              alt=""
+                              className="h-9 w-9 rounded-lg border border-border object-cover"
+                            />
+                          ) : (
+                            <div className="flex h-9 w-9 items-center justify-center rounded-lg border border-outline-variant bg-surface-container-highest text-xs font-bold text-muted-foreground">
+                              {product.title.charAt(0).toUpperCase()}
+                            </div>
+                          )}
                           <div>
-                            <p className="text-[13px] font-medium">
+                            <p className="max-w-[240px] truncate text-[13px] font-medium">
                               {product.title}
                             </p>
                             <p className="text-[10px] text-muted-foreground">
@@ -444,15 +492,23 @@ export default function Products() {
                             onChange={e => setEditingPriceVal(e.target.value)}
                             onBlur={() => savePrice(product.id)}
                             onKeyDown={e => {
-                              if (e.key === "Enter") { e.currentTarget.blur(); }
-                              if (e.key === "Escape") { setEditingPriceId(null); }
+                              if (e.key === "Enter") {
+                                e.currentTarget.blur();
+                              }
+                              if (e.key === "Escape") {
+                                setEditingPriceId(null);
+                              }
                             }}
                             className="h-8 w-24 font-mono text-[13px] text-right bg-surface-container border-outline-variant"
                           />
                         ) : (
                           <button
+                            type="button"
+                            aria-label={"Edit price for " + product.title}
                             className="font-mono text-[13px] font-medium hover:text-primary transition-colors cursor-text"
-                            onClick={() => startEditing(product.id, product.price)}
+                            onClick={() =>
+                              startEditing(product.id, product.price)
+                            }
                           >
                             ${Number(product.price).toFixed(2)}
                           </button>
@@ -482,13 +538,19 @@ export default function Products() {
                       <TableCell className="pr-5 py-3 text-right">
                         <div className="flex items-center justify-end gap-2 text-muted-foreground">
                           <button
+                            type="button"
+                            aria-label={"Scout prices for " + product.title}
                             className="hover:text-primary transition-colors text-sm"
                             title="Scout prices"
-                            onClick={() => navigate(`/scout?productId=${product.id}`)}
+                            onClick={() =>
+                              navigate(`/scout?productId=${product.id}`)
+                            }
                           >
                             <Zap className="h-3.5 w-3.5" />
                           </button>
                           <button
+                            type="button"
+                            aria-label={"View details for " + product.title}
                             className="hover:text-primary transition-colors text-sm"
                             title="View details"
                             onClick={() => navigate(`/products/${product.id}`)}
@@ -497,13 +559,19 @@ export default function Products() {
                           </button>
                           <DropdownMenu>
                             <DropdownMenuTrigger asChild>
-                              <button className="hover:text-primary transition-colors text-sm p-1">
+                              <button
+                                type="button"
+                                aria-label={"More actions for " + product.title}
+                                className="hover:text-primary transition-colors text-sm p-1"
+                              >
                                 ⋮
                               </button>
                             </DropdownMenuTrigger>
                             <DropdownMenuContent align="end">
                               <DropdownMenuItem
-                                onClick={() => navigate(`/scout?productId=${product.id}`)}
+                                onClick={() =>
+                                  navigate(`/scout?productId=${product.id}`)
+                                }
                               >
                                 Scout Prices
                               </DropdownMenuItem>
