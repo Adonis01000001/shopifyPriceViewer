@@ -48,11 +48,13 @@ const statusConfig: Record<string, { label: string; className: string }> = {
   },
   overpriced: {
     label: "Overpriced",
-    className: "bg-[#93000a]/15 text-[#ffb4ab] border border-[#93000a]/30",
+    className:
+      "bg-[var(--destructive)]/15 text-[var(--destructive)] border border-[var(--destructive)]/30",
   },
   alert: {
     label: "Alert",
-    className: "bg-[#93000a]/20 text-[#ffb4ab] border border-[#93000a]/30",
+    className:
+      "bg-[var(--destructive)]/20 text-[var(--destructive)] border border-[var(--destructive)]/30",
   },
 };
 
@@ -103,6 +105,7 @@ export default function ProductDetail() {
     return (
       <div className="space-y-6">
         <button
+          type="button"
           onClick={() => navigate("/products")}
           className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-primary transition-colors"
         >
@@ -110,7 +113,9 @@ export default function ProductDetail() {
           Back to Products
         </button>
         <div className="glass-panel rounded-lg p-12 text-center">
-          <p className="text-[#ffb4ab] text-sm mb-3">{error.message}</p>
+          <p className="text-[var(--destructive)] text-sm mb-3">
+            {error.message}
+          </p>
           <Button
             variant="outline"
             size="sm"
@@ -142,14 +147,14 @@ export default function ProductDetail() {
       </button>
 
       {/* Product Header */}
-      <div className="glass-card overflow-hidden rounded-2xl">
-        <div className="flex items-start gap-4 p-5 sm:gap-5 sm:p-6">
-          <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-xl border border-outline-variant bg-surface-container-highest">
+      <section className="product-hero" aria-labelledby="product-title">
+        <div className="product-hero-layout">
+          <div className="product-hero-media">
             {product.imageUrl ? (
               <img
                 src={product.imageUrl}
-                alt=""
-                className="w-full h-full object-cover rounded-xl"
+                alt={product.title}
+                className="h-full w-full rounded-xl object-cover"
               />
             ) : (
               <Package className="h-6 w-6 text-muted-foreground" />
@@ -157,7 +162,10 @@ export default function ProductDetail() {
           </div>
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-3 flex-wrap">
-              <h1 className="text-2xl font-extrabold text-primary truncate">
+              <h1
+                id="product-title"
+                className="truncate text-2xl font-bold text-foreground sm:text-3xl"
+              >
                 {product.title}
               </h1>
               <span
@@ -179,8 +187,8 @@ export default function ProductDetail() {
               {product.vendor && <span>{product.vendor}</span>}
             </div>
           </div>
-          <div className="text-right shrink-0">
-            <p className="text-3xl font-bold font-mono tracking-tight text-primary">
+          <div className="product-hero-price">
+            <p className="font-mono text-3xl font-bold tracking-tight text-primary">
               ${Number(product.price).toFixed(2)}
             </p>
             {product.compareAtPrice &&
@@ -191,7 +199,7 @@ export default function ProductDetail() {
               )}
           </div>
         </div>
-      </div>
+      </section>
 
       {/* Two-column layout: Market Insight + Competitor Prices */}
       <div className="grid gap-6 lg:grid-cols-2">
@@ -199,7 +207,7 @@ export default function ProductDetail() {
         <div className="space-y-6">
           {wisdomRecommendation && wisdomFactors && (
             <div className="glass-panel rounded-lg overflow-hidden border border-primary/20">
-              <div className="px-5 py-3 border-b border-white/[0.04] bg-primary/10 flex items-center gap-2">
+              <div className="px-5 py-3 bg-primary/10 flex items-center gap-2">
                 <Sparkles className="h-4 w-4 text-primary" />
                 <h3 className="text-[14px] font-semibold">
                   Path of Wisdom Recommendation
@@ -298,7 +306,7 @@ export default function ProductDetail() {
 
         {/* Right: Competitor Prices */}
         <div className="glass-panel rounded-lg overflow-hidden">
-          <div className="px-5 py-3 border-b border-white/[0.04] bg-surface-container/50 flex items-center gap-2">
+          <div className="px-5 py-3 bg-surface-container/50 flex items-center gap-2">
             <ExternalLink className="h-4 w-4 text-primary" />
             <h3 className="text-[14px] font-semibold">Competitor Prices</h3>
             <Badge variant="outline" className="ml-auto text-[10px] font-mono">
@@ -315,7 +323,7 @@ export default function ProductDetail() {
                 return (
                   <div
                     key={cp.id}
-                    className="px-5 py-3 flex items-center justify-between hover:bg-white/[0.02] transition-colors"
+                    className="flex items-center justify-between px-5 py-3 transition-colors hover:bg-surface-container-low"
                   >
                     <div className="min-w-0 flex-1">
                       <p className="text-[13px] font-medium truncate">
@@ -337,15 +345,15 @@ export default function ProductDetail() {
                       <div className="flex items-center gap-1 justify-end mt-0.5">
                         {diff > 0 ? (
                           <>
-                            <TrendingUp className="h-3 w-3 text-[#ffb4ab]" />
-                            <span className="text-[10px] font-mono text-[#ffb4ab]">
+                            <TrendingUp className="h-3 w-3 text-[var(--destructive)]" />
+                            <span className="text-[10px] font-mono text-[var(--destructive)]">
                               +${diff.toFixed(2)}
                             </span>
                           </>
                         ) : diff < 0 ? (
                           <>
-                            <TrendingDown className="h-3 w-3 text-[#21a732]" />
-                            <span className="text-[10px] font-mono text-[#21a732]">
+                            <TrendingDown className="h-3 w-3 text-[var(--success)]" />
+                            <span className="text-[10px] font-mono text-[var(--success)]">
                               -${Math.abs(diff).toFixed(2)}
                             </span>
                           </>
@@ -378,7 +386,7 @@ export default function ProductDetail() {
       {/* Product Metadata */}
       {product.description && (
         <div className="glass-panel rounded-lg overflow-hidden">
-          <div className="px-5 py-3 border-b border-white/[0.04] bg-surface-container/50">
+          <div className="px-5 py-3 bg-surface-container/50">
             <h3 className="text-[14px] font-semibold">Description</h3>
           </div>
           <div className="p-5 text-[13px] text-muted-foreground leading-relaxed whitespace-pre-wrap">

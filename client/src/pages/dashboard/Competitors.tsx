@@ -81,7 +81,8 @@ const statusConfig: Record<string, { label: string; className: string }> = {
   },
   error: {
     label: "ERROR",
-    className: "bg-[#93000a]/20 text-[#ffb4ab] border border-[#93000a]/30",
+    className:
+      "bg-[var(--destructive)]/20 text-[var(--destructive)] border border-[var(--destructive)]/30",
   },
 };
 
@@ -404,7 +405,7 @@ function ScrapedProductRow({
   adding: boolean;
 }) {
   return (
-    <tr className="hover:bg-white/[0.02]">
+    <tr className="hover:bg-surface-container-low">
       <td className="pl-3 py-2">
         <div className="flex items-center gap-2">
           {item.imageUrl && (
@@ -668,6 +669,7 @@ function AddProductDialog({
         {/* Tab Switcher */}
         <div className="flex gap-1 p-1 bg-surface-container rounded-lg mb-2">
           <button
+            type="button"
             className={cn(
               "flex-1 flex items-center justify-center gap-2 py-2 px-3 rounded-md text-[12px] font-medium transition-all",
               tab === "search"
@@ -680,6 +682,7 @@ function AddProductDialog({
             Scrape {competitorDomain}
           </button>
           <button
+            type="button"
             className={cn(
               "flex-1 flex items-center justify-center gap-2 py-2 px-3 rounded-md text-[12px] font-medium transition-all",
               tab === "scrape"
@@ -733,10 +736,10 @@ function AddProductDialog({
             </div>
 
             {scrapeError && scrapedProducts.length === 0 && (
-              <div className="rounded border border-[#93000a]/20 bg-[#93000a]/10 p-3 flex items-start gap-2">
-                <AlertCircle className="h-4 w-4 text-[#ffb4ab] shrink-0 mt-0.5" />
+              <div className="rounded border border-[var(--destructive)]/20 bg-[var(--destructive)]/10 p-3 flex items-start gap-2">
+                <AlertCircle className="h-4 w-4 text-[var(--destructive)] shrink-0 mt-0.5" />
                 <div>
-                  <p className="text-[12px] text-[#ffb4ab] font-medium">
+                  <p className="text-[12px] text-[var(--destructive)] font-medium">
                     Scraping failed
                   </p>
                   <p className="text-[11px] text-muted-foreground mt-0.5">
@@ -942,7 +945,7 @@ function CompetitorFeed({
                 sj.status === "success"
                   ? "text-primary"
                   : sj.status === "failed"
-                    ? "text-[#ffb4ab]"
+                    ? "text-[var(--destructive)]"
                     : "text-muted-foreground"
               )}
             />
@@ -958,7 +961,10 @@ function CompetitorFeed({
                   ? ` · ${sj.productsUpdated} updated`
                   : ""}
                 {sj.errorMessage ? (
-                  <span className="text-[#ffb4ab]"> · {sj.errorMessage}</span>
+                  <span className="text-[var(--destructive)]">
+                    {" "}
+                    · {sj.errorMessage}
+                  </span>
                 ) : (
                   ""
                 )}
@@ -1039,7 +1045,7 @@ function CompetitorFeed({
 
   return (
     <div className="glass-panel rounded-lg overflow-hidden">
-      <div className="px-5 py-4 border-b border-white/[0.04] bg-surface-container/50 flex justify-between items-center">
+      <div className="px-5 py-4 bg-surface-container/50 flex justify-between items-center">
         <div>
           <h3 className="text-[15px] font-semibold flex items-center gap-2">
             <Activity className="h-4 w-4 text-primary" />
@@ -1062,7 +1068,7 @@ function CompetitorFeed({
 
       {/* Price Summary Bar */}
       {products.length > 0 && (
-        <div className="px-5 py-3 border-b border-white/[0.04] bg-surface-container/30 flex items-center gap-4 overflow-x-auto">
+        <div className="flex flex-wrap items-center gap-3 bg-surface-container/30 px-5 py-3">
           <div className="flex items-center gap-2 px-2.5 py-1 bg-surface-container-highest rounded-full border border-outline-variant shrink-0">
             <Wifi className="h-3 w-3 text-primary" />
             <span className="label-caps text-[9px] text-muted-foreground">
@@ -1080,7 +1086,7 @@ function CompetitorFeed({
                   className={cn(
                     "font-mono text-[11px] font-medium",
                     change === "up"
-                      ? "text-[#ffb4ab]"
+                      ? "text-[var(--destructive)]"
                       : change === "down"
                         ? "text-primary"
                         : "text-foreground"
@@ -1091,7 +1097,7 @@ function CompetitorFeed({
                     : `$${Number(cp.price).toFixed(2)}`}
                 </span>
                 {change === "up" && (
-                  <TrendingUp className="h-3 w-3 text-[#ffb4ab]" />
+                  <TrendingUp className="h-3 w-3 text-[var(--destructive)]" />
                 )}
                 {change === "down" && (
                   <TrendingDown className="h-3 w-3 text-primary" />
@@ -1140,7 +1146,7 @@ function CompetitorFeed({
                     className={cn(
                       "bg-surface-container-lowest rounded p-2.5 border transition-all",
                       change === "up"
-                        ? "border-[#ffb4ab]/40 bg-[#93000a]/5"
+                        ? "border-[var(--destructive)]/40 bg-[var(--destructive)]/5"
                         : change === "down"
                           ? "border-primary/40 bg-primary/5"
                           : "border-outline-variant/10"
@@ -1177,6 +1183,7 @@ function CompetitorFeed({
                       <div className="flex items-center gap-1 shrink-0">
                         {isScoopProduct && scoopProductId && (
                           <button
+                            type="button"
                             className="text-muted-foreground/50 hover:text-primary transition-colors disabled:cursor-not-allowed disabled:opacity-30"
                             onClick={() => {
                               setMoveTarget({
@@ -1201,7 +1208,8 @@ function CompetitorFeed({
                         )}
                         {!isReadOnlyProduct && (
                           <button
-                            className="text-muted-foreground/40 hover:text-[#ffb4ab] transition-colors"
+                            type="button"
+                            className="text-muted-foreground/40 hover:text-[var(--destructive)] transition-colors"
                             onClick={() => setRemoveTarget(cp.id)}
                             title="Remove"
                           >
@@ -1241,6 +1249,7 @@ function CompetitorFeed({
                               autoFocus
                             />
                             <button
+                              type="button"
                               className="text-primary hover:text-primary/80"
                               onClick={() => {
                                 const v = editValue.trim();
@@ -1265,7 +1274,7 @@ function CompetitorFeed({
                               className={cn(
                                 "font-mono text-[11px] font-medium transition-colors",
                                 change === "up"
-                                  ? "text-[#ffb4ab]"
+                                  ? "text-[var(--destructive)]"
                                   : change === "down"
                                     ? "text-primary"
                                     : "text-foreground"
@@ -1276,12 +1285,13 @@ function CompetitorFeed({
                                 : `$${Number(cp.price).toFixed(2)}`}
                             </span>
                             {change === "up" && (
-                              <TrendingUp className="h-2.5 w-2.5 text-[#ffb4ab]" />
+                              <TrendingUp className="h-2.5 w-2.5 text-[var(--destructive)]" />
                             )}
                             {change === "down" && (
                               <TrendingDown className="h-2.5 w-2.5 text-primary" />
                             )}
                             <button
+                              type="button"
                               className="text-muted-foreground/40 hover:text-primary transition-colors ml-0.5"
                               onClick={() => {
                                 setEditingPrice(cp.id);
@@ -1347,7 +1357,7 @@ function CompetitorFeed({
                         item.type === "price"
                           ? "bg-primary"
                           : item.type === "scrape"
-                            ? "bg-[#21a732]"
+                            ? "bg-[var(--success)]"
                             : "bg-muted-foreground"
                       )}
                     />
@@ -1410,7 +1420,7 @@ function CompetitorFeed({
                 setRemoveTarget(null);
               }}
               disabled={removeProductMutation.isPending}
-              className="bg-[#93000a] text-[#ffb4ab] hover:bg-[#93000a]/80"
+              className="bg-[var(--destructive)] text-[var(--destructive)] hover:bg-[var(--destructive)]/80"
             >
               Remove
             </AlertDialogAction>
@@ -1731,15 +1741,16 @@ export default function Competitors() {
 
   return (
     <div className="space-y-8">
-      <div className="page-header">
-        <div>
-          <p className="page-kicker">Market landscape</p>
-          <h2 className="page-title">Market dominance</h2>
-          <p className="page-description">
+      <PageHeader
+        eyebrow="Market landscape"
+        title="Competitors"
+        description={
+          <>
             Real-time intelligence across {allCompetitors.length} tracked
             competitors.
-          </p>
-        </div>
+          </>
+        }
+      >
         <div className="flex flex-wrap items-center gap-3">
           <div className="relative w-full sm:w-64">
             <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
@@ -1764,7 +1775,7 @@ export default function Competitors() {
             Upload competitor products and prices
           </span>
         </div>
-      </div>
+      </PageHeader>
 
       {/* Bento Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
@@ -1774,7 +1785,8 @@ export default function Competitors() {
               key={comp.id}
               className={cn(
                 "glass-card p-5",
-                i === 0 && "md:col-span-2 border-l-4 border-l-[#ffb4ab]"
+                i === 0 &&
+                  "md:col-span-2 border-l-4 border-l-[var(--destructive)]"
               )}
             >
               <div className="flex justify-between items-start mb-4">
@@ -1803,7 +1815,7 @@ export default function Competitors() {
                   className={cn(
                     "label-caps text-[9px] px-2 py-0.5 rounded",
                     i === 0
-                      ? "bg-[#93000a]/20 text-[#ffb4ab] border border-[#93000a]/30"
+                      ? "bg-[var(--destructive)]/20 text-[var(--destructive)] border border-[var(--destructive)]/30"
                       : "bg-muted text-muted-foreground"
                   )}
                 >
@@ -1824,7 +1836,7 @@ export default function Competitors() {
                     <p className="text-[8px] label-caps text-muted-foreground">
                       PRICE INDEX
                     </p>
-                    <p className="font-mono text-[13px] font-bold text-[#21a732]">
+                    <p className="font-mono text-[13px] font-bold text-[var(--success)]">
                       {Number(comp.priceIndex).toFixed(1)}
                     </p>
                   </div>
@@ -1836,7 +1848,7 @@ export default function Competitors() {
                       className={cn(
                         "font-mono text-[13px] font-bold",
                         Number(comp.avgPriceDiff) < 0
-                          ? "text-[#ffb4ab]"
+                          ? "text-[var(--destructive)]"
                           : "text-primary"
                       )}
                     >
@@ -1862,6 +1874,7 @@ export default function Competitors() {
                 </div>
                 <div className="flex items-center gap-1.5">
                   <button
+                    type="button"
                     className="text-primary label-caps hover:underline flex items-center gap-1"
                     onClick={() =>
                       setFeedCompetitor({ id: comp.id, name: comp.name })
@@ -1870,6 +1883,7 @@ export default function Competitors() {
                     VIEW FEED <ArrowRight className="h-3 w-3" />
                   </button>
                   <button
+                    type="button"
                     className="text-primary/70 hover:text-primary transition-colors p-1"
                     onClick={() =>
                       setAddProductTarget({
@@ -1883,7 +1897,8 @@ export default function Competitors() {
                     <Plus className="h-3.5 w-3.5" />
                   </button>
                   <button
-                    className="text-[#ffb4ab]/60 hover:text-[#ffb4ab] transition-colors p-1"
+                    type="button"
+                    className="text-[var(--destructive)]/60 hover:text-[var(--destructive)] transition-colors p-1"
                     onClick={() =>
                       setDeleteTarget({ id: comp.id, name: comp.name })
                     }
@@ -1941,7 +1956,7 @@ export default function Competitors() {
       {/* Comparison Table */}
       {allCompetitors.length > 0 && (
         <div className="glass-panel rounded-lg overflow-hidden">
-          <div className="px-5 py-4 border-b border-white/[0.04] bg-surface-container/50 flex justify-between items-center">
+          <div className="px-5 py-4 bg-surface-container/50 flex justify-between items-center">
             <h3 className="text-[15px] font-semibold">
               Competitor Price Comparison
             </h3>
@@ -1955,7 +1970,7 @@ export default function Competitors() {
           <div className="overflow-x-auto">
             <Table>
               <TableHeader>
-                <TableRow className="bg-surface-container/30 border-b border-white/[0.04] label-caps text-muted-foreground">
+                <TableRow className="bg-surface-container/30 label-caps text-muted-foreground">
                   <TableHead className="px-5 py-3 font-normal">
                     Competitor
                   </TableHead>
@@ -1985,7 +2000,7 @@ export default function Competitors() {
                   return (
                     <TableRow
                       key={comp.id}
-                      className="hover:bg-white/[0.02] transition-colors"
+                      className="transition-colors hover:bg-surface-container-low"
                     >
                       <TableCell className="px-5 py-3">
                         <div className="flex items-center gap-3">
@@ -2020,7 +2035,7 @@ export default function Competitors() {
                             Number(comp.priceIndex) < 95
                               ? "text-primary"
                               : Number(comp.priceIndex) > 105
-                                ? "text-[#ffb4ab]"
+                                ? "text-[var(--destructive)]"
                                 : ""
                           )}
                         >
@@ -2033,7 +2048,7 @@ export default function Competitors() {
                             "inline-flex items-center gap-1 font-mono text-[13px] font-medium",
                             Number(comp.avgPriceDiff) < 0
                               ? "text-primary"
-                              : "text-[#ffb4ab]"
+                              : "text-[var(--destructive)]"
                           )}
                         >
                           {Number(comp.avgPriceDiff) < 0 ? (
@@ -2101,7 +2116,7 @@ export default function Competitors() {
                           <Button
                             variant="ghost"
                             size="sm"
-                            className="h-7 w-7 p-0 text-[#ffb4ab]/60 hover:text-[#ffb4ab] hover:bg-[#93000a]/10"
+                            className="h-7 w-7 p-0 text-[var(--destructive)]/60 hover:text-[var(--destructive)] hover:bg-[var(--destructive)]/10"
                             onClick={() =>
                               setDeleteTarget({ id: comp.id, name: comp.name })
                             }
@@ -2171,7 +2186,7 @@ export default function Competitors() {
                   <Label htmlFor="cname">Name *</Label>
                   <Input id="cname" {...form.register("name")} />
                   {form.formState.errors.name && (
-                    <p className="text-xs text-[#ffb4ab]">
+                    <p className="text-xs text-[var(--destructive)]">
                       {form.formState.errors.name.message}
                     </p>
                   )}
@@ -2180,7 +2195,7 @@ export default function Competitors() {
                   <Label htmlFor="cdomain">Domain *</Label>
                   <Input id="cdomain" {...form.register("domain")} />
                   {form.formState.errors.domain && (
-                    <p className="text-xs text-[#ffb4ab]">
+                    <p className="text-xs text-[var(--destructive)]">
                       {form.formState.errors.domain.message}
                     </p>
                   )}
@@ -2281,7 +2296,7 @@ export default function Competitors() {
                             {row.valid ? (
                               <CheckCircle2 className="h-4 w-4 text-primary mx-auto" />
                             ) : (
-                              <AlertCircle className="h-4 w-4 text-[#21a732] mx-auto" />
+                              <AlertCircle className="h-4 w-4 text-[var(--success)] mx-auto" />
                             )}
                           </td>
                         </tr>
@@ -2468,7 +2483,7 @@ export default function Competitors() {
                 deleteTarget && deleteMutation.mutate({ id: deleteTarget.id })
               }
               disabled={deleteMutation.isPending}
-              className="bg-[#93000a] text-[#ffb4ab] hover:bg-[#93000a]/80"
+              className="bg-[var(--destructive)] text-[var(--destructive)] hover:bg-[var(--destructive)]/80"
             >
               {deleteMutation.isPending ? "Deleting..." : "Delete"}
             </AlertDialogAction>
@@ -2491,3 +2506,4 @@ export default function Competitors() {
     </div>
   );
 }
+import { PageHeader } from "@/components/workspace/PageHeader";

@@ -1,7 +1,12 @@
 import { COOKIE_NAME } from "@shared/const";
 import type { Express, Request, Response } from "express";
 import * as cookie from "cookie";
-import { randomBytes } from "node:crypto";
+import {
+  createHmac,
+  randomBytes,
+  timingSafeEqual,
+} from "node:crypto";
+import { createRemoteJWKSet, jwtVerify } from "jose";
 import { getSessionCookieOptions } from "./cookies";
 import { ENV } from "./env";
 import {
@@ -14,13 +19,268 @@ import * as db from "../db";
 import { eq, and } from "drizzle-orm";
 import { shopifyStores, users } from "../../drizzle/schema";
 import { logger } from "./logger";
+import { setAuthSessionCookies } from "./auth/session-cookies";
+
+const GOOGLE_STATE_COOKIE = "google_oauth_state";
+const GOOGLE_STATE_TTL_MS = 10 * 60 * 1000;
+const googleJwks = createRemoteJWKSet(
+  new URL("https://www.googleapis.com/oauth2/v3/certs")
+);
 
 function getQueryParam(req: Request, key: string): string | undefined {
   const value = req.query[key];
   return typeof value === "string" ? value : undefined;
 }
 
+type GoogleOAuthState = {
+  state: string;
+  nonce: string;
+  createdAt: number;
+};
+
+function createGoogleState(): GoogleOAuthState {
+  return {
+    state: randomBytes(24).toString("hex"),
+    nonce: randomBytes(24).toString("hex"),
+    createdAt: Date.now(),
+  };
+}
+
+function encodeGoogleState(state: GoogleOAuthState): string {
+  const payload = Buffer.from(JSON.stringify(state)).toString("base64url");
+  const signature = createHmac("sha256", ENV.jwtSecret)
+    .update(payload)
+    .digest("base64url");
+  return `${payload}.${signature}`;
+}
+
+function decodeGoogleState(value: string): GoogleOAuthState | null {
+  const [payload, signature] = value.split(".");
+  if (!payload || !signature) return null;
+
+  const expectedSignature = createHmac("sha256", ENV.jwtSecret)
+    .update(payload)
+    .digest("base64url");
+  const received = Buffer.from(signature);
+  const expected = Buffer.from(expectedSignature);
+  if (
+    received.length !== expected.length ||
+    !timingSafeEqual(received, expected)
+  ) {
+    return null;
+  }
+
+  try {
+    const parsed = JSON.parse(
+      Buffer.from(payload, "base64url").toString("utf8")
+    ) as Partial<GoogleOAuthState>;
+    if (
+      typeof parsed.state !== "string" ||
+      typeof parsed.nonce !== "string" ||
+      typeof parsed.createdAt !== "number" ||
+      Date.now() - parsed.createdAt > GOOGLE_STATE_TTL_MS
+    ) {
+      return null;
+    }
+    return parsed as GoogleOAuthState;
+  } catch {
+    return null;
+  }
+}
+
+function clearGoogleStateCookie(req: Request, res: Response): void {
+  res.clearCookie(GOOGLE_STATE_COOKIE, getSessionCookieOptions(req));
+}
+
+function redirectGoogleError(res: Response, code: string): void {
+  res.redirect(302, `/auth?oauth_error=${encodeURIComponent(code)}`);
+}
+
+async function handleGoogleCallback(req: Request, res: Response): Promise<void> {
+  if (!ENV.googleClientId || !ENV.googleClientSecret) {
+    redirectGoogleError(res, "google_not_configured");
+    return;
+  }
+
+  const state = getQueryParam(req, "state");
+  const code = getQueryParam(req, "code");
+  const oauthError = getQueryParam(req, "error");
+  const stateCookie = req.cookies?.[GOOGLE_STATE_COOKIE];
+
+  if (oauthError) {
+    clearGoogleStateCookie(req, res);
+    redirectGoogleError(res, "google_cancelled");
+    return;
+  }
+  if (!state || !code || !stateCookie) {
+    redirectGoogleError(res, "google_state_invalid");
+    return;
+  }
+
+  const storedState = decodeGoogleState(stateCookie);
+  if (!storedState || storedState.state !== state) {
+    clearGoogleStateCookie(req, res);
+    redirectGoogleError(res, "google_state_invalid");
+    return;
+  }
+
+  try {
+    const tokenResponse = await fetch("https://oauth2.googleapis.com/token", {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({
+        code,
+        client_id: ENV.googleClientId,
+        client_secret: ENV.googleClientSecret,
+        redirect_uri: ENV.googleRedirectUri,
+        grant_type: "authorization_code",
+      }),
+    });
+
+    if (!tokenResponse.ok) {
+      logger.warn(
+        { status: tokenResponse.status },
+        "Google OAuth token exchange failed"
+      );
+      clearGoogleStateCookie(req, res);
+      redirectGoogleError(res, "google_exchange_failed");
+      return;
+    }
+
+    const tokenData = (await tokenResponse.json()) as {
+      id_token?: unknown;
+    };
+    if (typeof tokenData.id_token !== "string") {
+      clearGoogleStateCookie(req, res);
+      redirectGoogleError(res, "google_identity_missing");
+      return;
+    }
+
+    const verified = await jwtVerify(tokenData.id_token, googleJwks, {
+      audience: ENV.googleClientId,
+      issuer: ["https://accounts.google.com", "accounts.google.com"],
+    });
+    const claims = verified.payload;
+    if (
+      claims.nonce !== storedState.nonce ||
+      typeof claims.sub !== "string" ||
+      typeof claims.email !== "string" ||
+      claims.email_verified !== true
+    ) {
+      clearGoogleStateCookie(req, res);
+      redirectGoogleError(res, "google_identity_invalid");
+      return;
+    }
+
+    const email = claims.email.trim().toLowerCase();
+    if (!email || email.length > 320) {
+      clearGoogleStateCookie(req, res);
+      redirectGoogleError(res, "google_identity_invalid");
+      return;
+    }
+
+    const database = await db.getDb();
+    if (!database) {
+      logger.error(
+        "Google OAuth login failed because the database is unavailable"
+      );
+      clearGoogleStateCookie(req, res);
+      redirectGoogleError(res, "google_database_unavailable");
+      return;
+    }
+
+    const providerOpenId = `google_${claims.sub}`;
+    let [user] = await database
+      .select()
+      .from(users)
+      .where(eq(users.openId, providerOpenId))
+      .limit(1);
+
+    if (!user) {
+      [user] = await database
+        .select()
+        .from(users)
+        .where(eq(users.email, email))
+        .limit(1);
+    }
+
+    if (!user) {
+      const [createdUser] = await database
+        .insert(users)
+        .values({
+          openId: providerOpenId,
+          email,
+          name: typeof claims.name === "string" ? claims.name : null,
+          loginMethod: "google",
+          avatarUrl: typeof claims.picture === "string" ? claims.picture : null,
+          lastSignedIn: new Date(),
+        })
+        .onConflictDoNothing()
+        .returning();
+      user = createdUser;
+    }
+
+    if (!user) {
+      [user] = await database
+        .select()
+        .from(users)
+        .where(eq(users.email, email))
+        .limit(1);
+    }
+    if (!user || !user.openId) {
+      logger.error("Google OAuth login did not resolve a local user");
+      clearGoogleStateCookie(req, res);
+      redirectGoogleError(res, "google_account_failed");
+      return;
+    }
+
+    await database
+      .update(users)
+      .set({ lastSignedIn: new Date(), updatedAt: new Date() })
+      .where(eq(users.id, user.id));
+
+    await setAuthSessionCookies(req, res, {
+      id: String(user.id),
+      openId: user.openId,
+      name: user.name,
+    });
+    clearGoogleStateCookie(req, res);
+    res.redirect(302, "/");
+  } catch (error) {
+    logger.error({ err: error }, "Google OAuth callback failed");
+    clearGoogleStateCookie(req, res);
+    redirectGoogleError(res, "google_login_failed");
+  }
+}
+
 export function registerOAuthRoutes(app: Express) {
+  app.get("/api/oauth/google/start", (req: Request, res: Response) => {
+    if (!ENV.googleClientId || !ENV.googleClientSecret) {
+      redirectGoogleError(res, "google_not_configured");
+      return;
+    }
+
+    const oauthState = createGoogleState();
+    const authUrl = new URL("https://accounts.google.com/o/oauth2/v2/auth");
+    authUrl.searchParams.set("client_id", ENV.googleClientId);
+    authUrl.searchParams.set("redirect_uri", ENV.googleRedirectUri);
+    authUrl.searchParams.set("response_type", "code");
+    authUrl.searchParams.set("scope", "openid email profile");
+    authUrl.searchParams.set("state", oauthState.state);
+    authUrl.searchParams.set("nonce", oauthState.nonce);
+    authUrl.searchParams.set("prompt", "select_account");
+    authUrl.searchParams.set("access_type", "online");
+
+    res.cookie(GOOGLE_STATE_COOKIE, encodeGoogleState(oauthState), {
+      ...getSessionCookieOptions(req),
+      maxAge: GOOGLE_STATE_TTL_MS,
+    });
+    res.redirect(302, authUrl.toString());
+  });
+
+  app.get("/api/oauth/google/callback", (req: Request, res: Response) => {
+    void handleGoogleCallback(req, res);
+  });
   // ── Shopify OAuth ───────────────────────────────────────────────────────
 
   /**

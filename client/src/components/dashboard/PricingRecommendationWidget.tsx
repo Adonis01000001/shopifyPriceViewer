@@ -43,9 +43,9 @@ const STATUS_STYLES: Record<
   { bg: string; text: string; border: string }
 > = {
   LEADING: {
-    bg: "bg-[#21a732]/10",
-    text: "text-[#21a732]",
-    border: "border-[#21a732]/30",
+    bg: "bg-[var(--success)]/10",
+    text: "text-[var(--success)]",
+    border: "border-[var(--success)]/30",
   },
   COMPETITIVE: {
     bg: "bg-blue-500/10",
@@ -53,9 +53,9 @@ const STATUS_STYLES: Record<
     border: "border-blue-500/30",
   },
   OVERPRICED: {
-    bg: "bg-[#93000a]/15",
-    text: "text-[#ffb4ab]",
-    border: "border-[#93000a]/30",
+    bg: "bg-[var(--destructive)]/15",
+    text: "text-[var(--destructive)]",
+    border: "border-[var(--destructive)]/30",
   },
   INSUFFICIENT_DATA: {
     bg: "bg-gray-500/10",
@@ -99,9 +99,9 @@ function PositionBadge({
           className={cn(
             "text-[10px] font-mono font-medium",
             priceDiffPercent > 0
-              ? "text-[#ffb4ab]"
+              ? "text-[var(--destructive)]"
               : priceDiffPercent < 0
-                ? "text-[#21a732]"
+                ? "text-[var(--success)]"
                 : "text-muted-foreground"
           )}
         >
@@ -194,7 +194,7 @@ export function PricingRecommendationWidget({
     <div className="space-y-4">
       {/* Market Snapshot */}
       <div className="glass-panel rounded-lg overflow-hidden">
-        <div className="px-5 py-3 border-b border-white/[0.04] bg-surface-container/50 flex items-center gap-2">
+        <div className="px-5 py-3 bg-surface-container/50 flex items-center gap-2">
           <BarChart3 className="h-4 w-4 text-primary" />
           <h3 className="text-[14px] font-semibold">Market Snapshot</h3>
         </div>
@@ -219,7 +219,7 @@ export function PricingRecommendationWidget({
             <p className="label-caps text-muted-foreground/60 text-[10px]">
               Lowest Competitor
             </p>
-            <p className="text-sm font-mono mt-1 text-[#21a732]">
+            <p className="text-sm font-mono mt-1 text-[var(--success)]">
               {stats?.lowestCompetitor}
             </p>
           </div>
@@ -227,7 +227,7 @@ export function PricingRecommendationWidget({
             <p className="label-caps text-muted-foreground/60 text-[10px]">
               Highest Competitor
             </p>
-            <p className="text-sm font-mono mt-1 text-[#ffb4ab]">
+            <p className="text-sm font-mono mt-1 text-[var(--destructive)]">
               {stats?.highestCompetitor}
             </p>
           </div>
@@ -245,7 +245,7 @@ export function PricingRecommendationWidget({
 
       {/* Recommendation Card */}
       <div className="glass-panel rounded-lg overflow-hidden">
-        <div className="px-5 py-3 border-b border-white/[0.04] bg-surface-container/50 flex items-center gap-2">
+        <div className="px-5 py-3 bg-surface-container/50 flex items-center gap-2">
           <Target className="h-4 w-4 text-primary" />
           <h3 className="text-[14px] font-semibold">Recommendation</h3>
         </div>
@@ -265,7 +265,8 @@ export function PricingRecommendationWidget({
               </p>
               <p className="text-sm font-mono text-muted-foreground">
                 $
-                {recommendation?.minimumAllowedPrice != null && recommendation.minimumAllowedPrice > 0
+                {recommendation?.minimumAllowedPrice != null &&
+                recommendation.minimumAllowedPrice > 0
                   ? recommendation.minimumAllowedPrice.toFixed(2)
                   : "—"}
               </p>
@@ -275,6 +276,7 @@ export function PricingRecommendationWidget({
             {recommendation?.explanation ?? "Pricing analysis in progress."}
           </p>
           <button
+            type="button"
             className="w-full px-4 py-2 bg-primary text-primary-foreground text-[11px] font-bold label-caps rounded hover:brightness-110 transition-all disabled:opacity-50"
             onClick={() => generateMutation.mutate({ productId })}
             disabled={generateMutation.isPending}
@@ -284,12 +286,12 @@ export function PricingRecommendationWidget({
               : "Save Recommendation"}
           </button>
           {generateMutation.isSuccess && (
-            <p className="text-[11px] text-[#21a732] font-medium text-center">
+            <p className="text-[11px] text-[var(--success)] font-medium text-center">
               Recommendation saved successfully.
             </p>
           )}
           {generateMutation.isError && (
-            <p className="text-[11px] text-[#ffb4ab] font-medium text-center">
+            <p className="text-[11px] text-[var(--destructive)] font-medium text-center">
               Failed to save recommendation.
             </p>
           )}
@@ -298,7 +300,7 @@ export function PricingRecommendationWidget({
 
       {/* Position Indicator */}
       <div className="glass-panel rounded-lg overflow-hidden">
-        <div className="px-5 py-3 border-b border-white/[0.04] bg-surface-container/50 flex items-center gap-2">
+        <div className="px-5 py-3 bg-surface-container/50 flex items-center gap-2">
           <DollarSign className="h-4 w-4 text-primary" />
           <h3 className="text-[14px] font-semibold">Market Position</h3>
         </div>
@@ -318,9 +320,9 @@ export function PricingRecommendationWidget({
           {position?.priceDiff != null && (
             <div className="flex items-center gap-2">
               {position.priceDiff > 0 ? (
-                <TrendingUp className="h-3.5 w-3.5 text-[#ffb4ab]" />
+                <TrendingUp className="h-3.5 w-3.5 text-[var(--destructive)]" />
               ) : position.priceDiff < 0 ? (
-                <TrendingDown className="h-3.5 w-3.5 text-[#21a732]" />
+                <TrendingDown className="h-3.5 w-3.5 text-[var(--success)]" />
               ) : (
                 <DollarSign className="h-3.5 w-3.5 text-muted-foreground" />
               )}
@@ -335,7 +337,7 @@ export function PricingRecommendationWidget({
 
       {/* AI Pricing Analysis */}
       <div className="glass-panel rounded-lg overflow-hidden border border-primary/10">
-        <div className="px-5 py-3 border-b border-white/[0.04] bg-surface-container/50 flex items-center gap-2">
+        <div className="px-5 py-3 bg-surface-container/50 flex items-center gap-2">
           <Brain className="h-4 w-4 text-primary" />
           <h3 className="text-[14px] font-semibold">AI Pricing Analysis</h3>
           <Sparkles className="h-3 w-3 text-primary/60 ml-auto" />
@@ -355,12 +357,16 @@ export function PricingRecommendationWidget({
                 <p className="label-caps text-muted-foreground/60 text-[10px]">
                   Confidence
                 </p>
-                <p className={cn(
-                  "text-sm font-bold label-caps",
-                  aiResult.confidence === "high" ? "text-[#21a732]" :
-                  aiResult.confidence === "medium" ? "text-yellow-400" :
-                  "text-muted-foreground"
-                )}>
+                <p
+                  className={cn(
+                    "text-sm font-bold label-caps",
+                    aiResult.confidence === "high"
+                      ? "text-[var(--success)]"
+                      : aiResult.confidence === "medium"
+                        ? "text-yellow-400"
+                        : "text-muted-foreground"
+                  )}
+                >
                   {aiResult.confidence.toUpperCase()}
                 </p>
               </div>
@@ -410,11 +416,13 @@ export function PricingRecommendationWidget({
               </div>
             </div>
             <p className="text-[12px] text-muted-foreground leading-relaxed">
-              {recommendation?.explanation ?? "Deterministic pricing analysis based on competitor comparison."}
+              {recommendation?.explanation ??
+                "Deterministic pricing analysis based on competitor comparison."}
             </p>
             {position && (
               <p className="text-[11px] text-muted-foreground/60">
-                AI-powered analysis requires an LLM provider (OpenRouter/Gemini). Showing calculated recommendation.
+                AI-powered analysis requires an LLM provider
+                (OpenRouter/Gemini). Showing calculated recommendation.
               </p>
             )}
           </div>
@@ -423,17 +431,17 @@ export function PricingRecommendationWidget({
 
       {/* Margin Protection Warning */}
       {recommendation?.marginProtectionApplied && (
-        <div className="glass-panel rounded-lg overflow-hidden border border-[#93000a]/30">
-          <div className="px-5 py-3 border-b border-white/[0.04] bg-[#93000a]/10 flex items-center gap-2">
-            <Shield className="h-4 w-4 text-[#ffb4ab]" />
-            <h3 className="text-[14px] font-semibold text-[#ffb4ab]">
+        <div className="glass-panel rounded-lg overflow-hidden border border-[var(--destructive)]/30">
+          <div className="px-5 py-3 bg-[var(--destructive)]/10 flex items-center gap-2">
+            <Shield className="h-4 w-4 text-[var(--destructive)]" />
+            <h3 className="text-[14px] font-semibold text-[var(--destructive)]">
               Margin Protection Active
             </h3>
           </div>
           <div className="p-4 space-y-2">
             <div className="flex items-start gap-2">
-              <AlertTriangle className="h-3.5 w-3.5 text-[#ffb4ab] mt-0.5 shrink-0" />
-              <p className="text-[12px] text-[#ffb4ab]/80 leading-relaxed">
+              <AlertTriangle className="h-3.5 w-3.5 text-[var(--destructive)] mt-0.5 shrink-0" />
+              <p className="text-[12px] text-[var(--destructive)]/80 leading-relaxed">
                 The 5% undercut price is below your minimum profit margin floor.
                 The recommended price has been adjusted to maintain at least 10%
                 margin above cost price.
@@ -441,7 +449,7 @@ export function PricingRecommendationWidget({
             </div>
             <p className="text-[11px] font-mono text-muted-foreground">
               Floor:{" "}
-              <span className="text-[#ffb4ab]">
+              <span className="text-[var(--destructive)]">
                 ${recommendation.minimumAllowedPrice.toFixed(2)}
               </span>{" "}
               (cost + 10%)
@@ -472,10 +480,10 @@ export function PricingDashboardSummary() {
       label: "Leading",
       count: stats.leading,
       icon: TrendingDown,
-      iconColor: "text-[#21a732]",
-      bgColor: "bg-[#21a732]/10",
-      borderColor: "border-[#21a732]/20",
-      textColor: "text-[#21a732]",
+      iconColor: "text-[var(--success)]",
+      bgColor: "bg-[var(--success)]/10",
+      borderColor: "border-[var(--success)]/20",
+      textColor: "text-[var(--success)]",
     },
     {
       label: "Competitive",
@@ -490,10 +498,10 @@ export function PricingDashboardSummary() {
       label: "Overpriced",
       count: stats.overpriced,
       icon: TrendingUp,
-      iconColor: "text-[#ffb4ab]",
-      bgColor: "bg-[#93000a]/15",
-      borderColor: "border-[#93000a]/20",
-      textColor: "text-[#ffb4ab]",
+      iconColor: "text-[var(--destructive)]",
+      bgColor: "bg-[var(--destructive)]/15",
+      borderColor: "border-[var(--destructive)]/20",
+      textColor: "text-[var(--destructive)]",
     },
     {
       label: "No Data",
@@ -508,7 +516,7 @@ export function PricingDashboardSummary() {
 
   return (
     <div className="glass-panel rounded-lg overflow-hidden">
-      <div className="px-5 py-3 border-b border-white/[0.04] bg-surface-container/50 flex items-center justify-between">
+      <div className="px-5 py-3 bg-surface-container/50 flex items-center justify-between">
         <div className="flex items-center gap-2">
           <BarChart3 className="h-4 w-4 text-primary" />
           <h3 className="text-[14px] font-semibold">
@@ -516,9 +524,9 @@ export function PricingDashboardSummary() {
           </h3>
         </div>
         {stats.marginProtection > 0 && (
-          <div className="flex items-center gap-1.5 bg-[#93000a]/10 border border-[#93000a]/20 rounded px-2 py-0.5">
-            <Shield className="h-3 w-3 text-[#ffb4ab]" />
-            <span className="text-[10px] font-mono font-bold text-[#ffb4ab] label-caps">
+          <div className="flex items-center gap-1.5 bg-[var(--destructive)]/10 border border-[var(--destructive)]/20 rounded px-2 py-0.5">
+            <Shield className="h-3 w-3 text-[var(--destructive)]" />
+            <span className="text-[10px] font-mono font-bold text-[var(--destructive)] label-caps">
               {stats.marginProtection} Margin Protected
             </span>
           </div>

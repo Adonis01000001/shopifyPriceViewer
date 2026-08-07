@@ -72,7 +72,8 @@ const statusBadge: Record<string, { label: string; className: string }> = {
   },
   error: {
     label: "ERROR",
-    className: "bg-[#93000a]/20 text-[#ffb4ab] border border-[#93000a]/30",
+    className:
+      "bg-[var(--destructive)]/20 text-[var(--destructive)] border border-[var(--destructive)]/30",
   },
 };
 
@@ -83,15 +84,18 @@ const jobStatusBadge: Record<string, { label: string; className: string }> = {
   },
   running: {
     label: "RUNNING",
-    className: "bg-[#63e063]/10 text-[#21a732] border-[#63e063]/20",
+    className:
+      "bg-[var(--success)]/10 text-[var(--success)] border-[var(--success)]/20",
   },
   completed: {
     label: "COMPLETED",
-    className: "bg-[#21a732]/10 text-[#21a732] border-[#21a732]/20",
+    className:
+      "bg-[var(--success)]/10 text-[var(--success)] border-[var(--success)]/20",
   },
   failed: {
     label: "FAILED",
-    className: "bg-[#93000a]/20 text-[#ffb4ab] border border-[#93000a]/30",
+    className:
+      "bg-[var(--destructive)]/20 text-[var(--destructive)] border border-[var(--destructive)]/30",
   },
   cancelled: {
     label: "CANCELLED",
@@ -148,7 +152,7 @@ function SourceRow({
 
   return (
     <div className="glass-panel rounded-lg overflow-hidden">
-      <div className="px-5 py-4 border-b border-white/[0.04] bg-surface-container/50">
+      <div className="px-5 py-4 bg-surface-container/50">
         <div className="flex items-start justify-between gap-4">
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2 mb-1">
@@ -908,19 +912,12 @@ export default function PriceRadar() {
 
   return (
     <div className="space-y-8">
-      {/* Header */}
-      <div className="page-header">
-        <div>
-          <p className="page-kicker">Competitive monitoring</p>
-          <h2 className="page-title flex items-center gap-2">
-            <Radar className="h-6 w-6 text-primary" />
-            Price Radar
-          </h2>
-          <p className="page-description">
-            Connect competitor listings to your catalog and keep the price
-            changes that matter in view.
-          </p>
-        </div>
+      <PageHeader
+        eyebrow="Competitive monitoring"
+        title="Price Radar"
+        description="Connect competitor listings to your catalog and keep the price changes that matter in view."
+        icon={Radar}
+      >
         <div>
           <Dialog open={createOpen} onOpenChange={setCreateOpen}>
             <DialogTrigger asChild>
@@ -1007,7 +1004,7 @@ export default function PriceRadar() {
             </DialogContent>
           </Dialog>
         </div>
-      </div>
+      </PageHeader>
 
       {/* Summary stats */}
       <div className="grid gap-4 sm:grid-cols-3">
@@ -1264,3 +1261,4 @@ export default function PriceRadar() {
     </div>
   );
 }
+import { PageHeader } from "@/components/workspace/PageHeader";

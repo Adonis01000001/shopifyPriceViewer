@@ -175,17 +175,17 @@ function ScoopPanel() {
 
   const statusClass =
     result?.status === "success"
-      ? "border-[#21a732]/30 bg-[#21a732]/10 text-[#21a732]"
+      ? "border-[var(--success)]/30 bg-[var(--success)]/10 text-[var(--success)]"
       : result?.status === "partial"
         ? "border-amber-500/30 bg-amber-500/10 text-amber-400"
-        : "border-[#93000a]/30 bg-[#93000a]/15 text-[#ffb4ab]";
+        : "border-[var(--destructive)]/30 bg-[var(--destructive)]/15 text-[var(--destructive)]";
 
   return (
     <section
       className="glass-panel rounded-lg overflow-hidden border border-primary/20"
       aria-labelledby="scoop-heading"
     >
-      <div className="p-5 border-b border-white/[0.04] bg-gradient-to-r from-primary/10 via-surface-container/70 to-transparent">
+      <div className="p-5 bg-surface-container-low">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
           <div className="flex items-start gap-3">
             <div className="h-10 w-10 rounded-lg bg-primary/15 border border-primary/25 flex items-center justify-center shrink-0">
@@ -252,7 +252,7 @@ function ScoopPanel() {
               id="scoop-ranking"
               value={ranking}
               onChange={event => setRanking(event.target.value as ScoopRanking)}
-              className="h-10 w-full rounded-md border border-outline-variant bg-surface-container-lowest px-3 text-[12px] text-foreground focus:outline-none focus:ring-2 focus:ring-primary/40"
+              className="h-11 w-full rounded-[0.72rem] border border-input bg-surface-container-lowest px-3 text-[12px] text-foreground shadow-[0_1px_2px_rgba(15,35,30,0.04)] transition-[background-color,border-color,box-shadow] hover:border-primary/35 hover:bg-surface-container-low focus:outline-none focus:ring-2 focus:ring-primary/40"
             >
               <option value="relevance">Most relevant</option>
               <option value="lowest_price">Lowest price</option>
@@ -268,7 +268,7 @@ function ScoopPanel() {
               id="scoop-limit"
               value={maxResults}
               onChange={event => setMaxResults(Number(event.target.value))}
-              className="h-10 w-full rounded-md border border-outline-variant bg-surface-container-lowest px-3 text-[12px] text-foreground focus:outline-none focus:ring-2 focus:ring-primary/40"
+              className="h-11 w-full rounded-[0.72rem] border border-input bg-surface-container-lowest px-3 text-[12px] text-foreground shadow-[0_1px_2px_rgba(15,35,30,0.04)] transition-[background-color,border-color,box-shadow] hover:border-primary/35 hover:bg-surface-container-low focus:outline-none focus:ring-2 focus:ring-primary/40"
             >
               <option value={5}>5 results</option>
               <option value={10}>10 results</option>
@@ -390,7 +390,7 @@ function ScoopPanel() {
                         src={product.imageUrl}
                         alt=""
                         loading="lazy"
-                        className="h-16 w-16 rounded object-contain bg-white/5 border border-outline-variant shrink-0"
+                        className="h-16 w-16 shrink-0 rounded-lg border border-outline-variant bg-surface-container object-contain"
                       />
                     ) : (
                       <div className="h-16 w-16 rounded bg-surface-container-highest border border-outline-variant flex items-center justify-center shrink-0">
@@ -535,7 +535,8 @@ function ProductScoutCard({
   > = {
     success: {
       label: "Complete",
-      className: "bg-[#21a732]/10 text-[#21a732] border-[#21a732]/20",
+      className:
+        "bg-[var(--success)]/10 text-[var(--success)] border-[var(--success)]/20",
       icon: CheckCircle2,
     },
     partial: {
@@ -545,7 +546,8 @@ function ProductScoutCard({
     },
     failed: {
       label: "Failed",
-      className: "bg-[#93000a]/15 text-[#ffb4ab] border-[#93000a]/20",
+      className:
+        "bg-[var(--destructive)]/15 text-[var(--destructive)] border-[var(--destructive)]/20",
       icon: AlertCircle,
     },
   };
@@ -555,7 +557,7 @@ function ProductScoutCard({
   return (
     <div className="glass-panel rounded-lg overflow-hidden">
       {/* Header */}
-      <div className="px-5 py-4 border-b border-white/[0.04] bg-surface-container/50">
+      <div className="px-5 py-4 bg-surface-container/50">
         <div className="flex items-start justify-between gap-4">
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2 mb-1">
@@ -582,7 +584,7 @@ function ProductScoutCard({
               {minPrice !== null && (
                 <span>
                   Market low:{" "}
-                  <span className="font-mono font-medium text-[#21a732]">
+                  <span className="font-mono font-medium text-[var(--success)]">
                     ${minPrice.toFixed(2)}
                   </span>
                 </span>
@@ -591,7 +593,9 @@ function ProductScoutCard({
                 <span
                   className={cn(
                     "font-mono font-medium",
-                    vsMin > 0 ? "text-[#ffb4ab]" : "text-[#21a732]"
+                    vsMin > 0
+                      ? "text-[var(--destructive)]"
+                      : "text-[var(--success)]"
                   )}
                 >
                   {vsMin > 0
@@ -702,7 +706,7 @@ function ProductScoutCard({
 
         {/* Price summary bar */}
         {prices.length > 0 && (
-          <div className="flex items-center gap-3 mt-3 overflow-x-auto pb-1">
+          <div className="mt-3 flex flex-wrap items-center gap-3">
             <div className="flex items-center gap-1.5 px-2 py-1 bg-surface-container-highest rounded-full border border-outline-variant shrink-0">
               <Globe className="h-3 w-3 text-primary" />
               <span className="label-caps text-[9px] text-muted-foreground">
@@ -710,17 +714,17 @@ function ProductScoutCard({
               </span>
             </div>
             {minPrice !== null && (
-              <div className="flex items-center gap-1 px-2 py-1 bg-[#21a732]/10 rounded-full border border-[#21a732]/20 shrink-0">
-                <TrendingDown className="h-3 w-3 text-[#21a732]" />
-                <span className="font-mono text-[10px] font-bold text-[#21a732]">
+              <div className="flex items-center gap-1 px-2 py-1 bg-[var(--success)]/10 rounded-full border border-[var(--success)]/20 shrink-0">
+                <TrendingDown className="h-3 w-3 text-[var(--success)]" />
+                <span className="font-mono text-[10px] font-bold text-[var(--success)]">
                   ${minPrice.toFixed(2)}
                 </span>
               </div>
             )}
             {maxPrice !== null && maxPrice !== minPrice && (
-              <div className="flex items-center gap-1 px-2 py-1 bg-[#93000a]/10 rounded-full border border-[#93000a]/20 shrink-0">
-                <TrendingUp className="h-3 w-3 text-[#ffb4ab]" />
-                <span className="font-mono text-[10px] font-bold text-[#ffb4ab]">
+              <div className="flex items-center gap-1 px-2 py-1 bg-[var(--destructive)]/10 rounded-full border border-[var(--destructive)]/20 shrink-0">
+                <TrendingUp className="h-3 w-3 text-[var(--destructive)]" />
+                <span className="font-mono text-[10px] font-bold text-[var(--destructive)]">
                   ${maxPrice.toFixed(2)}
                 </span>
               </div>
@@ -738,9 +742,11 @@ function ProductScoutCard({
 
         {/* Error message */}
         {status === "failed" && errorMessage && (
-          <div className="mt-3 rounded border border-[#93000a]/20 bg-[#93000a]/10 p-3 flex items-start gap-2">
-            <AlertCircle className="h-4 w-4 text-[#ffb4ab] shrink-0 mt-0.5" />
-            <p className="text-[11px] text-[#ffb4ab]">{errorMessage}</p>
+          <div className="mt-3 rounded border border-[var(--destructive)]/20 bg-[var(--destructive)]/10 p-3 flex items-start gap-2">
+            <AlertCircle className="h-4 w-4 text-[var(--destructive)] shrink-0 mt-0.5" />
+            <p className="text-[11px] text-[var(--destructive)]">
+              {errorMessage}
+            </p>
           </div>
         )}
       </div>
@@ -754,7 +760,7 @@ function ProductScoutCard({
             return (
               <div
                 key={i}
-                className="px-5 py-3 flex items-center gap-4 hover:bg-white/[0.02] transition-colors"
+                className="flex items-center gap-4 px-5 py-3 transition-colors hover:bg-surface-container-low"
               >
                 <span className="text-[11px] font-mono text-muted-foreground w-6 text-center shrink-0">
                   {i + 1}
@@ -787,9 +793,9 @@ function ProductScoutCard({
                       className={cn(
                         "font-mono text-[10px]",
                         diff < 0
-                          ? "text-[#21a732]"
+                          ? "text-[var(--success)]"
                           : diff > 0
-                            ? "text-[#ffb4ab]"
+                            ? "text-[var(--destructive)]"
                             : "text-muted-foreground"
                       )}
                     >
@@ -824,8 +830,9 @@ function ProductScoutCard({
       {searchQueries && searchQueries.length > 0 && (
         <div className="border-t border-outline-variant/20">
           <button
+            type="button"
             onClick={() => setShowQueries(!showQueries)}
-            className="w-full px-5 py-3 flex items-center justify-between hover:bg-white/[0.02] transition-colors"
+            className="flex w-full items-center justify-between px-5 py-3 transition-colors hover:bg-surface-container-low"
           >
             <div className="flex items-center gap-2">
               <Search className="h-3.5 w-3.5 text-muted-foreground" />
@@ -859,8 +866,9 @@ function ProductScoutCard({
       {reviews && reviews.length > 0 && (
         <div className="border-t border-outline-variant/20">
           <button
+            type="button"
             onClick={() => setShowReviews(!showReviews)}
-            className="w-full px-5 py-3 flex items-center justify-between hover:bg-white/[0.02] transition-colors"
+            className="flex w-full items-center justify-between px-5 py-3 transition-colors hover:bg-surface-container-low"
           >
             <div className="flex items-center gap-2">
               <MessageSquare className="h-3.5 w-3.5 text-muted-foreground" />
@@ -1207,20 +1215,12 @@ export default function PriceScout() {
 
   return (
     <div className="space-y-8">
-      {/* Header */}
-      <div className="page-header">
-        <div>
-          <p className="page-kicker">Research workspace</p>
-          <h2 className="page-title flex items-center gap-2">
-            <span className="flex h-9 w-9 items-center justify-center rounded-xl border border-primary/25 bg-primary/10">
-              <Globe className="h-5 w-5" />
-            </span>
-            Price Scout
-          </h2>
-          <p className="page-description">
-            Search the web to find competitor prices for each of your products.
-          </p>
-        </div>
+      <PageHeader
+        eyebrow="Research workspace"
+        title="Price Scout"
+        description="Search the web to find competitor prices for each of your products."
+        icon={Globe}
+      >
         <div className="flex flex-wrap items-center gap-2">
           <div className="flex items-center gap-2">
             <Button
@@ -1311,7 +1311,7 @@ export default function PriceScout() {
             </Button>
           </div>
         </div>
-      </div>
+      </PageHeader>
 
       <ScoopPanel />
 
@@ -1467,3 +1467,4 @@ export default function PriceScout() {
     </div>
   );
 }
+import { PageHeader } from "@/components/workspace/PageHeader";

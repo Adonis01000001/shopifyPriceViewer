@@ -14,7 +14,6 @@ const Products = lazy(() => import("./pages/dashboard/Products"));
 const ProductDetail = lazy(() => import("./pages/dashboard/ProductDetail"));
 const Alerts = lazy(() => import("./pages/dashboard/Alerts"));
 const Competitors = lazy(() => import("./pages/dashboard/Competitors"));
-const Analytics = lazy(() => import("./pages/dashboard/Analytics"));
 const PriceScout = lazy(() => import("./pages/dashboard/PriceScout"));
 const PathOfWisdom = lazy(() => import("./pages/dashboard/PathOfWisdom"));
 const PriceRadar = lazy(() => import("./pages/dashboard/PriceRadar"));
@@ -77,7 +76,7 @@ function AuthGuard({ children }: { children: React.ReactNode }) {
 function App() {
   return (
     <ErrorBoundary>
-      <ThemeProvider defaultTheme="dark">
+      <ThemeProvider defaultTheme="light">
         <TooltipProvider>
           <Toaster position="top-right" richColors />
           <Switch>
@@ -95,7 +94,6 @@ function App() {
                       <Route path="/price-radar" component={PriceRadar} />
                       <Route path="/alerts" component={Alerts} />
                       <Route path="/competitors" component={Competitors} />
-                      <Route path="/analytics" component={Analytics} />
                       <Route path="/settings" component={Settings} />
                       <Route component={NotFound} />
                     </Switch>

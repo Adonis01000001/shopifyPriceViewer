@@ -1,9 +1,9 @@
 import { Button } from "@/components/ui/button";
+import { PageHeader } from "@/components/workspace/PageHeader";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Separator } from "@/components/ui/separator";
-import { Progress } from "@/components/ui/progress";
 import {
   Select,
   SelectContent,
@@ -28,12 +28,10 @@ import {
   LogOut,
   Globe,
   Trash2,
-  CreditCard,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useState } from "react";
 import { toast } from "sonner";
-import { useProductAnalytics } from "@/lib/analytics";
 
 export default function Settings() {
   const { data: user } = trpc.auth.me.useQuery();
@@ -41,13 +39,8 @@ export default function Settings() {
     trpc.shopify.listStores.useQuery();
   const { data: notificationPreferences } =
     trpc.notifications.preferences.useQuery();
-  const { data: accountUsage } = trpc.account.usage.useQuery();
-  const { data: billingStatus, refetch: refetchBilling } =
-    trpc.billing.status.useQuery();
-  const { data: planCatalog } = trpc.account.plans.useQuery();
   const { theme, toggleTheme, switchable } = useTheme();
   const utils = trpc.useUtils();
-  const track = useProductAnalytics();
 
   const updateNotificationPreferences =
     trpc.notifications.updatePreferences.useMutation({
@@ -66,72 +59,20 @@ export default function Settings() {
     onError: err => toast.error(err.message || "Failed to disconnect"),
   });
 
-  const checkoutMutation = trpc.billing.checkout.useMutation({
-    onSuccess: ({ url }) => window.location.assign(url),
-    onError: error => toast.error(error.message || "Unable to start checkout"),
-  });
-  const portalMutation = trpc.billing.portal.useMutation({
-    onSuccess: ({ url }) => window.location.assign(url),
-    onError: error =>
-      toast.error(error.message || "Unable to open billing portal"),
-  });
-  const cancelMutation = trpc.billing.cancel.useMutation({
-    onSuccess: async result => {
-      await refetchBilling();
-      track("subscription_cancelled", {
-        cancel_at_period_end: result.cancelAtPeriodEnd,
-      });
-      toast.success(
-        result.cancelAtPeriodEnd
-          ? "Subscription scheduled to cancel at period end"
-          : "Subscription cancellation reversed"
-      );
-    },
-    onError: error =>
-      toast.error(error.message || "Unable to update subscription"),
-  });
-
   const [name, setName] = useState(user?.name ?? "");
   const [email, setEmail] = useState(user?.email ?? "");
 
   const allStores = stores ?? [];
-  const usageItems = accountUsage
-    ? [
-        {
-          label: "Products",
-          used: accountUsage.usage.products,
-          limit: accountUsage.limits.products,
-          utilization: accountUsage.utilization.products,
-        },
-        {
-          label: "Competitors",
-          used: accountUsage.usage.competitors,
-          limit: accountUsage.limits.competitors,
-          utilization: accountUsage.utilization.competitors,
-        },
-        {
-          label: "Price Radar sources",
-          used: accountUsage.usage.radarSources,
-          limit: accountUsage.limits.radarSources,
-          utilization: accountUsage.utilization.radarSources,
-        },
-      ]
-    : [];
-
   return (
     <div className="space-y-8 max-w-3xl">
-      <div className="page-header">
-        <div>
-          <p className="page-kicker">Workspace configuration</p>
-          <h2 className="page-title">Settings</h2>
-          <p className="page-description">
-            Manage your account, connected stores, and preferences.
-          </p>
-        </div>
-      </div>
+      <PageHeader
+        eyebrow="Workspace configuration"
+        title="Settings"
+        description="Manage your account, connected stores, and preferences."
+      />
 
       {/* Account Section */}
-      <Card id="billing" className="border-outline-variant/30">
+      <Card className="border-outline-variant/30">
         <CardHeader>
           <div className="flex items-center gap-2">
             <User className="h-4 w-4 text-primary" />
@@ -194,137 +135,6 @@ export default function Settings() {
           </div>
           <p className="text-[10px] text-muted-foreground/60">
             Profile updates and password changes coming soon.
-          </p>
-        </CardContent>
-      </Card>
-
-      {/* Plan and usage */}
-      <Card className="border-outline-variant/30">
-        <CardHeader>
-          <div className="flex items-center justify-between gap-3">
-            <div>
-              <div className="mb-1 flex items-center gap-2">
-                <CreditCard className="h-4 w-4 text-primary" />
-                <span className="text-[10px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
-                  Billing & usage
-                </span>
-              </div>
-              <CardTitle className="text-base">
-                {accountUsage?.plan.name ?? "Account plan"}
-              </CardTitle>
-              <CardDescription>
-                {accountUsage?.plan.description ??
-                  "See the usage and capabilities that shape your next pricing decision."}
-              </CardDescription>
-            </div>
-            <span className="rounded-full border border-primary/30 bg-primary/10 px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-primary">
-              {accountUsage?.subscription.status ?? "trialing"}
-            </span>
-          </div>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          {usageItems.map(item => {
-            const percent = Math.min(item.utilization * 100, 100);
-            return (
-              <div key={item.label} className="space-y-1.5">
-                <div className="flex items-center justify-between text-xs">
-                  <span className="text-muted-foreground">{item.label}</span>
-                  <span className="font-mono">
-                    {item.used} / {item.limit ?? "∞"}
-                  </span>
-                </div>
-                <Progress
-                  value={percent}
-                  className={percent >= 90 ? "bg-[#93000a]/20" : undefined}
-                />
-              </div>
-            );
-          })}
-          <div className="flex flex-wrap gap-2">
-            {billingStatus?.hasProviderSubscription ? (
-              <Button
-                size="sm"
-                variant="outline"
-                className="border-outline-variant text-xs"
-                onClick={() => portalMutation.mutate()}
-                disabled={portalMutation.isPending}
-              >
-                Manage billing
-              </Button>
-            ) : null}
-            {billingStatus?.hasProviderSubscription ? (
-              <Button
-                size="sm"
-                variant="ghost"
-                className="text-xs text-destructive hover:text-destructive"
-                onClick={() =>
-                  cancelMutation.mutate({
-                    cancelAtPeriodEnd: !billingStatus.cancelAtPeriodEnd,
-                  })
-                }
-                disabled={cancelMutation.isPending}
-              >
-                {billingStatus.cancelAtPeriodEnd
-                  ? "Keep subscription"
-                  : "Cancel at period end"}
-              </Button>
-            ) : null}
-          </div>
-          <div className="grid gap-2 sm:grid-cols-3">
-            {(planCatalog ?? [])
-              .filter(plan => plan.id !== "free")
-              .map(plan => {
-                const isCurrent = billingStatus?.plan === plan.id;
-                return (
-                  <Button
-                    key={plan.id}
-                    size="sm"
-                    variant={isCurrent ? "secondary" : "outline"}
-                    className="h-auto min-h-14 justify-start border-outline-variant px-3 py-2 text-left"
-                    disabled={
-                      isCurrent ||
-                      checkoutMutation.isPending ||
-                      portalMutation.isPending
-                    }
-                    onClick={() => {
-                      track("plan_selected", {
-                        plan: plan.id,
-                        source: "billing_settings",
-                      });
-                      if (billingStatus?.hasProviderSubscription) {
-                        portalMutation.mutate();
-                      } else {
-                        track("checkout_started", {
-                          plan: plan.id,
-                          source: "billing_settings",
-                        });
-                        checkoutMutation.mutate({
-                          plan: plan.id as "starter" | "pro" | "scale",
-                        });
-                      }
-                    }}
-                  >
-                    <span className="flex flex-col items-start gap-0.5">
-                      <span className="text-xs font-semibold">
-                        {isCurrent
-                          ? `${plan.name} plan`
-                          : `Choose ${plan.name}`}
-                      </span>
-                      <span className="text-[10px] font-normal text-muted-foreground">
-                        {isCurrent
-                          ? "Current plan"
-                          : billingStatus?.hasProviderSubscription
-                            ? "Manage in Stripe"
-                            : plan.description}
-                      </span>
-                    </span>
-                  </Button>
-                );
-              })}
-          </div>
-          <p className="text-[10px] text-muted-foreground/60">
-            Usage limits are enforced from the server-side plan catalog. Billing
-            state is synchronized from verified payment-provider events.
           </p>
         </CardContent>
       </Card>

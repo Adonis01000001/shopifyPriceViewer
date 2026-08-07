@@ -1,5 +1,4 @@
-import { cn } from "@/lib/utils";
-import { AlertTriangle, RotateCcw } from "lucide-react";
+import { AlertTriangle, ArrowLeft, RotateCcw } from "lucide-react";
 import { Component, ReactNode } from "react";
 
 interface Props {
@@ -24,32 +23,37 @@ class ErrorBoundary extends Component<Props, State> {
   render() {
     if (this.state.hasError) {
       return (
-        <div className="flex items-center justify-center min-h-screen p-8 bg-background">
-          <div className="flex flex-col items-center w-full max-w-2xl p-8">
-            <AlertTriangle
-              size={48}
-              className="text-destructive mb-6 flex-shrink-0"
-            />
-
-            <h2 className="text-xl mb-4">An unexpected error occurred.</h2>
-
-            <div className="p-4 w-full rounded bg-muted overflow-auto mb-6">
-              <pre className="text-sm text-muted-foreground whitespace-break-spaces">
-                {this.state.error?.stack}
-              </pre>
+        <div className="flex min-h-screen items-center justify-center bg-background p-6">
+          <div className="glass-panel w-full max-w-xl p-8 text-center sm:p-12">
+            <div className="mx-auto mb-5 flex h-14 w-14 items-center justify-center rounded-2xl bg-destructive/10 text-destructive">
+              <AlertTriangle className="h-7 w-7" aria-hidden="true" />
             </div>
-
-            <button
-              onClick={() => window.location.reload()}
-              className={cn(
-                "flex items-center gap-2 px-4 py-2 rounded-lg",
-                "bg-primary text-primary-foreground",
-                "hover:opacity-90 cursor-pointer"
-              )}
-            >
-              <RotateCcw size={16} />
-              Reload Page
-            </button>
+            <p className="page-kicker">Workspace interruption</p>
+            <h2 className="page-title mt-2 text-2xl">
+              Something needs a refresh
+            </h2>
+            <p className="mx-auto mt-3 max-w-md text-sm leading-relaxed text-muted-foreground">
+              We couldn&apos;t complete this view. Your account data is safe;
+              reload the page and try the action again.
+            </p>
+            <div className="mt-7 flex flex-col justify-center gap-3 sm:flex-row">
+              <button
+                type="button"
+                onClick={() => window.history.back()}
+                className="inline-flex min-h-10 items-center justify-center gap-2 rounded-[0.7rem] border border-border bg-surface-container px-4 text-sm font-semibold text-foreground transition-colors hover:bg-accent"
+              >
+                <ArrowLeft className="h-4 w-4" />
+                Go back
+              </button>
+              <button
+                type="button"
+                onClick={() => window.location.reload()}
+                className="inline-flex min-h-10 items-center justify-center gap-2 rounded-[0.7rem] bg-primary px-4 text-sm font-semibold text-primary-foreground transition-colors hover:bg-primary/90"
+              >
+                <RotateCcw className="h-4 w-4" />
+                Reload workspace
+              </button>
+            </div>
           </div>
         </div>
       );

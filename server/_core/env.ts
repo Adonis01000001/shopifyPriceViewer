@@ -13,6 +13,11 @@ const shopifyApiKey = process.env.SHOPIFY_API_KEY ?? "";
 const shopifyApiSecret = process.env.SHOPIFY_API_SECRET ?? "";
 const shopifyAppUrl = process.env.SHOPIFY_APP_URL ?? "http://localhost:3000";
 const appUrl = process.env.APP_URL ?? shopifyAppUrl;
+const googleClientId = process.env.GOOGLE_CLIENT_ID ?? "";
+const googleClientSecret = process.env.GOOGLE_CLIENT_SECRET ?? "";
+const googleRedirectUri =
+  process.env.GOOGLE_REDIRECT_URI ??
+  `${appUrl.replace(/\/$/, "")}/api/oauth/google/callback`;
 const monitoringIntervalHours = Number(
   process.env.MONITORING_INTERVAL_HOURS ?? "1"
 );
@@ -42,6 +47,14 @@ if (isProduction) {
   if (!shopifyApiKey || !shopifyApiSecret) {
     throw new Error(
       "FATAL: SHOPIFY_API_KEY and SHOPIFY_API_SECRET must be set in production"
+    );
+  }
+  if (
+    (googleClientId && !googleClientSecret) ||
+    (!googleClientId && googleClientSecret)
+  ) {
+    throw new Error(
+      "FATAL: GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET must be set together"
     );
   }
   if (!redisUrl || queueMode !== "redis") {
@@ -98,6 +111,17 @@ if (isProduction) {
     }
   } catch {
     throw new Error("FATAL: APP_URL must be a valid HTTPS URL in production");
+  }
+  if (googleClientId) {
+    try {
+      if (new URL(googleRedirectUri).protocol !== "https:") {
+        throw new Error("GOOGLE_REDIRECT_URI must use HTTPS in production");
+      }
+    } catch {
+      throw new Error(
+        "FATAL: GOOGLE_REDIRECT_URI must be a valid HTTPS URL in production"
+      );
+    }
   }
 }
 
@@ -163,6 +187,9 @@ export const ENV = {
   shopifyApiSecret,
   shopifyAppUrl,
   appUrl,
+  googleClientId,
+  googleClientSecret,
+  googleRedirectUri,
   shopifyScopes: process.env.SHOPIFY_SCOPES ?? "read_products",
   allowedOrigins,
 

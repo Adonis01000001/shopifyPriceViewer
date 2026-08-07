@@ -43,7 +43,8 @@ const steps = [
     description: "Monitor competitor pricing to stay ahead of the market.",
     icon: Users,
     action: "Add Competitor",
-    color: "text-[#21a732] bg-[#63e063]/10 border-[#63e063]/20",
+    color:
+      "text-[var(--success)] bg-[var(--success)]/10 border-[var(--success)]/20",
   },
 ];
 
@@ -93,7 +94,10 @@ export default function OnboardingWizard({
   useEffect(() => {
     if (!open) return;
     for (const item of steps) {
-      if (!completed.has(item.id) || completionEventsSent.current.has(item.id)) {
+      if (
+        !completed.has(item.id) ||
+        completionEventsSent.current.has(item.id)
+      ) {
         continue;
       }
       completionEventsSent.current.add(item.id);
@@ -163,7 +167,7 @@ export default function OnboardingWizard({
                     i === step
                       ? "bg-primary text-primary-foreground"
                       : i < step
-                        ? "bg-[#21a732] text-white"
+                        ? "bg-[var(--success)] text-white"
                         : "bg-surface-container-highest text-muted-foreground"
                   )}
                 >
@@ -173,7 +177,9 @@ export default function OnboardingWizard({
                   <div
                     className={cn(
                       "w-12 h-0.5",
-                      i < step ? "bg-[#21a732]" : "bg-surface-container-highest"
+                      i < step
+                        ? "bg-[var(--success)]"
+                        : "bg-surface-container-highest"
                     )}
                   />
                 )}

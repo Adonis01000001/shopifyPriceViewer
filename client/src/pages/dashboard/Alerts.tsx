@@ -37,15 +37,18 @@ import { useRealtimeNotifications } from "@/hooks/use-realtime-notifications";
 const severityConfig: Record<string, { label: string; className: string }> = {
   critical: {
     label: "CRITICAL",
-    className: "bg-[#93000a]/20 text-[#ffb4ab] border-[#93000a]/30",
+    className:
+      "bg-[var(--destructive)]/20 text-[var(--destructive)] border-[var(--destructive)]/30",
   },
   high: {
     label: "HIGH",
-    className: "bg-[#93000a]/15 text-[#ffb4ab]/80 border-[#ffb4ab]/20",
+    className:
+      "bg-[var(--destructive)]/15 text-[var(--destructive)]/80 border-[var(--destructive)]/20",
   },
   medium: {
     label: "MEDIUM",
-    className: "bg-[#63e063]/10 text-[#21a732] border-[#63e063]/20",
+    className:
+      "bg-[var(--success)]/10 text-[var(--success)] border-[var(--success)]/20",
   },
   low: {
     label: "LOW",
@@ -118,7 +121,7 @@ function AlertRow({
           >
             {severity.label}
           </span>
-          <span className="inline-flex items-center rounded bg-white/[0.04] px-1.5 py-0.5 text-[9px] label-caps text-muted-foreground">
+          <span className="inline-flex min-h-6 items-center rounded-full bg-surface-container px-2 py-0.5 text-[9px] label-caps text-muted-foreground">
             {type.label}
           </span>
         </div>
@@ -171,15 +174,14 @@ export default function Alerts() {
   if (error) {
     return (
       <div className="space-y-8">
-        <div className="page-header">
-          <div>
-            <p className="page-kicker">Attention queue</p>
-            <h2 className="page-title">Alerts</h2>
-            <p className="page-description">Failed to load alerts.</p>
-          </div>
-        </div>
+        <PageHeader
+          eyebrow="Attention queue"
+          title="Alerts"
+          description="Failed to load alerts."
+          icon={AlertTriangle}
+        />
         <div className="glass-card rounded-2xl p-8 text-center sm:p-12">
-          <p className="text-[#ffb4ab] text-sm">{error.message}</p>
+          <p className="text-[var(--destructive)] text-sm">{error.message}</p>
         </div>
       </div>
     );
@@ -208,16 +210,12 @@ export default function Alerts() {
   if (allAlerts.length === 0) {
     return (
       <div className="space-y-8">
-        <div className="page-header">
-          <div>
-            <p className="page-kicker">Attention queue</p>
-            <h2 className="page-title">Alerts</h2>
-            <p className="page-description">
-              No alerts yet. Alerts will appear when price changes or threshold
-              breaches are detected.
-            </p>
-          </div>
-        </div>
+        <PageHeader
+          eyebrow="Attention queue"
+          title="Alerts"
+          description="No alerts yet. Alerts will appear when price changes or threshold breaches are detected."
+          icon={ShieldCheck}
+        />
         <Empty>
           <EmptyMedia variant="icon">
             <ShieldCheck className="h-6 w-6" />
@@ -241,21 +239,18 @@ export default function Alerts() {
 
   return (
     <div className="space-y-8">
-      <div className="page-header">
-        <div>
-          <p className="page-kicker">Attention queue</p>
-          <h2 className="page-title">Alerts</h2>
-          <p className="page-description">
-            Monitor price changes, competitor movements, and threshold breaches.
-          </p>
-        </div>
-      </div>
+      <PageHeader
+        eyebrow="Attention queue"
+        title="Alerts"
+        description="Monitor price changes, competitor movements, and threshold breaches."
+        icon={AlertTriangle}
+      />
 
       {/* Summary Cards */}
       <div className="grid gap-4 sm:grid-cols-3">
         <div className="glass-card p-5 flex items-center gap-4">
-          <div className="flex h-10 w-10 items-center justify-center rounded bg-[#93000a]/15">
-            <AlertTriangle className="h-5 w-5 text-[#ffb4ab]" />
+          <div className="flex h-10 w-10 items-center justify-center rounded bg-[var(--destructive)]/15">
+            <AlertTriangle className="h-5 w-5 text-[var(--destructive)]" />
           </div>
           <div>
             <p className="text-2xl font-bold font-mono">{criticalCount}</p>
@@ -263,8 +258,8 @@ export default function Alerts() {
           </div>
         </div>
         <div className="glass-card p-5 flex items-center gap-4">
-          <div className="flex h-10 w-10 items-center justify-center rounded bg-[#63e063]/10">
-            <Bell className="h-5 w-5 text-[#21a732]" />
+          <div className="flex h-10 w-10 items-center justify-center rounded bg-[var(--success)]/10">
+            <Bell className="h-5 w-5 text-[var(--success)]" />
           </div>
           <div>
             <p className="text-2xl font-bold font-mono">{activeCount}</p>
@@ -284,7 +279,7 @@ export default function Alerts() {
 
       {/* Filters & Tabs */}
       <div className="glass-panel rounded-lg overflow-hidden">
-        <div className="px-5 py-4 border-b border-white/[0.04] bg-surface-container/50 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="px-5 py-4 bg-surface-container/50 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <h3 className="text-[15px] font-semibold">All Alerts</h3>
           <div className="flex items-center gap-2">
             <div className="relative">
@@ -352,3 +347,4 @@ export default function Alerts() {
     </div>
   );
 }
+import { PageHeader } from "@/components/workspace/PageHeader";

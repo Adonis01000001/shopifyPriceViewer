@@ -199,7 +199,9 @@ export default function AddProductDialog({ onSuccess }: Props) {
       return;
     }
     if (!trimmedPrice || !/^\d+(\.\d{1,2})?$/.test(trimmedPrice)) {
-      setSingleError("Price must be a positive number with up to 2 decimal places");
+      setSingleError(
+        "Price must be a positive number with up to 2 decimal places"
+      );
       return;
     }
     if (trimmedSku && !/^[A-Za-z0-9\-_/]+$/.test(trimmedSku)) {
@@ -259,7 +261,7 @@ export default function AddProductDialog({ onSuccess }: Props) {
 
         <div className="space-y-4 overflow-y-auto flex-1 pr-1">
           {/* ── Single-product quick-create ──────────────────────────────── */}
-          <div className="rounded-lg border border-outline-variant/30 p-4 space-y-3">
+          <div className="space-y-3 rounded-xl border border-outline-variant/30 bg-surface-container-low/50 p-4">
             <p className="text-sm font-medium">Quick Add Single Product</p>
 
             {singleError && (
@@ -278,11 +280,16 @@ export default function AddProductDialog({ onSuccess }: Props) {
             <div className="space-y-3">
               <div className="flex gap-3 items-start">
                 <div className="flex-1">
-                  <Label className="text-xs text-muted-foreground" htmlFor="product-name">Product Name *</Label>
+                  <Label
+                    className="text-xs text-muted-foreground"
+                    htmlFor="product-name"
+                  >
+                    Product Name *
+                  </Label>
                   <Input
                     id="product-name"
                     name="product-name"
-                    className="h-9"
+                    className="h-10"
                     value={singleName}
                     onChange={e => setSingleName(e.target.value)}
                     placeholder="e.g. Wireless Earbuds"
@@ -290,13 +297,20 @@ export default function AddProductDialog({ onSuccess }: Props) {
                   />
                 </div>
                 <div className="w-36 shrink-0">
-                  <Label className="text-xs text-muted-foreground" htmlFor="product-price">Price *</Label>
+                  <Label
+                    className="text-xs text-muted-foreground"
+                    htmlFor="product-price"
+                  >
+                    Price *
+                  </Label>
                   <div className="relative">
-                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground pointer-events-none select-none">$</span>
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground pointer-events-none select-none">
+                      $
+                    </span>
                     <Input
                       id="product-price"
                       name="product-price"
-                      className="h-9 font-mono pl-6 text-right"
+                      className="h-10 pl-6 text-right font-mono"
                       value={singlePrice}
                       onChange={e => setSinglePrice(e.target.value)}
                       placeholder="0.00"
@@ -306,11 +320,16 @@ export default function AddProductDialog({ onSuccess }: Props) {
               </div>
               <div className="flex gap-3 items-start">
                 <div className="flex-1">
-                  <Label className="text-xs text-muted-foreground" htmlFor="product-sku">SKU</Label>
+                  <Label
+                    className="text-xs text-muted-foreground"
+                    htmlFor="product-sku"
+                  >
+                    SKU
+                  </Label>
                   <Input
                     id="product-sku"
                     name="product-sku"
-                    className="h-9 font-mono"
+                    className="h-10 font-mono"
                     value={singleSku}
                     onChange={e => setSingleSku(e.target.value)}
                     placeholder="e.g. ABC-123"
@@ -321,11 +340,16 @@ export default function AddProductDialog({ onSuccess }: Props) {
                   </p>
                 </div>
                 <div className="flex-1">
-                  <Label className="text-xs text-muted-foreground" htmlFor="product-category">Category</Label>
+                  <Label
+                    className="text-xs text-muted-foreground"
+                    htmlFor="product-category"
+                  >
+                    Category
+                  </Label>
                   <Input
                     id="product-category"
                     name="product-category"
-                    className="h-9"
+                    className="h-10"
                     value={singleCategory}
                     onChange={e => setSingleCategory(e.target.value)}
                     placeholder="e.g. Electronics"
@@ -333,11 +357,16 @@ export default function AddProductDialog({ onSuccess }: Props) {
                   />
                 </div>
                 <div className="flex-1">
-                  <Label className="text-xs text-muted-foreground" htmlFor="product-vendor">Vendor</Label>
+                  <Label
+                    className="text-xs text-muted-foreground"
+                    htmlFor="product-vendor"
+                  >
+                    Vendor
+                  </Label>
                   <Input
                     id="product-vendor"
                     name="product-vendor"
-                    className="h-9"
+                    className="h-10"
                     value={singleVendor}
                     onChange={e => setSingleVendor(e.target.value)}
                     placeholder="e.g. SoundMax"
@@ -348,7 +377,7 @@ export default function AddProductDialog({ onSuccess }: Props) {
               <div className="flex justify-end">
                 <Button
                   size="sm"
-                  className="h-9"
+                  className="h-10"
                   onClick={handleSingleSubmit}
                   disabled={singleSubmitting}
                 >
@@ -365,7 +394,7 @@ export default function AddProductDialog({ onSuccess }: Props) {
           <div className="flex items-center gap-3">
             <Label className="text-sm font-medium w-20 shrink-0">Store</Label>
             <Select value={storeId} onValueChange={setStoreId}>
-              <SelectTrigger className="w-full h-9">
+              <SelectTrigger className="h-11 w-full">
                 <SelectValue
                   placeholder={
                     storesLoading ? "Loading stores..." : "Select a store"
@@ -389,7 +418,7 @@ export default function AddProductDialog({ onSuccess }: Props) {
           </div>
 
           {/* Product table */}
-          <div className="border border-outline-variant/30 rounded-lg overflow-hidden">
+          <div className="overflow-hidden rounded-xl border border-outline-variant/30">
             <div className="overflow-x-auto">
               <Table>
                 <TableHeader>
@@ -416,7 +445,10 @@ export default function AddProductDialog({ onSuccess }: Props) {
                 </TableHeader>
                 <TableBody className="divide-y divide-outline-variant/20">
                   {products.map((p, i) => (
-                    <TableRow key={i} className="hover:bg-white/[0.02]">
+                    <TableRow
+                      key={i}
+                      className="hover:bg-surface-container-low"
+                    >
                       <td className="pl-4 py-2 text-xs text-muted-foreground font-mono">
                         {i + 1}
                       </td>

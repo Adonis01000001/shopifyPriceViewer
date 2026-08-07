@@ -7,19 +7,23 @@ interface ErrorRecoveryProps {
   compact?: boolean;
 }
 
-export function ErrorRecovery({ message, onRetry, compact }: ErrorRecoveryProps) {
+export function ErrorRecovery({
+  message,
+  onRetry,
+  compact,
+}: ErrorRecoveryProps) {
   if (compact) {
     return (
-      <div className="flex items-center gap-3 rounded-lg border border-[#93000a]/30 bg-[#93000a]/10 px-4 py-3">
-        <AlertTriangle className="h-4 w-4 shrink-0 text-[#ffb4ab]" />
-        <p className="text-xs text-[#ffb4ab]/80 flex-1">
+      <div className="flex items-center gap-3 rounded-xl border border-destructive/25 bg-destructive/10 px-4 py-3">
+        <AlertTriangle className="h-4 w-4 shrink-0 text-destructive" />
+        <p className="flex-1 text-xs text-destructive/80">
           {message || "Something went wrong"}
         </p>
         {onRetry && (
           <Button
             variant="ghost"
             size="sm"
-            className="h-7 text-xs text-[#ffb4ab] hover:text-[#ffb4ab] hover:bg-[#93000a]/20"
+            className="text-xs text-destructive hover:bg-destructive/15 hover:text-destructive"
             onClick={onRetry}
           >
             <RefreshCw className="h-3 w-3 mr-1" />
@@ -31,11 +35,11 @@ export function ErrorRecovery({ message, onRetry, compact }: ErrorRecoveryProps)
   }
 
   return (
-    <div className="flex flex-col items-center justify-center rounded-lg border border-dashed border-[#93000a]/30 bg-[#93000a]/5 p-8 text-center">
-      <div className="mb-3 flex h-10 w-10 items-center justify-center rounded-full bg-[#93000a]/15">
-        <AlertTriangle className="h-5 w-5 text-[#ffb4ab]" />
+    <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-destructive/25 bg-destructive/5 p-8 text-center">
+      <div className="mb-3 flex h-11 w-11 items-center justify-center rounded-full bg-destructive/15">
+        <AlertTriangle className="h-5 w-5 text-destructive" />
       </div>
-      <p className="text-sm font-medium text-[#ffb4ab]">
+      <p className="text-sm font-semibold text-destructive">
         {message || "Failed to load data"}
       </p>
       <p className="mt-1 text-xs text-muted-foreground">
@@ -45,7 +49,7 @@ export function ErrorRecovery({ message, onRetry, compact }: ErrorRecoveryProps)
         <Button
           size="sm"
           variant="outline"
-          className="mt-4 border-outline-variant text-xs"
+          className="mt-4 border-input text-xs"
           onClick={onRetry}
         >
           <RefreshCw className="h-3.5 w-3.5 mr-1.5" />
@@ -66,12 +70,20 @@ interface RetryCellProps {
 
 export function RetryCell({ error, onRetry, className }: RetryCellProps) {
   return (
-    <div className={cn("flex items-center gap-2 px-3 py-2 rounded bg-[#93000a]/8 border border-[#93000a]/20", className)}>
-      <span className="text-xs text-[#ffb4ab]/80 flex-1 truncate">{error}</span>
+    <div
+      className={cn(
+        "flex items-center gap-2 rounded-lg border border-destructive/20 bg-destructive/8 px-3 py-2",
+        className
+      )}
+    >
+      <span className="flex-1 truncate text-xs text-destructive/80">
+        {error}
+      </span>
       {onRetry && (
         <button
+          type="button"
           onClick={onRetry}
-          className="text-[#ffb4ab] hover:text-[#ffb4ab]/80 shrink-0 p-1"
+          className="flex size-10 shrink-0 items-center justify-center rounded-lg text-destructive hover:bg-destructive/10 hover:text-destructive/80"
           title="Retry"
         >
           <RefreshCw className="h-3 w-3" />

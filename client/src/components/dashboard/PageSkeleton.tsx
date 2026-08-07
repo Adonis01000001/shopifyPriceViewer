@@ -21,11 +21,14 @@ export function PageSkeleton({
       aria-label="Loading page content"
     >
       {title && (
-        <div className="page-header" aria-hidden="true">
-          <div>
-            <Skeleton className="h-2.5 w-28 rounded-full" />
-            <Skeleton className="mt-3 h-9 w-52 rounded-lg" />
-            <Skeleton className="mt-3 h-4 w-80 max-w-full rounded-full" />
+        <div className="workspace-page-header" aria-hidden="true">
+          <div className="workspace-page-heading">
+            <Skeleton className="h-11 w-11 rounded-xl" />
+            <div>
+              <Skeleton className="h-2.5 w-28 rounded-full" />
+              <Skeleton className="mt-3 h-9 w-52 rounded-lg" />
+              <Skeleton className="mt-3 h-4 w-80 max-w-full rounded-full" />
+            </div>
           </div>
         </div>
       )}
@@ -64,7 +67,7 @@ export function TableSkeleton({
 }) {
   return (
     <div className="glass-panel overflow-hidden rounded-2xl">
-      <div className="px-5 py-4 border-b border-white/[0.04]">
+      <div className="bg-surface-container-low px-5 py-4">
         <Skeleton className="h-4 w-32" />
       </div>
       <div className="divide-y divide-outline-variant/20">

@@ -24,6 +24,7 @@ import {
   ExternalLink,
   Zap,
   RotateCcw,
+  MoreHorizontal,
 } from "lucide-react";
 import {
   Empty,
@@ -60,24 +61,24 @@ const POSITION_STYLES: Record<
   { bg: string; text: string; border: string }
 > = {
   LEADING: {
-    bg: "bg-[#21a732]/10",
-    text: "text-[#21a732]",
-    border: "border-[#21a732]/30",
+    bg: "bg-[var(--success)]/10",
+    text: "text-[var(--success)]",
+    border: "border-[var(--success)]/30",
   },
   COMPETITIVE: {
-    bg: "bg-blue-500/10",
-    text: "text-blue-400",
-    border: "border-blue-500/30",
+    bg: "bg-secondary",
+    text: "text-secondary-foreground",
+    border: "border-secondary",
   },
   OVERPRICED: {
-    bg: "bg-[#93000a]/15",
-    text: "text-[#ffb4ab]",
-    border: "border-[#93000a]/30",
+    bg: "bg-[var(--destructive)]/15",
+    text: "text-[var(--destructive)]",
+    border: "border-[var(--destructive)]/30",
   },
   INSUFFICIENT_DATA: {
-    bg: "bg-gray-500/10",
-    text: "text-gray-400",
-    border: "border-gray-500/30",
+    bg: "bg-muted",
+    text: "text-muted-foreground",
+    border: "border-border",
   },
 };
 
@@ -96,7 +97,7 @@ function MarketPositionBadge({ productId }: { productId: string }) {
 
   if (isLoading) {
     return (
-      <span className="inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-bold label-caps bg-surface-container-highest text-muted-foreground">
+      <span className="inline-flex min-h-6 items-center rounded-full border border-border bg-surface-container-highest px-2 py-0.5 text-[10px] font-bold label-caps text-muted-foreground">
         ...
       </span>
     );
@@ -104,7 +105,7 @@ function MarketPositionBadge({ productId }: { productId: string }) {
 
   if (!data?.position) {
     return (
-      <span className="inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-bold label-caps bg-gray-500/10 text-gray-400 border border-gray-500/30">
+      <span className="inline-flex min-h-6 items-center rounded-full border border-border bg-muted px-2 py-0.5 text-[10px] font-bold label-caps text-muted-foreground">
         N/A
       </span>
     );
@@ -135,15 +136,17 @@ const statusConfig: Record<string, { label: string; className: string }> = {
   },
   underpriced: {
     label: "Underpriced",
-    className: "bg-blue-500/10 text-blue-400 border border-blue-500/20",
+    className: "bg-secondary text-secondary-foreground border border-secondary",
   },
   overpriced: {
     label: "Overpriced",
-    className: "bg-[#93000a]/15 text-[#ffb4ab] border border-[#93000a]/30",
+    className:
+      "bg-[var(--destructive)]/15 text-[var(--destructive)] border border-[var(--destructive)]/30",
   },
   alert: {
     label: "Alert",
-    className: "bg-[#93000a]/20 text-[#ffb4ab] border border-[#93000a]/30",
+    className:
+      "bg-[var(--destructive)]/20 text-[var(--destructive)] border border-[var(--destructive)]/30",
   },
 };
 
@@ -249,17 +252,17 @@ export default function Products() {
   if (error) {
     return (
       <div className="space-y-8">
-        <div className="page-header">
-          <div>
-            <p className="page-kicker">Catalog / merchandising</p>
-            <h2 className="page-title">Product inventory</h2>
-            <p className="page-description">
-              Failed to load products. Please try again.
-            </p>
-          </div>
-        </div>
+        <PageHeader
+          eyebrow="Catalog / merchandising"
+          title="Product inventory"
+          description="Failed to load products. Please try again."
+          icon={Package}
+        />
         <div className="glass-card rounded-2xl p-8 text-center sm:p-12">
-          <p className="text-[#ffb4ab] text-sm mb-3">{error.message}</p>
+          <div className="mx-auto mb-4 flex size-12 items-center justify-center rounded-2xl bg-destructive/10 text-destructive">
+            <Package className="size-5" />
+          </div>
+          <p className="mb-3 text-sm text-destructive">{error.message}</p>
           <Button variant="outline" size="sm" onClick={() => refetch()}>
             <RotateCcw className="h-3.5 w-3.5 mr-1.5" />
             Retry
@@ -281,15 +284,12 @@ export default function Products() {
   if (products.length === 0) {
     return (
       <div className="space-y-8">
-        <div className="page-header">
-          <div>
-            <p className="page-kicker">Catalog / merchandising</p>
-            <h2 className="page-title">Product inventory</h2>
-            <p className="page-description">
-              No products tracked yet. Start by connecting your Shopify store.
-            </p>
-          </div>
-        </div>
+        <PageHeader
+          eyebrow="Catalog / merchandising"
+          title="Product inventory"
+          description="No products tracked yet. Start by connecting your Shopify store."
+          icon={Package}
+        />
         <Empty>
           <EmptyMedia variant="icon">
             <Package className="h-6 w-6" />
@@ -304,9 +304,9 @@ export default function Products() {
           <EmptyContent>
             <a
               href="/api/shopify/login"
-              className="inline-flex items-center justify-center rounded-lg bg-primary text-primary-foreground text-sm font-medium h-9 px-4 hover:bg-primary/90 transition-colors"
+              className="inline-flex min-h-11 items-center justify-center gap-2 rounded-[0.72rem] bg-primary px-4 text-sm font-semibold text-primary-foreground shadow-[var(--shadow-button)] transition-[background-color,box-shadow,transform] hover:-translate-y-px hover:bg-primary/90 hover:shadow-[var(--shadow-button-hover)] focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/35 active:translate-y-0"
             >
-              <Database className="h-4 w-4 mr-2" />
+              <Database className="size-4" />
               Connect Shopify Store
             </a>
           </EmptyContent>
@@ -317,23 +317,25 @@ export default function Products() {
 
   return (
     <div className="space-y-8">
-      <div className="page-header">
-        <div>
-          <p className="page-kicker">Catalog / merchandising</p>
-          <h2 className="page-title">Product inventory</h2>
-          <p className="page-description">
+      <PageHeader
+        eyebrow="Catalog / merchandising"
+        title="Product inventory"
+        description={
+          <>
             Manage {products.length} active listings and keep your pricing
             position visible at a glance.
-          </p>
-        </div>
+          </>
+        }
+        icon={Package}
+      >
         <div className="hidden shrink-0 rounded-full border border-border bg-card/60 px-3 py-1.5 text-xs text-muted-foreground sm:block">
           <span className="data-value text-foreground">{products.length}</span>{" "}
           active listings
         </div>
-      </div>
+      </PageHeader>
 
       {/* Summary Cards */}
-      <div className="grid gap-4 sm:grid-cols-4">
+      <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
         {(["optimal", "underpriced", "overpriced", "alert"] as const).map(
           status => {
             const count = statusCounts[status];
@@ -342,19 +344,19 @@ export default function Products() {
             return (
               <div
                 key={status}
-                className="glass-card p-5 flex items-center justify-between"
+                className="glass-card flex items-center justify-between p-5"
               >
                 <div>
-                  <p className="text-2xl font-bold font-mono tracking-tight">
+                  <p className="data-value text-2xl font-bold tracking-tight">
                     {count}
                   </p>
-                  <p className="label-caps text-muted-foreground/60">
+                  <p className="mt-1 label-caps text-muted-foreground">
                     {config.label}
                   </p>
                 </div>
                 <span
                   className={cn(
-                    "inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-mono font-bold",
+                    "inline-flex min-h-6 items-center rounded-full px-2.5 py-0.5 text-[10px] font-mono font-bold",
                     config.className
                   )}
                 >
@@ -367,20 +369,20 @@ export default function Products() {
       </div>
 
       {/* Filter Bar */}
-      <div className="surface-toolbar flex-wrap">
+      <div className="surface-toolbar flex flex-wrap items-center gap-2.5 p-3">
         <div className="relative w-full flex-1 sm:min-w-[200px] sm:max-w-xs">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+          <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
           <Input
             name="search-products"
             placeholder="Search products or SKUs..."
             aria-label="Search products or SKUs"
-            className="pl-9 h-9 bg-surface-container border-outline-variant"
+            className="h-11 bg-surface-container pl-9"
             value={searchQuery}
             onChange={e => setSearchQuery(e.target.value)}
           />
         </div>
         <Select value={categoryFilter} onValueChange={setCategoryFilter}>
-          <SelectTrigger className="h-9 w-full bg-surface-container border-outline-variant sm:w-[150px]">
+          <SelectTrigger className="h-11 w-full bg-surface-container sm:w-[150px]">
             <SelectValue placeholder="Category" />
           </SelectTrigger>
           <SelectContent>
@@ -393,7 +395,7 @@ export default function Products() {
           </SelectContent>
         </Select>
         <Select value={statusFilter} onValueChange={setStatusFilter}>
-          <SelectTrigger className="h-9 w-full bg-surface-container border-outline-variant sm:w-[130px]">
+          <SelectTrigger className="h-11 w-full bg-surface-container sm:w-[130px]">
             <SelectValue placeholder="Status" />
           </SelectTrigger>
           <SelectContent>
@@ -407,7 +409,7 @@ export default function Products() {
         <Button
           variant="outline"
           size="sm"
-          className="h-9 border-outline-variant"
+          className="h-11"
           onClick={handleExport}
         >
           <Download className="mr-1.5 h-3.5 w-3.5" />
@@ -417,38 +419,38 @@ export default function Products() {
       </div>
 
       {/* Table */}
-      <div className="glass-panel rounded-lg overflow-hidden">
+      <div className="glass-panel overflow-hidden">
         <div className="overflow-x-auto">
           <Table>
             <TableHeader>
-              <TableRow className="bg-surface-container-high border-b border-outline-variant/30">
-                <TableHead className="pl-5 label-caps text-muted-foreground font-normal">
+              <TableRow className="border-b border-border/70 bg-surface-container-high">
+                <TableHead className="pl-5 label-caps font-normal text-muted-foreground">
                   Product
                 </TableHead>
-                <TableHead className="label-caps text-muted-foreground font-normal">
+                <TableHead className="label-caps font-normal text-muted-foreground">
                   SKU
                 </TableHead>
-                <TableHead className="text-right label-caps text-muted-foreground font-normal">
+                <TableHead className="text-right label-caps font-normal text-muted-foreground">
                   Price
                 </TableHead>
-                <TableHead className="text-right label-caps text-muted-foreground font-normal hidden sm:table-cell">
+                <TableHead className="hidden text-right label-caps font-normal text-muted-foreground sm:table-cell">
                   Market Low
                 </TableHead>
-                <TableHead className="text-center label-caps text-muted-foreground font-normal hidden sm:table-cell">
+                <TableHead className="hidden text-center label-caps font-normal text-muted-foreground sm:table-cell">
                   Delta
                 </TableHead>
-                <TableHead className="text-center label-caps text-muted-foreground font-normal">
+                <TableHead className="text-center label-caps font-normal text-muted-foreground">
                   Status
                 </TableHead>
-                <TableHead className="text-center label-caps text-muted-foreground font-normal">
+                <TableHead className="text-center label-caps font-normal text-muted-foreground">
                   Position
                 </TableHead>
-                <TableHead className="pr-5 label-caps text-muted-foreground font-normal text-right">
+                <TableHead className="pr-5 text-right label-caps font-normal text-muted-foreground">
                   Actions
                 </TableHead>
               </TableRow>
             </TableHeader>
-            <TableBody className="divide-y divide-outline-variant/20">
+            <TableBody className="divide-y divide-border/60">
               {filtered.length > 0 ? (
                 filtered.map(product => {
                   const status =
@@ -456,35 +458,35 @@ export default function Products() {
                   return (
                     <TableRow
                       key={product.id}
-                      className="hover:bg-white/[0.02] transition-colors"
+                      className="transition-colors hover:bg-surface-container-low"
                     >
-                      <TableCell className="pl-5 py-3">
+                      <TableCell className="py-3 pl-5">
                         <div className="flex items-center gap-3">
                           {product.imageUrl ? (
                             <img
                               src={product.imageUrl}
                               alt=""
-                              className="h-9 w-9 rounded-lg border border-border object-cover"
+                              className="size-10 rounded-xl border border-border object-cover shadow-sm"
                             />
                           ) : (
-                            <div className="flex h-9 w-9 items-center justify-center rounded-lg border border-outline-variant bg-surface-container-highest text-xs font-bold text-muted-foreground">
+                            <div className="flex size-10 items-center justify-center rounded-xl border border-outline-variant bg-surface-container-highest text-xs font-bold text-muted-foreground shadow-sm">
                               {product.title.charAt(0).toUpperCase()}
                             </div>
                           )}
                           <div>
-                            <p className="max-w-[240px] truncate text-[13px] font-medium">
+                            <p className="max-w-[240px] truncate text-sm font-semibold leading-5">
                               {product.title}
                             </p>
-                            <p className="text-[10px] text-muted-foreground">
+                            <p className="mt-0.5 text-[10px] text-muted-foreground">
                               {product.category || "—"}
                             </p>
                           </div>
                         </div>
                       </TableCell>
-                      <TableCell className="py-3 font-mono text-[12px] text-muted-foreground text-center">
+                      <TableCell className="py-3 text-center font-mono text-[12px] text-muted-foreground">
                         {product.sku || "—"}
                       </TableCell>
-                      <TableCell className="py-3 text-right">
+                      <TableCell className="py-3 text-right align-middle">
                         {editingPriceId === product.id ? (
                           <Input
                             ref={priceInputRef}
@@ -499,13 +501,13 @@ export default function Products() {
                                 setEditingPriceId(null);
                               }
                             }}
-                            className="h-8 w-24 font-mono text-[13px] text-right bg-surface-container border-outline-variant"
+                            className="h-10 w-24 bg-surface-container text-right font-mono text-[13px]"
                           />
                         ) : (
                           <button
                             type="button"
                             aria-label={"Edit price for " + product.title}
-                            className="font-mono text-[13px] font-medium hover:text-primary transition-colors cursor-text"
+                            className="inline-flex min-h-11 items-center rounded-lg px-2 font-mono text-[13px] font-medium transition-[background-color,color] hover:bg-primary/10 hover:text-primary focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/35 cursor-text"
                             onClick={() =>
                               startEditing(product.id, product.price)
                             }
@@ -514,33 +516,33 @@ export default function Products() {
                           </button>
                         )}
                       </TableCell>
-                      <TableCell className="py-3 font-mono text-[13px] text-muted-foreground text-right hidden sm:table-cell">
+                      <TableCell className="hidden py-3 text-right font-mono text-[13px] text-muted-foreground sm:table-cell">
                         —
                       </TableCell>
-                      <TableCell className="py-3 text-center hidden sm:table-cell">
+                      <TableCell className="hidden py-3 text-center sm:table-cell">
                         <span className="font-mono text-[12px] text-muted-foreground">
                           —
                         </span>
                       </TableCell>
-                      <TableCell className="py-3 text-center">
+                      <TableCell className="py-3 text-center align-middle">
                         <span
                           className={cn(
-                            "inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-bold label-caps",
+                            "inline-flex min-h-6 items-center rounded-full border px-2 py-0.5 text-[10px] font-bold label-caps",
                             status.className
                           )}
                         >
                           {status.label.toUpperCase()}
                         </span>
                       </TableCell>
-                      <TableCell className="py-3 text-center">
+                      <TableCell className="py-3 text-center align-middle">
                         <MarketPositionBadge productId={product.id} />
                       </TableCell>
-                      <TableCell className="pr-5 py-3 text-right">
-                        <div className="flex items-center justify-end gap-2 text-muted-foreground">
+                      <TableCell className="py-3 pr-5 text-right align-middle">
+                        <div className="flex items-center justify-end gap-1 text-muted-foreground">
                           <button
                             type="button"
                             aria-label={"Scout prices for " + product.title}
-                            className="hover:text-primary transition-colors text-sm"
+                            className="flex size-11 items-center justify-center rounded-lg transition-[background-color,color] hover:bg-primary/10 hover:text-primary focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/35"
                             title="Scout prices"
                             onClick={() =>
                               navigate(`/scout?productId=${product.id}`)
@@ -551,7 +553,7 @@ export default function Products() {
                           <button
                             type="button"
                             aria-label={"View details for " + product.title}
-                            className="hover:text-primary transition-colors text-sm"
+                            className="flex size-11 items-center justify-center rounded-lg transition-[background-color,color] hover:bg-primary/10 hover:text-primary focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/35"
                             title="View details"
                             onClick={() => navigate(`/products/${product.id}`)}
                           >
@@ -562,9 +564,9 @@ export default function Products() {
                               <button
                                 type="button"
                                 aria-label={"More actions for " + product.title}
-                                className="hover:text-primary transition-colors text-sm p-1"
+                                className="flex size-11 items-center justify-center rounded-lg transition-[background-color,color] hover:bg-primary/10 hover:text-primary focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/35"
                               >
-                                ⋮
+                                <MoreHorizontal className="size-4" />
                               </button>
                             </DropdownMenuTrigger>
                             <DropdownMenuContent align="end">
@@ -622,3 +624,4 @@ export default function Products() {
     </div>
   );
 }
+import { PageHeader } from "@/components/workspace/PageHeader";

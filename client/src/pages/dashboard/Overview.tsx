@@ -204,20 +204,16 @@ export default function Overview() {
 
   return (
     <div className="space-y-8">
-      <div className="page-header">
-        <div>
-          <p className="page-kicker">Decision workspace</p>
-          <h2 className="page-title">Overview</h2>
-          <p className="page-description">
-            See what changed, what matters, and which pricing decision deserves
-            your attention next.
-          </p>
-        </div>
+      <PageHeader
+        eyebrow="Decision workspace"
+        title="Overview"
+        description="See what changed, what matters, and which pricing decision deserves your attention next."
+      >
         <div className="hidden items-center gap-2 rounded-full border border-border bg-card/60 px-3 py-1.5 text-xs text-muted-foreground sm:flex">
           <span className="h-1.5 w-1.5 rounded-full bg-primary" />
           Monitoring active
         </div>
-      </div>
+      </PageHeader>
 
       {/* Merchant-first action center: one obvious decision before the metrics. */}
       <section className="glass-panel rounded-xl border-primary/25 bg-primary/[0.06] p-5 shadow-[0_18px_50px_-36px_var(--primary)] sm:p-6">
@@ -312,8 +308,8 @@ export default function Overview() {
             <span className="label-caps text-muted-foreground/60">
               Avg. Price
             </span>
-            <div className="bg-[var(--color-tertiary,#21a732)]/15 p-1.5 rounded">
-              <DollarSign className="h-5 w-5 text-[var(--color-tertiary,#21a732)]" />
+            <div className="bg-[var(--color-tertiary,var(--success))]/15 p-1.5 rounded">
+              <DollarSign className="h-5 w-5 text-[var(--color-tertiary,var(--success))]" />
             </div>
           </div>
           <p className="text-2xl font-bold font-mono tracking-tight leading-none">
@@ -326,8 +322,8 @@ export default function Overview() {
             <span className="label-caps text-muted-foreground/60">
               Active Alerts
             </span>
-            <div className="bg-[#93000a]/15 p-1.5 rounded">
-              <AlertTriangle className="h-5 w-5 text-[#ffb4ab]" />
+            <div className="bg-[var(--destructive)]/15 p-1.5 rounded">
+              <AlertTriangle className="h-5 w-5 text-[var(--destructive)]" />
             </div>
           </div>
           <p className="text-2xl font-bold font-mono tracking-tight leading-none">
@@ -342,8 +338,8 @@ export default function Overview() {
             <span className="label-caps text-muted-foreground/60">
               Competitors
             </span>
-            <div className="bg-[var(--color-secondary,#c0c1ff)]/15 p-1.5 rounded">
-              <Users className="h-5 w-5 text-[var(--color-secondary,#c0c1ff)]" />
+            <div className="bg-[var(--color-secondary,var(--primary))]/15 p-1.5 rounded">
+              <Users className="h-5 w-5 text-[var(--color-secondary,var(--primary))]" />
             </div>
           </div>
           <p className="text-2xl font-bold font-mono tracking-tight leading-none">
@@ -368,19 +364,19 @@ export default function Overview() {
         {/* Pricing Insights */}
         <div className="lg:col-span-8">
           <div className="glass-panel rounded-lg overflow-hidden">
-            <div className="px-5 py-4 border-b border-white/[0.04] bg-surface-container/50 flex justify-between items-center">
+            <div className="px-5 py-4 bg-surface-container/50 flex justify-between items-center">
               <div className="flex items-center gap-3">
                 <LineChart className="h-4 w-4 text-primary" />
                 <h3 className="text-[15px] font-semibold">Pricing Insights</h3>
               </div>
-              <span className="label-caps text-[10px] bg-[var(--color-secondary,#c0c1ff)]/20 text-[var(--color-secondary,#c0c1ff)] px-2 py-0.5 rounded border border-[var(--color-secondary,#c0c1ff)]/20">
+              <span className="label-caps text-[10px] bg-[var(--color-secondary,var(--primary))]/20 text-[var(--color-secondary,var(--primary))] px-2 py-0.5 rounded border border-[var(--color-secondary,var(--primary))]/20">
                 AI POWERED
               </span>
             </div>
             <div className="overflow-x-auto">
               <table className="w-full text-left border-collapse">
                 <thead>
-                  <tr className="bg-surface-container/30 border-b border-white/[0.04] label-caps text-muted-foreground">
+                  <tr className="bg-surface-container/30 label-caps text-muted-foreground">
                     <th className="px-5 py-3 font-normal">Product</th>
                     <th className="px-5 py-3 font-normal">Current</th>
                     <th className="px-5 py-3 font-normal">Target</th>
@@ -403,7 +399,7 @@ export default function Overview() {
                       return (
                         <tr
                           key={insight.id}
-                          className="hover:bg-white/[0.02] transition-colors"
+                          className="transition-colors hover:bg-surface-container-low"
                         >
                           <td className="px-5 py-3">
                             <div className="flex items-center gap-3">
@@ -432,7 +428,7 @@ export default function Overview() {
                             className={cn(
                               "px-5 py-3 font-mono text-[13px] font-medium",
                               priceChange < 0
-                                ? "text-[#ffb4ab]"
+                                ? "text-[var(--destructive)]"
                                 : "text-primary"
                             )}
                           >
@@ -442,7 +438,8 @@ export default function Overview() {
                           <td className="px-5 py-3">
                             <div className="flex justify-end gap-2">
                               <button
-                                className="p-1.5 hover:bg-[#93000a]/20 text-muted-foreground hover:text-[#ffb4ab] rounded text-sm disabled:opacity-50"
+                                type="button"
+                                className="p-1.5 hover:bg-[var(--destructive)]/20 text-muted-foreground hover:text-[var(--destructive)] rounded text-sm disabled:opacity-50"
                                 onClick={() =>
                                   dismissRecommendation.mutate({
                                     id: insight.id,
@@ -457,6 +454,7 @@ export default function Overview() {
                                 {"×"}
                               </button>
                               <button
+                                type="button"
                                 className="px-3 py-1 bg-primary text-primary-foreground text-[10px] font-bold label-caps rounded hover:brightness-110 disabled:opacity-50"
                                 onClick={() =>
                                   implementRecommendation.mutate({
@@ -479,7 +477,7 @@ export default function Overview() {
                     allProducts.slice(0, 10).map(product => (
                       <tr
                         key={product.id}
-                        className="hover:bg-white/[0.02] transition-colors"
+                        className="transition-colors hover:bg-surface-container-low"
                       >
                         <td className="px-5 py-3">
                           <div className="flex items-center gap-3">
@@ -512,6 +510,7 @@ export default function Overview() {
                         <td className="px-5 py-3">
                           <div className="flex justify-end">
                             <button
+                              type="button"
                               className="px-3 py-1 bg-primary/10 text-primary text-[10px] font-bold label-caps rounded hover:bg-primary/20 disabled:opacity-50"
                               onClick={() =>
                                 generateRecommendation.mutate({
@@ -542,8 +541,9 @@ export default function Overview() {
                 </tbody>
               </table>
             </div>
-            <div className="p-3 border-t border-white/[0.04] text-center">
+            <div className="p-3 text-center">
               <button
+                type="button"
                 className="text-primary label-caps text-[11px] hover:underline"
                 onClick={() => (window.location.href = "/products")}
               >
@@ -556,8 +556,8 @@ export default function Overview() {
         {/* Competitor Movement Feed */}
         <div className="lg:col-span-4">
           <div className="glass-panel rounded-lg flex flex-col h-full">
-            <div className="px-5 py-4 border-b border-white/[0.04] bg-surface-container/50 flex items-center gap-3">
-              <RefreshCw className="h-4 w-4 text-[#21a732]" />
+            <div className="px-5 py-4 bg-surface-container/50 flex items-center gap-3">
+              <RefreshCw className="h-4 w-4 text-[var(--success)]" />
               <h3 className="text-[15px] font-semibold">Competitor Movement</h3>
             </div>
             <div className="p-3">
@@ -574,7 +574,7 @@ export default function Overview() {
                   {movementItems.map(item => (
                     <div
                       key={item.id}
-                      className="flex items-start gap-2.5 rounded-lg px-2 py-2 hover:bg-white/[0.02] transition-colors"
+                      className="flex items-start gap-2.5 rounded-lg px-2 py-2 transition-colors hover:bg-surface-container-low"
                     >
                       <div
                         className={cn(
@@ -582,16 +582,16 @@ export default function Overview() {
                           item.type === "price_drop"
                             ? "bg-primary/[0.12]"
                             : item.type === "price_increase"
-                              ? "bg-[#93000a]/15"
-                              : "bg-[var(--color-secondary,#c0c1ff)]/15"
+                              ? "bg-[var(--destructive)]/15"
+                              : "bg-[var(--color-secondary,var(--primary))]/15"
                         )}
                       >
                         {item.type === "price_drop" ? (
                           <TrendingDown className="h-3.5 w-3.5 text-primary" />
                         ) : item.type === "price_increase" ? (
-                          <TrendingUp className="h-3.5 w-3.5 text-[#ffb4ab]" />
+                          <TrendingUp className="h-3.5 w-3.5 text-[var(--destructive)]" />
                         ) : (
-                          <RefreshCw className="h-3.5 w-3.5 text-[var(--color-secondary,#c0c1ff)]" />
+                          <RefreshCw className="h-3.5 w-3.5 text-[var(--color-secondary,var(--primary))]" />
                         )}
                       </div>
                       <div className="min-w-0 flex-1">
@@ -617,7 +617,7 @@ export default function Overview() {
                               item.type === "price_drop"
                                 ? "text-primary"
                                 : item.type === "price_increase"
-                                  ? "text-[#ffb4ab]"
+                                  ? "text-[var(--destructive)]"
                                   : ""
                             )}
                           >
@@ -647,13 +647,13 @@ export default function Overview() {
 
       {/* Notifications */}
       <div className="glass-panel rounded-lg overflow-hidden">
-        <div className="px-5 py-4 border-b border-white/[0.04] bg-surface-container/50 flex items-center justify-between">
+        <div className="px-5 py-4 bg-surface-container/50 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <Bell className="h-4 w-4 text-[#ffb4ab]" />
+            <Bell className="h-4 w-4 text-[var(--destructive)]" />
             <h3 className="text-[15px] font-semibold">Notifications</h3>
           </div>
           {notificationItems.length > 0 && (
-            <span className="label-caps text-[10px] bg-[#93000a]/15 text-[#ffb4ab] px-2 py-0.5 rounded border border-[#93000a]/20">
+            <span className="label-caps text-[10px] bg-[var(--destructive)]/15 text-[var(--destructive)] px-2 py-0.5 rounded border border-[var(--destructive)]/20">
               {notificationItems.length} unread
             </span>
           )}
@@ -663,13 +663,13 @@ export default function Overview() {
             {notificationItems.map(alert => (
               <div
                 key={alert.id}
-                className="px-5 py-3 flex items-start gap-3 hover:bg-white/[0.02] transition-colors"
+                className="flex items-start gap-3 px-5 py-3 transition-colors hover:bg-surface-container-low"
               >
                 <div
                   className={cn(
                     "mt-0.5 h-8 w-8 rounded-lg flex items-center justify-center shrink-0",
                     alert.severity === "critical" || alert.severity === "high"
-                      ? "bg-[#93000a]/15"
+                      ? "bg-[var(--destructive)]/15"
                       : "bg-primary/[0.12]"
                   )}
                 >
@@ -677,7 +677,7 @@ export default function Overview() {
                     className={cn(
                       "h-4 w-4",
                       alert.severity === "critical" || alert.severity === "high"
-                        ? "text-[#ffb4ab]"
+                        ? "text-[var(--destructive)]"
                         : "text-primary"
                     )}
                   />
@@ -691,11 +691,11 @@ export default function Overview() {
                       className={cn(
                         "label-caps text-[9px] border",
                         alert.severity === "critical"
-                          ? "bg-[#93000a]/20 text-[#ffb4ab] border-[#93000a]/30"
+                          ? "bg-[var(--destructive)]/20 text-[var(--destructive)] border-[var(--destructive)]/30"
                           : alert.severity === "high"
-                            ? "bg-[#93000a]/15 text-[#ffb4ab]/80 border-[#ffb4ab]/20"
+                            ? "bg-[var(--destructive)]/15 text-[var(--destructive)]/80 border-[var(--destructive)]/20"
                             : alert.severity === "medium"
-                              ? "bg-[#63e063]/10 text-[#21a732] border-[#63e063]/20"
+                              ? "bg-[var(--success)]/10 text-[var(--success)] border-[var(--success)]/20"
                               : "bg-blue-500/10 text-blue-400 border-blue-500/20"
                       )}
                     >
@@ -710,6 +710,7 @@ export default function Overview() {
                   </p>
                 </div>
                 <button
+                  type="button"
                   className="p-1.5 rounded text-muted-foreground hover:text-primary hover:bg-primary/[0.08] disabled:opacity-50"
                   onClick={() => markAlertRead.mutate({ id: alert.id })}
                   disabled={markAlertRead.isPending}
@@ -802,3 +803,4 @@ export default function Overview() {
     </div>
   );
 }
+import { PageHeader } from "@/components/workspace/PageHeader";

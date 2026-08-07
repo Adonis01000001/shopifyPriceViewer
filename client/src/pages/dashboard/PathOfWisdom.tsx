@@ -66,24 +66,12 @@ export default function PathOfWisdom() {
 
   return (
     <div className="space-y-8">
-      {/* Header */}
-      <div className="page-header">
-        <div>
-          <p className="page-kicker">Explainable AI</p>
-          <div className="flex items-center gap-3">
-            <h2 className="page-title flex items-center gap-3">
-              <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary/15 ring-1 ring-primary/20">
-                <Brain className="h-5 w-5 text-primary" />
-              </span>
-              Path of Wisdom
-            </h2>
-            <Sparkles className="h-4 w-4 text-yellow-400" />
-          </div>
-          <p className="page-description">
-            AI-powered portfolio pricing analysis and strategic recommendations
-          </p>
-        </div>
-      </div>
+      <PageHeader
+        eyebrow="Explainable AI"
+        title="Path of Wisdom"
+        description="AI-powered portfolio pricing analysis and strategic recommendations."
+        icon={Brain}
+      />
 
       {isLoading || (!hasSavedResult && analyzeMutation.isPending) ? (
         <div className="glass-panel rounded-lg p-16 text-center">
@@ -166,7 +154,10 @@ export default function PathOfWisdom() {
           )}
           {!analyzeMutation.isPending && loadError && (
             <div className="rounded-lg border border-yellow-500/20 bg-yellow-500/5 px-4 py-3 text-sm text-yellow-200 flex items-center justify-between gap-3">
-              <span>Could not refresh the saved analysis. The last loaded result is still shown.</span>
+              <span>
+                Could not refresh the saved analysis. The last loaded result is
+                still shown.
+              </span>
               <Button
                 variant="outline"
                 size="sm"
@@ -178,7 +169,9 @@ export default function PathOfWisdom() {
           )}
           {!analyzeMutation.isPending && runError && (
             <div className="rounded-lg border border-yellow-500/20 bg-yellow-500/5 px-4 py-3 text-sm text-yellow-200 flex items-center justify-between gap-3">
-              <span>{runError} Your previous saved analysis is still shown.</span>
+              <span>
+                {runError} Your previous saved analysis is still shown.
+              </span>
               <Button variant="outline" size="sm" onClick={handleAnalyze}>
                 Try Again
               </Button>
@@ -186,7 +179,7 @@ export default function PathOfWisdom() {
           )}
           {/* Summary Card */}
           <div className="glass-panel rounded-lg overflow-hidden border border-primary/10">
-            <div className="px-5 py-3 border-b border-white/[0.04] bg-surface-container/50 flex items-center gap-2">
+            <div className="px-5 py-3 bg-surface-container/50 flex items-center gap-2">
               <BarChart3 className="h-4 w-4 text-primary" />
               <h3 className="text-[14px] font-semibold">Executive Summary</h3>
               <Badge
@@ -205,7 +198,7 @@ export default function PathOfWisdom() {
 
           {/* Market Context */}
           <div className="glass-panel rounded-lg overflow-hidden">
-            <div className="px-5 py-3 border-b border-white/[0.04] bg-surface-container/50 flex items-center gap-2">
+            <div className="px-5 py-3 bg-surface-container/50 flex items-center gap-2">
               <Target className="h-4 w-4 text-primary" />
               <h3 className="text-[14px] font-semibold">Market Landscape</h3>
             </div>
@@ -218,17 +211,17 @@ export default function PathOfWisdom() {
 
           {/* Opportunities & Risks */}
           <div className="grid gap-6 md:grid-cols-2">
-            <div className="glass-panel rounded-lg overflow-hidden border border-[#21a732]/20">
-              <div className="px-5 py-3 border-b border-white/[0.04] bg-[#21a732]/5 flex items-center gap-2">
-                <Lightbulb className="h-4 w-4 text-[#21a732]" />
-                <h3 className="text-[14px] font-semibold text-[#21a732]">
+            <div className="glass-panel rounded-lg overflow-hidden border border-[var(--success)]/20">
+              <div className="px-5 py-3 bg-[var(--success)]/5 flex items-center gap-2">
+                <Lightbulb className="h-4 w-4 text-[var(--success)]" />
+                <h3 className="text-[14px] font-semibold text-[var(--success)]">
                   Top Opportunities
                 </h3>
               </div>
               <div className="divide-y divide-outline-variant/20">
                 {wisdomData.analysis.topOpportunities.map((item, i) => (
                   <div key={i} className="px-5 py-3 flex items-start gap-3">
-                    <span className="h-5 w-5 rounded-full bg-[#21a732]/10 text-[#21a732] text-[10px] font-bold flex items-center justify-center shrink-0 mt-0.5">
+                    <span className="h-5 w-5 rounded-full bg-[var(--success)]/10 text-[var(--success)] text-[10px] font-bold flex items-center justify-center shrink-0 mt-0.5">
                       {i + 1}
                     </span>
                     <p className="text-[12px] text-muted-foreground leading-relaxed">
@@ -244,17 +237,17 @@ export default function PathOfWisdom() {
               </div>
             </div>
 
-            <div className="glass-panel rounded-lg overflow-hidden border border-[#93000a]/20">
-              <div className="px-5 py-3 border-b border-white/[0.04] bg-[#93000a]/5 flex items-center gap-2">
-                <AlertTriangle className="h-4 w-4 text-[#ffb4ab]" />
-                <h3 className="text-[14px] font-semibold text-[#ffb4ab]">
+            <div className="glass-panel rounded-lg overflow-hidden border border-[var(--destructive)]/20">
+              <div className="px-5 py-3 bg-[var(--destructive)]/5 flex items-center gap-2">
+                <AlertTriangle className="h-4 w-4 text-[var(--destructive)]" />
+                <h3 className="text-[14px] font-semibold text-[var(--destructive)]">
                   Key Risks
                 </h3>
               </div>
               <div className="divide-y divide-outline-variant/20">
                 {wisdomData.analysis.keyRisks.map((item, i) => (
                   <div key={i} className="px-5 py-3 flex items-start gap-3">
-                    <span className="h-5 w-5 rounded-full bg-[#93000a]/15 text-[#ffb4ab] text-[10px] font-bold flex items-center justify-center shrink-0 mt-0.5">
+                    <span className="h-5 w-5 rounded-full bg-[var(--destructive)]/15 text-[var(--destructive)] text-[10px] font-bold flex items-center justify-center shrink-0 mt-0.5">
                       {i + 1}
                     </span>
                     <p className="text-[12px] text-muted-foreground leading-relaxed">
@@ -286,7 +279,7 @@ export default function PathOfWisdom() {
               const priceChange = rec.priceChange;
               const confidenceColor =
                 rec.confidence === "high"
-                  ? "text-[#21a732]"
+                  ? "text-[var(--success)]"
                   : rec.confidence === "medium"
                     ? "text-yellow-400"
                     : "text-muted-foreground";
@@ -295,7 +288,7 @@ export default function PathOfWisdom() {
                   key={rec.productId}
                   className="glass-panel rounded-lg overflow-hidden"
                 >
-                  <div className="px-5 py-3 border-b border-white/[0.04] bg-surface-container/50 flex items-center justify-between">
+                  <div className="px-5 py-3 bg-surface-container/50 flex items-center justify-between">
                     <div className="flex items-center gap-2 min-w-0">
                       <Target className="h-4 w-4 text-primary shrink-0" />
                       <h4 className="text-[13px] font-semibold truncate">
@@ -308,13 +301,13 @@ export default function PathOfWisdom() {
                           "inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-bold label-caps",
                           confidenceColor,
                           rec.confidence === "high"
-                            ? "bg-[#21a732]/10"
+                            ? "bg-[var(--success)]/10"
                             : rec.confidence === "medium"
                               ? "bg-yellow-500/10"
                               : "bg-gray-500/10",
                           "border",
                           rec.confidence === "high"
-                            ? "border-[#21a732]/30"
+                            ? "border-[var(--success)]/30"
                             : rec.confidence === "medium"
                               ? "border-yellow-500/30"
                               : "border-gray-500/30"
@@ -355,9 +348,9 @@ export default function PathOfWisdom() {
                       </div>
                       <div className="flex items-center gap-1.5">
                         {priceChange > 0 ? (
-                          <TrendingUp className="h-4 w-4 text-[#ffb4ab]" />
+                          <TrendingUp className="h-4 w-4 text-[var(--destructive)]" />
                         ) : priceChange < 0 ? (
-                          <TrendingDown className="h-4 w-4 text-[#21a732]" />
+                          <TrendingDown className="h-4 w-4 text-[var(--success)]" />
                         ) : (
                           <Minus className="h-4 w-4 text-muted-foreground" />
                         )}
@@ -365,9 +358,9 @@ export default function PathOfWisdom() {
                           className={cn(
                             "font-mono text-sm font-bold",
                             priceChange > 0
-                              ? "text-[#ffb4ab]"
+                              ? "text-[var(--destructive)]"
                               : priceChange < 0
-                                ? "text-[#21a732]"
+                                ? "text-[var(--success)]"
                                 : "text-muted-foreground"
                           )}
                         >
@@ -430,3 +423,4 @@ export default function PathOfWisdom() {
     </div>
   );
 }
+import { PageHeader } from "@/components/workspace/PageHeader";

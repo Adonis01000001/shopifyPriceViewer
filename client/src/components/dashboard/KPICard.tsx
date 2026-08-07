@@ -12,18 +12,11 @@ interface KPICardProps {
   variant?: "default" | "success" | "warning" | "danger";
 }
 
-const variantGradients: Record<string, string> = {
-  default: "from-primary/[0.08] to-transparent",
-  success: "from-emerald-500/[0.1] to-transparent",
-  warning: "from-amber-500/[0.1] to-transparent",
-  danger: "from-red-500/[0.1] to-transparent",
-};
-
 const variantIconBg: Record<string, string> = {
-  default: "bg-primary/[0.12] text-primary shadow-[0_0_12px_var(--primary)]",
-  success: "bg-emerald-500/[0.15] text-emerald-400",
-  warning: "bg-amber-500/[0.15] text-amber-400",
-  danger: "bg-red-500/[0.15] text-red-400",
+  default: "bg-secondary text-secondary-foreground",
+  success: "bg-success/10 text-success",
+  warning: "bg-warning/10 text-warning",
+  danger: "bg-destructive/10 text-destructive",
 };
 
 export function KPICard({
@@ -39,26 +32,19 @@ export function KPICard({
   const isNegative = change !== undefined && change < 0;
   const trendColor =
     trend === "up" || (trend === undefined && isPositive)
-      ? "text-emerald-400"
+      ? "text-success"
       : trend === "down" || (trend === undefined && isNegative)
-        ? "text-red-400"
+        ? "text-destructive"
         : "text-muted-foreground";
 
   return (
     <Card
       className={cn(
-        "relative overflow-hidden border-border/40 glass-card group",
-        "hover:border-primary/30 hover:shadow-[0_0_24px] hover:shadow-primary/[0.07] transition-all duration-300"
+        "glass-card group relative overflow-hidden",
+        "transition-[box-shadow,transform] duration-200 hover:-translate-y-0.5"
       )}
     >
-      {/* Subtle gradient overlay */}
-      <div
-        className={cn(
-          "absolute inset-0 bg-gradient-to-br opacity-0 group-hover:opacity-100 transition-opacity duration-500 pointer-events-none",
-          variantGradients[variant]
-        )}
-      />
-      <CardContent className="relative p-4">
+      <CardContent className="p-4">
         <div className="flex items-start justify-between gap-3">
           <div className="space-y-1.5 min-w-0">
             <p className="text-[11px] uppercase tracking-wider font-medium text-muted-foreground/70">
