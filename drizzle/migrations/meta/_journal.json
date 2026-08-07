@@ -162,6 +162,13 @@
       "when": 1786043090797,
       "tag": "0022_path_of_wisdom_results",
       "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1786116978838,
+      "tag": "0023_powerful_dragon_lord",
+      "breakpoints": true
     }
   ]
 }

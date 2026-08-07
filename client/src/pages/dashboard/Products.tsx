@@ -15,7 +15,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { trpc } from "@/lib/trpc";
+import { trpc, type RouterOutputs } from "@/lib/trpc";
 import {
   Download,
   Search,
@@ -56,6 +56,8 @@ type MarketPositionStatus =
   | "OVERPRICED"
   | "INSUFFICIENT_DATA";
 
+type MarketAnalysis = NonNullable<RouterOutputs["pricingEngine"]["analyze"]>;
+
 const POSITION_STYLES: Record<
   MarketPositionStatus,
   { bg: string; text: string; border: string }
@@ -89,12 +91,13 @@ const POSITION_LABELS: Record<MarketPositionStatus, string> = {
   INSUFFICIENT_DATA: "N/A",
 };
 
-function MarketPositionBadge({ productId }: { productId: string }) {
-  const { data, isLoading } = trpc.pricingEngine.getMarketPosition.useQuery(
-    { productId },
-    { enabled: !!productId, staleTime: 1000 * 60 * 2 }
-  );
-
+function MarketPositionBadge({
+  position,
+  isLoading,
+}: {
+  position?: MarketAnalysis["position"] | null;
+  isLoading: boolean;
+}) {
   if (isLoading) {
     return (
       <span className="inline-flex min-h-6 items-center rounded-full border border-border bg-surface-container-highest px-2 py-0.5 text-[10px] font-bold label-caps text-muted-foreground">
@@ -103,7 +106,7 @@ function MarketPositionBadge({ productId }: { productId: string }) {
     );
   }
 
-  if (!data?.position) {
+  if (!position) {
     return (
       <span className="inline-flex min-h-6 items-center rounded-full border border-border bg-muted px-2 py-0.5 text-[10px] font-bold label-caps text-muted-foreground">
         N/A
@@ -111,7 +114,7 @@ function MarketPositionBadge({ productId }: { productId: string }) {
     );
   }
 
-  const status = data.position.status as MarketPositionStatus;
+  const status = position.status as MarketPositionStatus;
   const style = POSITION_STYLES[status] ?? POSITION_STYLES.INSUFFICIENT_DATA;
   const label = POSITION_LABELS[status] ?? "N/A";
 
@@ -126,6 +129,90 @@ function MarketPositionBadge({ productId }: { productId: string }) {
     >
       {label}
     </span>
+  );
+}
+
+function MarketInsightCells({
+  productId,
+  status,
+}: {
+  productId: string;
+  status: { label: string; className: string };
+}) {
+  const { data, isLoading } = trpc.pricingEngine.analyze.useQuery(
+    { productId },
+    { enabled: !!productId, staleTime: 1000 * 60 * 2 }
+  );
+
+  const marketLow = data?.marketSnapshot.lowestCompetitorPrice;
+  const delta = data?.position.priceDiff;
+
+  if (isLoading) {
+    return (
+      <>
+        <TableCell className="hidden py-3 text-right sm:table-cell">
+          <span className="inline-block h-4 w-14 animate-pulse rounded bg-muted" />
+        </TableCell>
+        <TableCell className="hidden py-3 text-center sm:table-cell">
+          <span className="inline-block h-4 w-12 animate-pulse rounded bg-muted" />
+        </TableCell>
+        <TableCell className="py-3 text-center align-middle">
+          <span
+            className={cn(
+              "inline-flex min-h-6 items-center rounded-full border px-2 py-0.5 text-[10px] font-bold label-caps",
+              status.className
+            )}
+          >
+            {status.label.toUpperCase()}
+          </span>
+        </TableCell>
+        <TableCell className="py-3 text-center align-middle">
+          <MarketPositionBadge isLoading />
+        </TableCell>
+      </>
+    );
+  }
+
+  return (
+    <>
+      <TableCell className="hidden py-3 text-right font-mono text-[13px] text-muted-foreground sm:table-cell">
+        {marketLow != null ? `$${marketLow.toFixed(2)}` : "—"}
+      </TableCell>
+      <TableCell
+        className="hidden py-3 text-center sm:table-cell"
+        title="Difference versus average competitor price"
+      >
+        {delta != null ? (
+          <span
+            className={cn(
+              "font-mono text-[12px]",
+              delta > 0
+                ? "text-[var(--destructive)]"
+                : delta < 0
+                  ? "text-[var(--success)]"
+                  : "text-muted-foreground"
+            )}
+          >
+            {delta > 0 ? "+" : ""}${delta.toFixed(2)}
+          </span>
+        ) : (
+          <span className="font-mono text-[12px] text-muted-foreground">—</span>
+        )}
+      </TableCell>
+      <TableCell className="py-3 text-center align-middle">
+        <span
+          className={cn(
+            "inline-flex min-h-6 items-center rounded-full border px-2 py-0.5 text-[10px] font-bold label-caps",
+            status.className
+          )}
+        >
+          {status.label.toUpperCase()}
+        </span>
+      </TableCell>
+      <TableCell className="py-3 text-center align-middle">
+        <MarketPositionBadge position={data?.position} isLoading={false} />
+      </TableCell>
+    </>
   );
 }
 
@@ -427,7 +514,7 @@ export default function Products() {
                 <TableHead className="pl-5 label-caps font-normal text-muted-foreground">
                   Product
                 </TableHead>
-                <TableHead className="label-caps font-normal text-muted-foreground">
+                <TableHead className="min-w-[140px] label-caps font-normal text-muted-foreground">
                   SKU
                 </TableHead>
                 <TableHead className="text-right label-caps font-normal text-muted-foreground">
@@ -483,7 +570,7 @@ export default function Products() {
                           </div>
                         </div>
                       </TableCell>
-                      <TableCell className="py-3 text-center font-mono text-[12px] text-muted-foreground">
+                      <TableCell className="py-3 text-left font-mono text-[12px] text-muted-foreground">
                         {product.sku || "—"}
                       </TableCell>
                       <TableCell className="py-3 text-right align-middle">
@@ -516,27 +603,10 @@ export default function Products() {
                           </button>
                         )}
                       </TableCell>
-                      <TableCell className="hidden py-3 text-right font-mono text-[13px] text-muted-foreground sm:table-cell">
-                        —
-                      </TableCell>
-                      <TableCell className="hidden py-3 text-center sm:table-cell">
-                        <span className="font-mono text-[12px] text-muted-foreground">
-                          —
-                        </span>
-                      </TableCell>
-                      <TableCell className="py-3 text-center align-middle">
-                        <span
-                          className={cn(
-                            "inline-flex min-h-6 items-center rounded-full border px-2 py-0.5 text-[10px] font-bold label-caps",
-                            status.className
-                          )}
-                        >
-                          {status.label.toUpperCase()}
-                        </span>
-                      </TableCell>
-                      <TableCell className="py-3 text-center align-middle">
-                        <MarketPositionBadge productId={product.id} />
-                      </TableCell>
+                      <MarketInsightCells
+                        productId={product.id}
+                        status={status}
+                      />
                       <TableCell className="py-3 pr-5 text-right align-middle">
                         <div className="flex items-center justify-end gap-1 text-muted-foreground">
                           <button

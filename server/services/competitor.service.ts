@@ -1,4 +1,15 @@
-import { eq, and, desc, sql, ilike, or, inArray } from "drizzle-orm";
+import { AUTO_GENERATED_COMPETITOR_MATCH_METHOD } from "@shared/const";
+import {
+  eq,
+  and,
+  desc,
+  sql,
+  ilike,
+  or,
+  inArray,
+  isNull,
+  ne,
+} from "drizzle-orm";
 import { requireDb } from "../_core/db-assert";
 import { TRPCError } from "@trpc/server";
 import {
@@ -39,7 +50,18 @@ async function getMergedProductCounts(
         competitorProductUrl: competitorProducts.competitorProductUrl,
       })
       .from(competitorProducts)
-      .where(inArray(competitorProducts.competitorId, competitorIds)),
+      .where(
+        and(
+          inArray(competitorProducts.competitorId, competitorIds),
+          or(
+            isNull(competitorProducts.matchMethod),
+            ne(
+              competitorProducts.matchMethod,
+              AUTO_GENERATED_COMPETITOR_MATCH_METHOD
+            )
+          )
+        )
+      ),
     database
       .select({
         name: priceRadarProducts.name,
@@ -101,6 +123,52 @@ async function getMergedProductCounts(
   return counts;
 }
 
+/**
+ * Synthetic competitor links were created by an older demo generator.
+ * Keep manually linked and discovered competitors visible, but hide a
+ * competitor whose active links are exclusively synthetic.
+ */
+async function filterSyntheticOnlyCompetitors<T extends Pick<Competitor, "id">>(
+  userId: string,
+  competitorRows: T[]
+): Promise<T[]> {
+  if (competitorRows.length === 0) return competitorRows;
+
+  const database = await requireDb();
+  const links = await database
+    .select({
+      competitorId: competitorProducts.competitorId,
+      matchMethod: competitorProducts.matchMethod,
+    })
+    .from(competitorProducts)
+    .innerJoin(products, eq(competitorProducts.productId, products.id))
+    .where(
+      and(
+        eq(products.userId, userId),
+        eq(products.isActive, true),
+        eq(competitorProducts.isActive, true),
+        inArray(
+          competitorProducts.competitorId,
+          competitorRows.map(row => row.id)
+        )
+      )
+    );
+
+  const syntheticIds = new Set<string>();
+  const realLinkIds = new Set<string>();
+  for (const link of links) {
+    if (link.matchMethod === AUTO_GENERATED_COMPETITOR_MATCH_METHOD) {
+      syntheticIds.add(link.competitorId);
+    } else {
+      realLinkIds.add(link.competitorId);
+    }
+  }
+
+  return competitorRows.filter(
+    row => !syntheticIds.has(row.id) || realLinkIds.has(row.id)
+  );
+}
+
 export const competitorService = {
   async getByUserId(
     userId: string,
@@ -116,8 +184,9 @@ export const competitorService = {
       .orderBy(desc(competitors.createdAt))
       .limit(limit)
       .offset(offset);
-    const counts = await getMergedProductCounts(userId, rows);
-    return rows.map(competitor => ({
+    const visibleRows = await filterSyntheticOnlyCompetitors(userId, rows);
+    const counts = await getMergedProductCounts(userId, visibleRows);
+    return visibleRows.map(competitor => ({
       ...competitor,
       productsTracked: counts.get(competitor.id) ?? competitor.productsTracked,
     }));
@@ -125,11 +194,12 @@ export const competitorService = {
 
   async countByUserId(userId: string): Promise<number> {
     const database = await requireDb();
-    const result = await database
-      .select({ count: sql<number>`count(*)::int` })
+    const rows = await database
+      .select({ id: competitors.id })
       .from(competitors)
       .where(eq(competitors.userId, userId));
-    return result[0]?.count ?? 0;
+    const visibleRows = await filterSyntheticOnlyCompetitors(userId, rows);
+    return visibleRows.length;
   },
 
   async getById(
@@ -203,7 +273,18 @@ export const competitorService = {
       database
         .select()
         .from(competitorProducts)
-        .where(eq(competitorProducts.competitorId, competitorId))
+        .where(
+          and(
+            eq(competitorProducts.competitorId, competitorId),
+            or(
+              isNull(competitorProducts.matchMethod),
+              ne(
+                competitorProducts.matchMethod,
+                AUTO_GENERATED_COMPETITOR_MATCH_METHOD
+              )
+            )
+          )
+        )
         .orderBy(desc(competitorProducts.matchScore)),
       database
         .select({
@@ -645,7 +726,8 @@ export const competitorService = {
       })
       .from(competitors)
       .where(eq(competitors.userId, userId));
-    const counts = await getMergedProductCounts(userId, result);
+    const visibleRows = await filterSyntheticOnlyCompetitors(userId, result);
+    const counts = await getMergedProductCounts(userId, visibleRows);
 
     const stats = {
       total: 0,
@@ -654,7 +736,7 @@ export const competitorService = {
       error: 0,
       productsTracked: 0,
     };
-    for (const row of result) {
+    for (const row of visibleRows) {
       stats.total += 1;
       stats.productsTracked += counts.get(row.id) ?? 0;
       if (row.status === "active") stats.active += 1;

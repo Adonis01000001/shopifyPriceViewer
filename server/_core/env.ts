@@ -18,6 +18,12 @@ const googleClientSecret = process.env.GOOGLE_CLIENT_SECRET ?? "";
 const googleRedirectUri =
   process.env.GOOGLE_REDIRECT_URI ??
   `${appUrl.replace(/\/$/, "")}/api/oauth/google/callback`;
+const smtpPort = Number(process.env.SMTP_PORT ?? "587");
+const smtpServer = process.env.SMTP_SERVER ?? "";
+const smtpUsername = process.env.SMTP_USERNAME ?? "";
+const smtpPassword = process.env.SMTP_PASSWORD ?? "";
+const smtpFromEmail = process.env.SMTP_FROM_EMAIL ?? "";
+const smtpFromName = process.env.SMTP_FROM_NAME ?? "Price Intelligence";
 const monitoringIntervalHours = Number(
   process.env.MONITORING_INTERVAL_HOURS ?? "1"
 );
@@ -128,6 +134,9 @@ if (isProduction) {
 if (!Number.isFinite(monitoringIntervalHours) || monitoringIntervalHours <= 0) {
   throw new Error("MONITORING_INTERVAL_HOURS must be a positive number");
 }
+if (!Number.isInteger(smtpPort) || smtpPort < 1 || smtpPort > 65535) {
+  throw new Error("SMTP_PORT must be an integer between 1 and 65535");
+}
 if (
   !Number.isFinite(matchConfidenceThreshold) ||
   matchConfidenceThreshold < 0 ||
@@ -192,6 +201,15 @@ export const ENV = {
   googleRedirectUri,
   shopifyScopes: process.env.SHOPIFY_SCOPES ?? "read_products",
   allowedOrigins,
+
+  // Platform SMTP is used for account recovery emails. User-configured SMTP
+  // remains separate and is used for merchant report delivery.
+  smtpServer,
+  smtpPort,
+  smtpUsername,
+  smtpPassword,
+  smtpFromEmail,
+  smtpFromName,
 
   // Application
   isProduction,

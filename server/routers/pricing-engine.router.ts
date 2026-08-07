@@ -1,16 +1,16 @@
 import { z } from "zod";
+import { AUTO_GENERATED_COMPETITOR_MATCH_METHOD } from "@shared/const";
 import { protectedProcedure, router } from "../_core/trpc";
 import { pricingEngine } from "../services/pricing-engine.service";
 import { recommendationService } from "../services/recommendation.service";
 import { productService } from "../services/product.service";
 import { getAiRecommendation } from "../services/ai-recommendation.service";
-import { ensureCompetitors } from "../services/auto-competitor.service";
 import {
   products,
   competitors,
   competitorProducts,
 } from "../../drizzle/schema";
-import { eq, and } from "drizzle-orm";
+import { eq, and, isNull, ne, or } from "drizzle-orm";
 import { requireDb } from "../_core/db-assert";
 
 export const pricingEngineRouter = router({
@@ -47,7 +47,14 @@ export const pricingEngineRouter = router({
           and(
             eq(competitorProducts.productId, input.productId),
             eq(competitors.userId, ctx.user!.id),
-            eq(competitorProducts.isActive, true)
+            eq(competitorProducts.isActive, true),
+            or(
+              isNull(competitorProducts.matchMethod),
+              ne(
+                competitorProducts.matchMethod,
+                AUTO_GENERATED_COMPETITOR_MATCH_METHOD
+              )
+            )
           )
         );
 
@@ -105,7 +112,14 @@ export const pricingEngineRouter = router({
           and(
             eq(competitorProducts.productId, input.productId),
             eq(competitors.userId, ctx.user!.id),
-            eq(competitorProducts.isActive, true)
+            eq(competitorProducts.isActive, true),
+            or(
+              isNull(competitorProducts.matchMethod),
+              ne(
+                competitorProducts.matchMethod,
+                AUTO_GENERATED_COMPETITOR_MATCH_METHOD
+              )
+            )
           )
         );
 
@@ -174,8 +188,6 @@ export const pricingEngineRouter = router({
 
       if (product.length === 0) return null;
 
-      await ensureCompetitors(ctx.user!.id, input.productId, 3);
-
       const compRows = await database
         .select({
           price: competitorProducts.price,
@@ -190,7 +202,14 @@ export const pricingEngineRouter = router({
           and(
             eq(competitorProducts.productId, input.productId),
             eq(competitors.userId, ctx.user!.id),
-            eq(competitorProducts.isActive, true)
+            eq(competitorProducts.isActive, true),
+            or(
+              isNull(competitorProducts.matchMethod),
+              ne(
+                competitorProducts.matchMethod,
+                AUTO_GENERATED_COMPETITOR_MATCH_METHOD
+              )
+            )
           )
         );
 
@@ -326,7 +345,14 @@ export const pricingEngineRouter = router({
           and(
             eq(competitorProducts.productId, input.productId),
             eq(competitors.userId, ctx.user!.id),
-            eq(competitorProducts.isActive, true)
+            eq(competitorProducts.isActive, true),
+            or(
+              isNull(competitorProducts.matchMethod),
+              ne(
+                competitorProducts.matchMethod,
+                AUTO_GENERATED_COMPETITOR_MATCH_METHOD
+              )
+            )
           )
         );
 

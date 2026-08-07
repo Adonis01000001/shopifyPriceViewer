@@ -6,3 +6,5 @@ export const REFRESH_TOKEN_EXPIRY_MS = 1000 * 60 * 60 * 24 * 30; // 30 days
 export const AXIOS_TIMEOUT_MS = 30_000;
 export const UNAUTHED_ERR_MSG = "Please login (10001)";
 export const NOT_ADMIN_ERR_MSG = "You do not have required permission (10002)";
+/** Match method used by the removed synthetic competitor generator. */
+export const AUTO_GENERATED_COMPETITOR_MATCH_METHOD = "auto-generated";

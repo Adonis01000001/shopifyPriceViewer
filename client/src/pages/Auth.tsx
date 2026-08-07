@@ -7,7 +7,6 @@ import {
   Check,
   CircleDollarSign,
   Eye,
-  Globe2,
   LockKeyhole,
   Radar,
 } from "lucide-react";
@@ -34,12 +33,31 @@ const benefits = [
   },
 ];
 
+type AuthView = "account" | "forgot" | "reset";
+
 export default function Auth() {
   const [, navigate] = useLocation();
+  const initialResetToken =
+    typeof window === "undefined"
+      ? ""
+      : new URLSearchParams(
+          window.location.hash.replace(/^#/, "")
+        ).get("resetToken") ??
+        new URLSearchParams(window.location.search).get("resetToken") ??
+        "";
+  const [authView, setAuthView] = useState<AuthView>(
+    initialResetToken ? "reset" : "account"
+  );
   const [mode, setMode] = useState<"login" | "register">("login");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [name, setName] = useState("");
+  const [resetToken, setResetToken] = useState(initialResetToken);
+  const [forgotEmail, setForgotEmail] = useState("");
+  const [resetPasswordValue, setResetPasswordValue] = useState("");
+  const [resetPasswordConfirmation, setResetPasswordConfirmation] =
+    useState("");
+  const [resetRequested, setResetRequested] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const track = useProductAnalytics();
   const utils = trpc.useUtils();
@@ -91,6 +109,31 @@ export default function Auth() {
     },
   });
 
+  const requestPasswordResetMutation =
+    trpc.auth.requestPasswordReset.useMutation({
+      onSuccess: () => {
+        setResetRequested(true);
+      },
+      onError: () => {
+        toast.error("We could not process that request. Please try again.");
+      },
+    });
+
+  const resetPasswordMutation = trpc.auth.resetPassword.useMutation({
+    onSuccess: () => {
+      setAuthView("account");
+      setResetToken("");
+      setResetPasswordValue("");
+      setResetPasswordConfirmation("");
+      setPassword("");
+      window.history.replaceState({}, document.title, "/auth");
+      toast.success("Your password has been updated. You can sign in now.");
+    },
+    onError: error => {
+      toast.error(error.message || "This reset link is invalid or expired.");
+    },
+  });
+
   const handleSubmit = (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setIsLoading(true);
@@ -99,6 +142,27 @@ export default function Auth() {
     } else {
       registerMutation.mutate({ email, password, name });
     }
+  };
+
+  const handleForgotSubmit = (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    requestPasswordResetMutation.mutate({ email: forgotEmail });
+  };
+
+  const handleResetSubmit = (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (resetPasswordValue !== resetPasswordConfirmation) {
+      toast.error("The passwords do not match.");
+      return;
+    }
+    if (!resetToken) {
+      toast.error("This reset link is invalid or expired.");
+      return;
+    }
+    resetPasswordMutation.mutate({
+      token: resetToken,
+      password: resetPasswordValue,
+    });
   };
 
   return (
@@ -178,20 +242,32 @@ export default function Auth() {
               </div>
               <span className="auth-eyebrow">Your workspace awaits</span>
               <h2 id="auth-form-title">
-                {mode === "login" ? "Welcome back" : "Start seeing the market"}
+                {authView === "forgot"
+                  ? "Recover your account"
+                  : authView === "reset"
+                    ? "Set a new password"
+                    : mode === "login"
+                      ? "Welcome back"
+                      : "Start seeing the market"}
               </h2>
               <p>
-                {mode === "login"
-                  ? "Sign in to continue where you left off."
-                  : "Create an account and see your first useful signal in minutes."}
+                {authView === "forgot"
+                  ? "Enter your email and we will send a secure recovery link."
+                  : authView === "reset"
+                    ? "Choose a new password for your PriceIntel account."
+                    : mode === "login"
+                      ? "Sign in to continue where you left off."
+                      : "Create an account and see your first useful signal in minutes."}
               </p>
             </div>
 
-            <div
-              className="auth-tabs"
-              role="group"
-              aria-label="Account access mode"
-            >
+            {authView === "account" && (
+              <>
+                <div
+                  className="auth-tabs"
+                  role="group"
+                  aria-label="Account access mode"
+                >
               <button
                 type="button"
                 aria-pressed={mode === "login"}
@@ -208,101 +284,275 @@ export default function Auth() {
               >
                 Create account
               </button>
-            </div>
-
-            <button
-              type="button"
-              className="auth-google-button"
-              onClick={() => window.location.assign("/api/oauth/google/start")}
-            >
-              <Globe2 className="h-4 w-4" aria-hidden="true" />
-              Continue with Google
-            </button>
-
-            <div className="auth-divider" aria-hidden="true">
-              <span>or use email</span>
-            </div>
-
-            <form
-              className="auth-form"
-              onSubmit={handleSubmit}
-              aria-busy={isLoading}
-            >
-              {mode === "register" && (
-                <div className="auth-field">
-                  <label htmlFor="auth-name">Full name</label>
-                  <input
-                    id="auth-name"
-                    type="text"
-                    value={name}
-                    onChange={event => setName(event.target.value)}
-                    placeholder="Jordan Lee"
-                    autoComplete="name"
-                    required
-                  />
                 </div>
-              )}
-              <div className="auth-field">
-                <label htmlFor="auth-email">Email address</label>
-                <input
-                  id="auth-email"
-                  type="email"
-                  value={email}
-                  onChange={event => setEmail(event.target.value)}
-                  placeholder="you@yourstore.com"
-                  autoComplete="email"
-                  required
-                />
-              </div>
-              <div className="auth-field">
-                <div className="flex items-center justify-between gap-3">
-                  <label htmlFor="auth-password">Password</label>
-                  {mode === "register" && <span>8+ characters</span>}
-                </div>
-                <input
-                  id="auth-password"
-                  type="password"
-                  value={password}
-                  onChange={event => setPassword(event.target.value)}
-                  placeholder="Enter your password"
-                  minLength={8}
-                  autoComplete={
-                    mode === "login" ? "current-password" : "new-password"
+
+                <button
+                  type="button"
+                  className="auth-google-button"
+                  onClick={() =>
+                    window.location.assign("/api/oauth/google/start")
                   }
-                  required
+                >
+              <svg
+                className="h-4 w-4"
+                viewBox="0 0 24 24"
+                aria-hidden="true"
+                focusable="false"
+              >
+                <path
+                  fill="#4285F4"
+                  d="M21.35 12.27c0-.79-.07-1.55-.23-2.27H12v4.3h5.24a4.48 4.48 0 0 1-1.94 2.94v2.45h3.14c1.84-1.69 2.91-4.18 2.91-7.42Z"
                 />
-              </div>
-              <button
-                type="submit"
-                className="auth-submit"
-                disabled={isLoading}
-              >
-                {isLoading ? (
-                  <span
-                    className="auth-spinner"
-                    role="status"
-                    aria-label="Working"
-                  />
-                ) : (
-                  <>
-                    {mode === "login" ? "Open workspace" : "Create workspace"}
-                    <ArrowRight className="h-4 w-4" />
-                  </>
-                )}
-              </button>
-            </form>
+                <path
+                  fill="#34A853"
+                  d="M12 21.5c2.63 0 4.84-.87 6.45-2.36l-3.14-2.45c-.87.58-1.98.92-3.31.92-2.54 0-4.69-1.72-5.46-4.03H3.29v2.53A9.74 9.74 0 0 0 12 21.5Z"
+                />
+                <path
+                  fill="#FBBC05"
+                  d="M6.54 13.58a5.85 5.85 0 0 1 0-3.16V7.89H3.29a9.74 9.74 0 0 0 0 8.22l3.25-2.53Z"
+                />
+                <path
+                  fill="#EA4335"
+                  d="M12 6.39c1.43 0 2.72.49 3.73 1.45l2.8-2.8C16.84 3.47 14.63 2.5 12 2.5a9.74 9.74 0 0 0-8.71 5.39l3.25 2.53C7.31 8.11 9.46 6.39 12 6.39Z"
+                />
+              </svg>
+                  Continue with Google
+                </button>
 
-            <p className="auth-switch">
-              {mode === "login"
-                ? "New to PriceIntel?"
-                : "Already have an account?"}{" "}
-              <button
-                type="button"
-                onClick={() => setMode(mode === "login" ? "register" : "login")}
-              >
-                {mode === "login" ? "Create an account" : "Sign in"}
-              </button>
-            </p>
+                <div className="auth-divider" aria-hidden="true">
+                  <span>or use email</span>
+                </div>
+
+                <form
+                  className="auth-form"
+                  onSubmit={handleSubmit}
+                  aria-busy={isLoading}
+                >
+                  {mode === "register" && (
+                    <div className="auth-field">
+                      <label htmlFor="auth-name">Full name</label>
+                      <input
+                        id="auth-name"
+                        type="text"
+                        value={name}
+                        onChange={event => setName(event.target.value)}
+                        placeholder="Jordan Lee"
+                        autoComplete="name"
+                        required
+                      />
+                    </div>
+                  )}
+                  <div className="auth-field">
+                    <label htmlFor="auth-email">Email address</label>
+                    <input
+                      id="auth-email"
+                      type="email"
+                      value={email}
+                      onChange={event => setEmail(event.target.value)}
+                      placeholder="you@yourstore.com"
+                      autoComplete="email"
+                      required
+                    />
+                  </div>
+                  <div className="auth-field">
+                    <div className="auth-field-heading">
+                      <label htmlFor="auth-password">Password</label>
+                      {mode === "login" ? (
+                        <button
+                          type="button"
+                          className="auth-inline-action"
+                          onClick={() => {
+                            setForgotEmail(email);
+                            setResetRequested(false);
+                            setAuthView("forgot");
+                          }}
+                        >
+                          Forgot password?
+                        </button>
+                      ) : (
+                        <span>8+ characters</span>
+                      )}
+                    </div>
+                    <input
+                      id="auth-password"
+                      type="password"
+                      value={password}
+                      onChange={event => setPassword(event.target.value)}
+                      placeholder="Enter your password"
+                      minLength={8}
+                      autoComplete={
+                        mode === "login" ? "current-password" : "new-password"
+                      }
+                      required
+                    />
+                  </div>
+                  <button
+                    type="submit"
+                    className="auth-submit"
+                    disabled={isLoading}
+                  >
+                    {isLoading ? (
+                      <span
+                        className="auth-spinner"
+                        role="status"
+                        aria-label="Working"
+                      />
+                    ) : (
+                      <>
+                        {mode === "login"
+                          ? "Open workspace"
+                          : "Create workspace"}
+                        <ArrowRight className="h-4 w-4" />
+                      </>
+                    )}
+                  </button>
+                </form>
+
+                <p className="auth-switch">
+                  {mode === "login"
+                    ? "New to PriceIntel?"
+                    : "Already have an account?"}{" "}
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setMode(mode === "login" ? "register" : "login")
+                    }
+                  >
+                    {mode === "login" ? "Create an account" : "Sign in"}
+                  </button>
+                </p>
+              </>
+            )}
+
+            {authView === "forgot" && (
+              <div className="auth-recovery-flow">
+                {resetRequested ? (
+                  <div className="auth-success-panel" role="status">
+                    <strong>Check your inbox</strong>
+                    <p>
+                      If an account exists for that email, you will receive a
+                      secure reset link shortly.
+                    </p>
+                  </div>
+                ) : (
+                  <form
+                    className="auth-form"
+                    onSubmit={handleForgotSubmit}
+                    aria-busy={requestPasswordResetMutation.isPending}
+                  >
+                    <div className="auth-field">
+                      <label htmlFor="forgot-email">Email address</label>
+                      <input
+                        id="forgot-email"
+                        type="email"
+                        value={forgotEmail}
+                        onChange={event => setForgotEmail(event.target.value)}
+                        placeholder="you@yourstore.com"
+                        autoComplete="email"
+                        required
+                      />
+                    </div>
+                    <button
+                      type="submit"
+                      className="auth-submit"
+                      disabled={requestPasswordResetMutation.isPending}
+                    >
+                      {requestPasswordResetMutation.isPending ? (
+                        <span
+                          className="auth-spinner"
+                          role="status"
+                          aria-label="Sending reset link"
+                        />
+                      ) : (
+                        <>
+                          Email me a reset link
+                          <ArrowRight className="h-4 w-4" />
+                        </>
+                      )}
+                    </button>
+                  </form>
+                )}
+                <button
+                  type="button"
+                  className="auth-back-button"
+                  onClick={() => setAuthView("account")}
+                >
+                  Back to sign in
+                </button>
+              </div>
+            )}
+
+            {authView === "reset" && (
+              <div className="auth-recovery-flow">
+                <form
+                  className="auth-form"
+                  onSubmit={handleResetSubmit}
+                  aria-busy={resetPasswordMutation.isPending}
+                >
+                  <div className="auth-field">
+                    <label htmlFor="reset-password">New password</label>
+                    <input
+                      id="reset-password"
+                      type="password"
+                      value={resetPasswordValue}
+                      onChange={event =>
+                        setResetPasswordValue(event.target.value)
+                      }
+                      placeholder="At least 8 characters"
+                      minLength={8}
+                      autoComplete="new-password"
+                      required
+                    />
+                  </div>
+                  <div className="auth-field">
+                    <label htmlFor="reset-password-confirmation">
+                      Confirm new password
+                    </label>
+                    <input
+                      id="reset-password-confirmation"
+                      type="password"
+                      value={resetPasswordConfirmation}
+                      onChange={event =>
+                        setResetPasswordConfirmation(event.target.value)
+                      }
+                      placeholder="Repeat your new password"
+                      minLength={8}
+                      autoComplete="new-password"
+                      required
+                    />
+                  </div>
+                  <button
+                    type="submit"
+                    className="auth-submit"
+                    disabled={resetPasswordMutation.isPending}
+                  >
+                    {resetPasswordMutation.isPending ? (
+                      <span
+                        className="auth-spinner"
+                        role="status"
+                        aria-label="Updating password"
+                      />
+                    ) : (
+                      <>
+                        Update password
+                        <ArrowRight className="h-4 w-4" />
+                      </>
+                    )}
+                  </button>
+                </form>
+                <button
+                  type="button"
+                  className="auth-back-button"
+                  onClick={() => {
+                    setAuthView("account");
+                    setResetToken("");
+                    window.history.replaceState({}, document.title, "/auth");
+                  }}
+                >
+                  Back to sign in
+                </button>
+              </div>
+            )}
           </div>
         </section>
       </div>

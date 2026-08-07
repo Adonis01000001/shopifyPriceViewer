@@ -134,6 +134,36 @@ export const users = pgTable(
 export type User = typeof users.$inferSelect;
 export type InsertUser = typeof users.$inferInsert;
 
+// Password recovery tokens are stored as SHA-256 hashes only. The raw token
+// is sent to the account email and is never persisted in the database.
+export const passwordResetTokens = pgTable(
+  "password_reset_tokens",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    tokenHash: varchar("token_hash", { length: 64 }).notNull(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    usedAt: timestamp("used_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  t => ({
+    tokenHashIdx: uniqueIndex("password_reset_tokens_token_hash_idx").on(
+      t.tokenHash
+    ),
+    userIdIdx: index("password_reset_tokens_user_id_idx").on(t.userId),
+    expiresAtIdx: index("password_reset_tokens_expires_at_idx").on(
+      t.expiresAt
+    ),
+  })
+);
+
+export type PasswordResetToken = typeof passwordResetTokens.$inferSelect;
+export type InsertPasswordResetToken = typeof passwordResetTokens.$inferInsert;
+
 // Billing-provider-neutral subscription state. Provider identifiers are kept
 // server-side and are intentionally excluded from account DTOs.
 export const subscriptions = pgTable(

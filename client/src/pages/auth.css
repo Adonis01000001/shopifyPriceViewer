@@ -302,6 +302,53 @@
   letter-spacing: 0.08em;
   text-transform: uppercase;
 }
+.auth-field-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+.auth-inline-action,
+.auth-back-button {
+  border: 0;
+  background: transparent;
+  color: var(--primary);
+  font-size: 0.68rem;
+  font-weight: 700;
+}
+.auth-inline-action {
+  padding: 0;
+}
+.auth-inline-action:hover,
+.auth-back-button:hover {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.auth-recovery-flow {
+  display: grid;
+  gap: 1.1rem;
+}
+.auth-back-button {
+  justify-self: center;
+  padding: 0.2rem 0.35rem;
+}
+.auth-success-panel {
+  display: grid;
+  gap: 0.45rem;
+  border: 1px solid color-mix(in srgb, var(--primary) 18%, var(--border));
+  border-radius: 0.85rem;
+  background: color-mix(in srgb, var(--primary) 6%, var(--surface-container-low));
+  padding: 1rem;
+}
+.auth-success-panel strong {
+  color: var(--foreground);
+  font-size: 0.86rem;
+}
+.auth-success-panel p {
+  color: var(--muted-foreground);
+  font-size: 0.75rem;
+  line-height: 1.55;
+}
 .auth-field input {
   width: 100%;
   min-height: 3rem;

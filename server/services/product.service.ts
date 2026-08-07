@@ -1,4 +1,15 @@
-import { eq, and, desc, sql, ilike, or, inArray } from "drizzle-orm";
+import { AUTO_GENERATED_COMPETITOR_MATCH_METHOD } from "@shared/const";
+import {
+  eq,
+  and,
+  desc,
+  sql,
+  ilike,
+  or,
+  inArray,
+  isNull,
+  ne,
+} from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 import { requireDb } from "../_core/db-assert";
 import {
@@ -230,7 +241,14 @@ export const productService = {
               .from(competitors)
               .where(eq(competitors.userId, userId))
           ),
-          eq(competitorProducts.isActive, true)
+          eq(competitorProducts.isActive, true),
+          or(
+            isNull(competitorProducts.matchMethod),
+            ne(
+              competitorProducts.matchMethod,
+              AUTO_GENERATED_COMPETITOR_MATCH_METHOD
+            )
+          )
         )
       );
   },
@@ -276,7 +294,14 @@ export const productService = {
             eq(products.userId, userId),
             eq(products.isActive, true),
             eq(competitors.userId, userId),
-            eq(competitorProducts.isActive, true)
+            eq(competitorProducts.isActive, true),
+            or(
+              isNull(competitorProducts.matchMethod),
+              ne(
+                competitorProducts.matchMethod,
+                AUTO_GENERATED_COMPETITOR_MATCH_METHOD
+              )
+            )
           )
         ),
       database

@@ -83,6 +83,8 @@ async function startServer() {
   // Auth rate limiting (brute force protection)
   app.use("/api/trpc/auth.login", authLimiter);
   app.use("/api/trpc/auth.register", authLimiter);
+  app.use("/api/trpc/auth.requestPasswordReset", authLimiter);
+  app.use("/api/trpc/auth.resetPassword", authLimiter);
 
   // Scrape rate limiting (tRPC mutation endpoint)
   app.use("/api/trpc/competitors.scrapeProducts", scrapeLimiter);

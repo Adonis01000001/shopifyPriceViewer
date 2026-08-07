@@ -66,19 +66,13 @@ export async function rotateRefreshToken(
   });
 }
 
-export function revokeRefreshToken(raw: string): void {
-  // Fire-and-forget revocation — caller doesn't need to await
+export async function revokeRefreshToken(raw: string): Promise<void> {
   const tokenHash = hashToken(raw);
-  requireDb()
-    .then(database =>
-      database
-        .update(refreshTokens)
-        .set({ revokedAt: new Date() })
-        .where(eq(refreshTokens.tokenHash, tokenHash))
-    )
-    .catch(() => {
-      /* best-effort */
-    });
+  const database = await requireDb();
+  await database
+    .update(refreshTokens)
+    .set({ revokedAt: new Date() })
+    .where(eq(refreshTokens.tokenHash, tokenHash));
 }
 
 export async function revokeAllUserTokens(userId: string): Promise<void> {

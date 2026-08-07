@@ -12,9 +12,14 @@ import {
 import { getSessionCookieOptions } from "../_core/cookies";
 import { publicProcedure, router } from "../_core/trpc";
 import { sdk } from "../_core/sdk";
+import { logger } from "../_core/logger";
 import { toPublicUser } from "../_core/public-views";
 import { users } from "../../drizzle/schema";
 import * as db from "../db";
+import {
+  requestPasswordReset,
+  resetPassword,
+} from "../services/password-reset.service";
 import {
   createRefreshToken,
   rotateRefreshToken,
@@ -181,6 +186,51 @@ export const authRouter = router({
       };
     }),
 
+  /** Request a password reset email without revealing whether the email exists. */
+  requestPasswordReset: publicProcedure
+    .input(z.object({ email: z.string().email("Invalid email address") }))
+    .mutation(async ({ input }) => {
+      try {
+        await requestPasswordReset(input.email.trim().toLowerCase());
+      } catch (error) {
+        logger.error({ err: error }, "Password reset request failed");
+      }
+
+      return {
+        success: true,
+        message:
+          "If an account exists for that email, a password reset link has been sent.",
+      } as const;
+    }),
+
+  /** Consume a valid reset token and revoke all refresh sessions. */
+  resetPassword: publicProcedure
+    .input(
+      z.object({
+        token: z.string().min(32, "Invalid reset token"),
+        password: z.string().min(8, "Password must be at least 8 characters"),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const passwordHash = await bcrypt.hash(input.password, SALT_ROUNDS);
+      const userId = await resetPassword(input.token.trim(), passwordHash);
+      if (!userId) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "This reset link is invalid or has expired.",
+        });
+      }
+
+      const opts = getCookieOptions(ctx);
+      ctx.res.clearCookie(COOKIE_NAME, { ...opts, maxAge: -1 });
+      ctx.res.clearCookie(REFRESH_COOKIE_NAME, {
+        ...opts,
+        maxAge: -1,
+        path: "/api/trpc",
+      });
+      return { success: true } as const;
+    }),
+
   /** Refresh the session JWT using a refresh token (rotation). */
   refreshSession: publicProcedure.mutation(async ({ ctx }) => {
     const raw = ctx.req.cookies?.[REFRESH_COOKIE_NAME];
@@ -217,13 +267,19 @@ export const authRouter = router({
     ctx.res.clearCookie(COOKIE_NAME, { ...opts, maxAge: -1 });
     const raw = ctx.req.cookies?.[REFRESH_COOKIE_NAME];
     if (raw) {
-      revokeRefreshToken(raw);
-      ctx.res.clearCookie(REFRESH_COOKIE_NAME, {
-        ...opts,
-        maxAge: -1,
-        path: "/api/trpc",
-      });
+      try {
+        await revokeRefreshToken(raw);
+      } catch (error) {
+        // Sign-out must still clear the browser session if the database is
+        // temporarily unavailable. Keep the revocation failure observable.
+        logger.warn({ err: error }, "Refresh token revocation failed on logout");
+      }
     }
+    ctx.res.clearCookie(REFRESH_COOKIE_NAME, {
+      ...opts,
+      maxAge: -1,
+      path: "/api/trpc",
+    });
     return { success: true } as const;
   }),
 });

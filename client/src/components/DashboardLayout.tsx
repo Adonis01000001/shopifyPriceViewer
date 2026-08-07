@@ -155,6 +155,7 @@ function DashboardLayoutContent({
 }: DashboardLayoutContentProps) {
   const [location, setLocation] = useLocation();
   const { theme, toggleTheme, switchable } = useTheme();
+  const utils = trpc.useUtils();
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
@@ -279,9 +280,13 @@ function DashboardLayoutContent({
     onSuccess: () => void refetchAlerts(),
   });
   const logoutMutation = trpc.auth.logout.useMutation({
-    onSuccess: () => {
-      window.location.href = "/auth";
+    onSuccess: async () => {
+      utils.auth.me.setData(undefined, null);
+      await utils.auth.me.cancel();
+      window.location.replace("/auth");
     },
+    onError: error =>
+      toast.error(error.message || "Could not sign out. Please try again."),
   });
 
   const unreadCount = alertStats?.unread ?? 0;
@@ -400,7 +405,10 @@ function DashboardLayoutContent({
                 <button
                   type="button"
                   className="app-profile-action is-danger"
-                  onClick={() => logoutMutation.mutate()}
+                  onClick={() => {
+                    setProfileOpen(false);
+                    logoutMutation.mutate();
+                  }}
                   disabled={logoutMutation.isPending}
                 >
                   <LogOut className="h-4 w-4" />
