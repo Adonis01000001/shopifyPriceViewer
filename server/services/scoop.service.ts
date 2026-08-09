@@ -1,6 +1,6 @@
 import { Firecrawl } from "firecrawl";
 import type { Browser, BrowserContext } from "playwright";
-import { and, eq, or, sql } from "drizzle-orm";
+import { and, desc, eq, or, sql } from "drizzle-orm";
 import { requireDb } from "../_core/db-assert";
 import { ENV } from "../_core/env";
 import { logger } from "../_core/logger";
@@ -172,8 +172,10 @@ async function findOrCreateScoopCompetitor(
   tx: ScoopTransaction,
   userId: string,
   plan: ScoopCatalogPlan,
-  retrievedAt: Date
+  retrievedAt: Date,
+  options: { recordSearchMetadata?: boolean } = {}
 ): Promise<string> {
+  const recordSearchMetadata = options.recordSearchMetadata ?? true;
   await tx.execute(
     sql`SELECT pg_advisory_xact_lock(hashtextextended(${`${userId}:${plan.normalizedBrandName}`}, 0))`
   );
@@ -200,8 +202,12 @@ async function findOrCreateScoopCompetitor(
       .set({
         logoUrl: existing[0].logoUrl ?? logoUrl,
         normalizedName: plan.normalizedBrandName,
-        scoopSearchCount: sql`${competitors.scoopSearchCount} + 1`,
-        lastScoopSearchAt: retrievedAt,
+        ...(recordSearchMetadata
+          ? {
+              scoopSearchCount: sql`${competitors.scoopSearchCount} + 1`,
+              lastScoopSearchAt: retrievedAt,
+            }
+          : {}),
         lastScrapedAt: retrievedAt,
         updatedAt: retrievedAt,
         scrapeStatus: "success",
@@ -226,8 +232,8 @@ async function findOrCreateScoopCompetitor(
       productsTracked: 0,
       avgPriceDiff: "0.00",
       priceIndex: "100.00",
-      scoopSearchCount: 1,
-      lastScoopSearchAt: retrievedAt,
+      scoopSearchCount: recordSearchMetadata ? 1 : 0,
+      lastScoopSearchAt: recordSearchMetadata ? retrievedAt : null,
       lastScrapedAt: retrievedAt,
       scrapeStatus: "success",
       scrapeError: null,
@@ -241,7 +247,7 @@ async function findOrCreateScoopCompetitor(
 function catalogProductValues(input: {
   userId: string;
   competitorId: string;
-  searchId: string;
+  searchId: string | null;
   product: ScoopProduct;
   retrievedAt: Date;
 }) {
@@ -272,52 +278,31 @@ function catalogProductValues(input: {
   };
 }
 
-async function persistScoopSearch(
+async function persistScoopCatalogOnly(
   userId: string,
-  result: ScoopResult
-): Promise<void> {
+  products: readonly ScoopProduct[],
+  retrievedAt: Date
+): Promise<{ competitors: number; products: number }> {
   const database = await requireDb();
+  const plans = buildScoopCatalogPlan(products);
+
   await database.transaction(async tx => {
-    const retrievedAt = new Date(result.retrievedAt);
-    const [search] = await tx
-      .insert(scoopSearches)
-      .values({
-        userId,
-        query: result.searchQuery,
-        ranking: result.ranking,
-        summary: result.summary,
-        confidenceScore: result.confidenceScore,
-        status: result.status,
-        warnings: result.warnings,
-        sourcesUsed: result.sourcesUsed,
-        retrievedAt,
-      })
-      .returning({ id: scoopSearches.id });
-
-    if (!search) throw new Error("Scoop search was not persisted");
-
-    const plans =
-      result.status === "failed"
-        ? []
-        : buildScoopCatalogPlan(result.productsFound);
-    const competitorIds = new Map<string, string>();
     for (const plan of plans) {
       const competitorId = await findOrCreateScoopCompetitor(
         tx,
         userId,
         plan,
-        retrievedAt
+        retrievedAt,
+        { recordSearchMetadata: false }
       );
       for (const product of plan.products) {
-        competitorIds.set(product.productUrl, competitorId);
-        competitorIds.set(catalogProductUrl(product.productUrl), competitorId);
         await tx
           .insert(scoopCompetitorProducts)
           .values(
             catalogProductValues({
               userId,
               competitorId,
-              searchId: search.id,
+              searchId: null,
               product,
               retrievedAt,
             })
@@ -330,22 +315,19 @@ async function persistScoopSearch(
             set: catalogProductValues({
               userId,
               competitorId,
-              searchId: search.id,
+              searchId: null,
               product,
               retrievedAt,
             }),
           });
       }
     }
-
-    const rows = toScoopSearchResultRows({
-      searchId: search.id,
-      userId,
-      products: result.productsFound,
-      competitorIds,
-    });
-    if (rows.length > 0) await tx.insert(scoopSearchResults).values(rows);
   });
+
+  return {
+    competitors: plans.length,
+    products: plans.reduce((total, plan) => total + plan.products.length, 0),
+  };
 }
 
 export interface ScoopCatalogImport {
@@ -359,45 +341,11 @@ export async function persistScoopCatalogImport(
   input: ScoopCatalogImport
 ): Promise<{ competitors: number; products: number }> {
   const retrievedAt = new Date().toISOString();
-  const plans = buildScoopCatalogPlan(input.products);
-  const products = plans.reduce((total, plan) => total + plan.products.length, 0);
-  const confidenceScore =
-    input.products.reduce((total, product) => total + product.confidenceScore, 0) /
-    input.products.length;
-
-  await persistScoopSearch(userId, {
-    searchQuery: `JSON import: ${input.sourceName}`,
-    summary: `Imported ${products} competitor product listings from ${input.sourceName}.`,
-    productsFound: input.products,
-    confidenceScore: Number(confidenceScore.toFixed(2)),
-    sourcesUsed: [
-      {
-        name: input.sourceName,
-        type: "search_provider",
-        url: null,
-      },
-    ],
-    ranking: "relevance",
-    status: "success",
-    warnings: [],
-    retrievedAt,
-  });
-
-  return { competitors: plans.length, products };
-}
-
-async function persistScoopSearchSafely(
-  userId: string,
-  result: ScoopResult
-): Promise<void> {
-  try {
-    await persistScoopSearch(userId, result);
-  } catch (error) {
-    logger.warn(
-      { userId, query: result.searchQuery, error },
-      "Scoop search result persistence failed"
-    );
-  }
+  return persistScoopCatalogOnly(
+    userId,
+    input.products,
+    new Date(retrievedAt)
+  );
 }
 
 interface StructuredCandidate {
@@ -1307,7 +1255,107 @@ async function discoverCandidates(
   return { candidates: mergeCandidates(rows, limit), warnings };
 }
 
+function parseScoopRanking(value: string): ScoopRanking {
+  if (
+    value === "lowest_price" ||
+    value === "best_value" ||
+    value === "newest"
+  ) {
+    return value;
+  }
+  return "relevance";
+}
+
+function parseScoopStatus(value: string): ScoopResult["status"] {
+  if (value === "success" || value === "partial") return value;
+  return "failed";
+}
+
+function parseScoopWarnings(value: unknown): string[] {
+  return Array.isArray(value)
+    ? value.filter((item): item is string => typeof item === "string")
+    : [];
+}
+
+function parseScoopSources(value: unknown): ScoopSource[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter((item): item is ScoopSource => {
+    if (!item || typeof item !== "object") return false;
+    const source = item as Record<string, unknown>;
+    return (
+      typeof source.name === "string" &&
+      (source.type === "search_provider" || source.type === "product_page") &&
+      (source.url === null || typeof source.url === "string")
+    );
+  });
+}
+
+function parseDiscoveredBy(value: unknown): string[] {
+  return Array.isArray(value)
+    ? value.filter((item): item is string => typeof item === "string")
+    : [];
+}
+
 export const scoopService = {
+  async getLatestSearch(userId: string): Promise<ScoopResult | null> {
+    const database = await requireDb();
+    const [search] = await database
+      .select()
+      .from(scoopSearches)
+      .where(eq(scoopSearches.userId, userId))
+      .orderBy(desc(scoopSearches.retrievedAt))
+      .limit(1);
+
+    if (!search) return null;
+
+    const rows = await database
+      .select()
+      .from(scoopSearchResults)
+      .where(
+        and(
+          eq(scoopSearchResults.searchId, search.id),
+          eq(scoopSearchResults.userId, userId)
+        )
+      )
+      .orderBy(scoopSearchResults.position);
+
+    return {
+      searchQuery: search.query,
+      summary: search.summary,
+      productsFound: rows.map(row => ({
+        productName: row.productName,
+        brand: row.brand,
+        model: row.model,
+        price: row.price,
+        currency: row.currency,
+        rating: row.rating,
+        reviewCount: row.reviewCount,
+        availability: row.availability,
+        seller: row.seller,
+        condition:
+          row.condition === "new" ||
+          row.condition === "refurbished" ||
+          row.condition === "used"
+            ? row.condition
+            : null,
+        shipping: row.shipping,
+        productUrl: row.productUrl,
+        imageUrl: row.imageUrl,
+        retrievedAt: row.retrievedAt.toISOString(),
+        publishedDate: row.publishedDate,
+        confidenceScore: row.confidenceScore,
+        extractionMethod: row.extractionMethod,
+        discoveredBy: parseDiscoveredBy(row.discoveredBy),
+      })),
+      confidenceScore: search.confidenceScore,
+      sourcesUsed: parseScoopSources(search.sourcesUsed),
+      ranking: parseScoopRanking(search.ranking),
+      status: parseScoopStatus(search.status),
+      warnings: parseScoopWarnings(search.warnings),
+      retrievedAt: search.retrievedAt.toISOString(),
+    };
+  },
+
   async search(input: {
     userId: string;
     query: string;
@@ -1339,7 +1387,6 @@ export const scoopService = {
         warnings,
         retrievedAt,
       };
-      await persistScoopSearchSafely(input.userId, result);
       return result;
     }
 
@@ -1427,7 +1474,6 @@ export const scoopService = {
       warnings: warnings.slice(0, 20),
       retrievedAt,
     };
-    await persistScoopSearchSafely(input.userId, result);
     return result;
   },
 };

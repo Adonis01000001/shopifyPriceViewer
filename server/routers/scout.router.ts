@@ -6,6 +6,10 @@ import { scoopService } from "../services/scoop.service";
 import { productService } from "../services/product.service";
 
 export const scoutRouter = router({
+  scoopLatest: protectedProcedure.query(({ ctx }) =>
+    scoopService.getLatestSearch(ctx.user!.id)
+  ),
+
   scoopSearch: protectedProcedure
     .input(
       z.object({
