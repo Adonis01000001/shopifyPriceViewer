@@ -276,6 +276,8 @@ export const appRouter = router({
             shopifyVariantId: variant ? String(variant.id) : null,
             title: sp.title || "Untitled Product",
             description: sp.body_html?.replace(/<[^>]*>/g, "") || null,
+            sku: variant?.sku || null,
+            barcode: variant?.barcode || null,
             vendor: sp.vendor || null,
             productType: sp.product_type || null,
             category: sp.product_type || null,

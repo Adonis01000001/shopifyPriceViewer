@@ -334,6 +334,85 @@ describe("Price Radar extraction", () => {
     expect(result.product?.extractionConfidence).toBeGreaterThanOrEqual(0.9);
   });
 
+  it("ignores oversized embedded previous prices that cannot be persisted", () => {
+    const html = `
+      <html><head>
+        <script type="application/ld+json">
+        {
+          "@context": "https://schema.org",
+          "@type": "Product",
+          "name": "Radar Television",
+          "offers": {"price": "13590.00", "priceCurrency": "INR"}
+        }
+        </script>
+      </head><body><s>837721990.00</s></body></html>`;
+
+    const result = extractProductData(
+      html,
+      "https://shop.example.com/products/radar-television"
+    );
+
+    expect(result.product?.price).toBe("13590.00");
+    expect(result.product?.previousPrice).toBeNull();
+  });
+
+  it("keeps sale, list, coupon, membership, shipping, and tax values distinct", () => {
+    const html = `
+      <script type="application/ld+json">
+        {
+          "@type": "Product",
+          "name": "Offer semantics product",
+          "brand": "Example",
+          "offers": {
+            "price": "80.00",
+            "priceCurrency": "USD",
+            "highPrice": "100.00",
+            "salePrice": "80.00",
+            "priceType": "Sale",
+            "couponAmount": "5.00",
+            "couponCode": "SAVE5",
+            "membershipPrice": "70.00",
+            "shippingAmount": "4.99",
+            "tax": "7.50"
+          }
+        }
+      </script>`;
+
+    const result = extractProductData(html, "https://shop.example.com/products/offer");
+    expect(result.product).toMatchObject({
+      price: "80.00",
+      basePrice: "100.00",
+      salePrice: "80.00",
+      previousPrice: "100.00",
+      couponAmount: "5.00",
+      couponCode: "SAVE5",
+      membershipPrice: "70.00",
+      priceType: "sale",
+      shippingPrice: "4.99",
+      taxAmount: "7.50",
+    });
+  });
+
+  it("does not treat a membership-only amount as the normal product price", () => {
+    const html = `
+      <script type="application/ld+json">
+        {
+          "@type": "Product",
+          "name": "Members only product",
+          "offers": {
+            "price": "70.00",
+            "priceCurrency": "USD",
+            "priceType": "membership",
+            "membershipPrice": "70.00"
+          }
+        }
+      </script>`;
+    const result = extractProductData(html, "https://shop.example.com/products/member");
+    expect(result.product?.price).toBeNull();
+    expect(result.product?.membershipPrice).toBe("70.00");
+    expect(result.warnings).toContain("Only a membership price was available");
+  });
+
   it("uses OpenGraph and HTML fallbacks without inventing missing fields", () => {
     const html = `
       <meta property="og:title" content="Simple Product">

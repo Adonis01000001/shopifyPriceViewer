@@ -613,3 +613,53 @@ export const priceRadarService = {
     }
   },
 };
+
+/**
+ * Fetch and extract one public product page for automated competitor discovery.
+ * This intentionally reuses the crawler's URL policy, retry/backoff, robots
+ * handling, and browser-rendering path instead of maintaining a second scraper.
+ */
+export async function fetchAndExtractProduct(
+  url: string,
+  overrides: Partial<PriceRadarCrawlPolicy> = {}
+): Promise<{
+  page: PriceRadarFetchedPage;
+  extraction: ReturnType<typeof extractProductData>;
+}> {
+  const policy = clampPolicy({ ...DEFAULT_PRICE_RADAR_POLICY, ...overrides });
+  const signal = new AbortController().signal;
+  const rootUrl = new URL(url).origin;
+  const robots = await loadRobots(rootUrl, policy, signal);
+  if (policy.respectRobotsTxt && !isAllowedByRobots(url, robots.disallow)) {
+    throw new Error("Blocked by robots.txt");
+  }
+
+  let fetched = await fetchHttp(url, policy, signal, robots.crawlDelayMs ?? 0);
+  let extraction = extractProductData(fetched.html, fetched.finalUrl);
+  let browser: Browser | null = null;
+
+  try {
+    if (
+      policy.renderMode === "browser" ||
+      (policy.renderMode === "auto" &&
+        shouldRenderWithBrowser(fetched.html, extraction))
+    ) {
+      const { chromium } = await import("playwright");
+      browser = await chromium.launch({
+        headless: true,
+        executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH,
+      });
+      await rateLimitHost(
+        url,
+        Math.max(policy.minRequestIntervalMs, robots.crawlDelayMs ?? 0),
+        signal
+      );
+      fetched = await renderBrowser(browser, url, policy, signal);
+      extraction = extractProductData(fetched.html, fetched.finalUrl);
+    }
+  } finally {
+    await browser?.close().catch(() => undefined);
+  }
+
+  return { page: fetched, extraction };
+}

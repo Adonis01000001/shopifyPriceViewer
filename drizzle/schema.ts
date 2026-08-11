@@ -473,6 +473,9 @@ export const products = pgTable(
     description: text("description"),
     sku: varchar("sku", { length: 128 }),
     barcode: varchar("barcode", { length: 128 }),
+    gtin: varchar("gtin", { length: 128 }),
+    mpn: varchar("mpn", { length: 128 }),
+    modelNumber: varchar("model_number", { length: 128 }),
     vendor: varchar("vendor", { length: 255 }),
     productType: varchar("product_type", { length: 255 }),
     category: varchar("category", { length: 255 }),
@@ -623,7 +626,28 @@ export const competitorProducts = pgTable(
     }),
     competitorSku: varchar("competitor_sku", { length: 128 }),
     price: decimal("price", { precision: 10, scale: 2 }).notNull(),
+    basePrice: decimal("base_price", { precision: 10, scale: 2 }),
     currency: varchar("currency", { length: 3 }).default("USD"),
+    normalizedPrice: decimal("normalized_price", { precision: 12, scale: 4 }),
+    normalizedCurrency: varchar("normalized_currency", { length: 3 }),
+    normalizationMethod: varchar("normalization_method", { length: 64 }),
+    imageUrl: text("image_url"),
+    availability: varchar("availability", { length: 32 }),
+    salePrice: decimal("sale_price", { precision: 10, scale: 2 }),
+    originalPrice: decimal("original_price", { precision: 10, scale: 2 }),
+    couponAmount: decimal("coupon_amount", { precision: 10, scale: 2 }),
+    couponCode: varchar("coupon_code", { length: 64 }),
+    membershipPrice: decimal("membership_price", { precision: 10, scale: 2 }),
+    priceType: varchar("price_type", { length: 32 }),
+    shippingPrice: decimal("shipping_price", { precision: 10, scale: 2 }),
+    taxAmount: decimal("tax_amount", { precision: 10, scale: 2 }),
+    discountAmount: decimal("discount_amount", { precision: 10, scale: 2 }),
+    condition: varchar("condition", { length: 32 }),
+    quantity: decimal("quantity", { precision: 10, scale: 3 }),
+    unit: varchar("unit", { length: 32 }),
+    variant: varchar("variant", { length: 255 }),
+    metadata: jsonb("metadata"),
+    matchType: varchar("match_type", { length: 16 }),
     matchScore: doublePrecision("match_score").default(0).notNull(),
     matchMethod: varchar("match_method", { length: 64 }).default("manual"),
     sourceType: varchar("source_type", { length: 32 }),
@@ -977,9 +1001,14 @@ export const priceSnapshots = pgTable(
       .notNull()
       .references(() => competitorProducts.id, { onDelete: "cascade" }),
     price: decimal("price", { precision: 10, scale: 2 }).notNull(),
+    basePrice: decimal("base_price", { precision: 10, scale: 2 }),
     currency: varchar("currency", { length: 3 }).default("USD"),
     salePrice: decimal("sale_price", { precision: 10, scale: 2 }),
     originalPrice: decimal("original_price", { precision: 10, scale: 2 }),
+    couponAmount: decimal("coupon_amount", { precision: 10, scale: 2 }),
+    couponCode: varchar("coupon_code", { length: 64 }),
+    membershipPrice: decimal("membership_price", { precision: 10, scale: 2 }),
+    priceType: varchar("price_type", { length: 32 }),
     availability: varchar("availability", { length: 32 }).default("in_stock"),
     scrapedAt: timestamp("scraped_at", { withTimezone: true })
       .defaultNow()
@@ -1134,6 +1163,18 @@ export const competitorDiscoveries = pgTable(
     searchPosition: integer("search_position"),
     confidence: doublePrecision("confidence").default(0).notNull(),
     status: varchar("status", { length: 32 }).default("pending"),
+    extractedPrice: decimal("extracted_price", { precision: 10, scale: 2 }),
+    extractedCurrency: varchar("extracted_currency", { length: 3 }),
+    normalizedPrice: decimal("normalized_price", { precision: 12, scale: 4 }),
+    normalizedCurrency: varchar("normalized_currency", { length: 3 }),
+    normalizationMethod: varchar("normalization_method", { length: 64 }),
+    matchType: varchar("match_type", { length: 16 }),
+    rejectionReason: text("rejection_reason"),
+    competitorProductId: uuid("competitor_product_id").references(
+      () => competitorProducts.id,
+      { onDelete: "set null" }
+    ),
+    checkedAt: timestamp("checked_at", { withTimezone: true }),
     discoveredAt: timestamp("discovered_at", { withTimezone: true })
       .defaultNow()
       .notNull(),
@@ -1150,6 +1191,12 @@ export const competitorDiscoveries = pgTable(
     domainIdx: index("competitor_discoveries_domain_idx").on(t.candidateDomain),
     confidenceIdx: index("competitor_discoveries_confidence_idx").on(
       t.confidence
+    ),
+    competitorProductIdx: index("competitor_discoveries_competitor_product_idx").on(
+      t.competitorProductId
+    ),
+    checkedAtIdx: index("competitor_discoveries_checked_at_idx").on(
+      t.checkedAt
     ),
     productStatusIdx: index("competitor_discoveries_product_status_idx").on(
       t.productId,
@@ -1199,6 +1246,37 @@ export const cronRuns = pgTable(
 
 export type CronRun = typeof cronRuns.$inferSelect;
 export type InsertCronRun = typeof cronRuns.$inferInsert;
+
+// Cross-worker lease preventing overlapping discovery runs for one product.
+export const competitorDiscoveryLocks = pgTable(
+  "competitor_discovery_locks",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    productId: uuid("product_id")
+      .notNull()
+      .references(() => products.id, { onDelete: "cascade" }),
+    ownerToken: uuid("owner_token").defaultRandom().notNull(),
+    leaseUntil: timestamp("lease_until", { withTimezone: true }).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  t => ({
+    userProductUniqueIdx: uniqueIndex("competitor_discovery_locks_user_product_idx").on(
+      t.userId,
+      t.productId
+    ),
+    leaseUntilIdx: index("competitor_discovery_locks_lease_until_idx").on(
+      t.leaseUntil
+    ),
+  })
+);
+
+export type CompetitorDiscoveryLock = typeof competitorDiscoveryLocks.$inferSelect;
+export type InsertCompetitorDiscoveryLock = typeof competitorDiscoveryLocks.$inferInsert;
 
 // =============================================================================
 // Scrape Logs (detailed per-URL scrape attempts)

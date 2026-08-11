@@ -169,6 +169,41 @@
       "when": 1786116978838,
       "tag": "0023_powerful_dragon_lord",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1786325022329,
+      "tag": "0024_automatic_competitor_discovery",
+      "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1786387679169,
+      "tag": "0025_competitor_discovery_normalization",
+      "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1786388210223,
+      "tag": "0026_discovery_audit_normalized_price",
+      "breakpoints": true
+    },
+    {
+      "idx": 27,
+      "version": "7",
+      "when": 1786391192223,
+      "tag": "0027_discovery_offer_semantics",
+      "breakpoints": true
+    },
+    {
+      "idx": 28,
+      "version": "7",
+      "when": 1786391406257,
+      "tag": "0028_discovery_product_lease",
+      "breakpoints": true
     }
   ]
 }

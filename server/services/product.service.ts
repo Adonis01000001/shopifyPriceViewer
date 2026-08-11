@@ -19,6 +19,7 @@ import {
   competitors,
   competitorProducts,
   competitorProductDismissals,
+  competitorDiscoveries,
   priceRadarProducts,
   priceRadarSources,
   scoopCompetitorProducts,
@@ -544,9 +545,13 @@ export const productService = {
             ? ("price-radar" as const)
             : row.sourceType === "scoop"
               ? ("scoop" as const)
+              : row.sourceType === "automatic-discovery"
+                ? ("automatic-discovery" as const)
               : ("matched" as const),
         isAutomatic:
-          row.sourceType === "price-radar" || row.sourceType === "scoop",
+          row.sourceType === "price-radar" ||
+          row.sourceType === "scoop" ||
+          row.sourceType === "automatic-discovery",
       })),
       ...automaticMappings,
     ].sort(
@@ -560,7 +565,7 @@ export const productService = {
     data: {
       productId: string;
       competitorId: string;
-      sourceType: "price-radar" | "scoop";
+      sourceType: "price-radar" | "scoop" | "automatic-discovery";
       sourceProductId: string;
     }
   ): Promise<void> {
@@ -633,7 +638,7 @@ export const productService = {
           message: "Competitor product not found",
         });
       }
-    } else {
+    } else if (data.sourceType === "scoop") {
       const [sourceProduct] = await database
         .select({ id: scoopCompetitorProducts.id })
         .from(scoopCompetitorProducts)
@@ -643,6 +648,31 @@ export const productService = {
             eq(scoopCompetitorProducts.userId, userId),
             eq(scoopCompetitorProducts.competitorId, data.competitorId),
             eq(scoopCompetitorProducts.isActive, true)
+          )
+        )
+        .limit(1);
+      if (!sourceProduct) {
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "Competitor product not found",
+        });
+      }
+    } else {
+      const [sourceProduct] = await database
+        .select({ id: competitorDiscoveries.id })
+        .from(competitorDiscoveries)
+        .innerJoin(
+          competitorProducts,
+          eq(competitorDiscoveries.competitorProductId, competitorProducts.id)
+        )
+        .where(
+          and(
+            eq(competitorDiscoveries.id, data.sourceProductId),
+            eq(competitorDiscoveries.userId, userId),
+            eq(competitorDiscoveries.productId, data.productId),
+            eq(competitorDiscoveries.status, "imported"),
+            eq(competitorProducts.competitorId, data.competitorId),
+            eq(competitorProducts.isActive, true)
           )
         )
         .limit(1);
@@ -857,6 +887,15 @@ export const productService = {
         target: [products.storeId, products.shopifyProductId],
         set: {
           title: sql`excluded.title`,
+          sku: sql`excluded.sku`,
+          barcode: sql`excluded.barcode`,
+          gtin: sql`excluded.gtin`,
+          mpn: sql`excluded.mpn`,
+          modelNumber: sql`excluded.model_number`,
+          vendor: sql`excluded.vendor`,
+          productType: sql`excluded.product_type`,
+          category: sql`excluded.category`,
+          tags: sql`excluded.tags`,
           price: sql`excluded.price`,
           compareAtPrice: sql`excluded.compare_at_price`,
           imageUrl: sql`excluded.image_url`,
@@ -886,6 +925,9 @@ export const productService = {
         description: products.description,
         sku: products.sku,
         barcode: products.barcode,
+        gtin: products.gtin,
+        mpn: products.mpn,
+        modelNumber: products.modelNumber,
         vendor: products.vendor,
         productType: products.productType,
         category: products.category,

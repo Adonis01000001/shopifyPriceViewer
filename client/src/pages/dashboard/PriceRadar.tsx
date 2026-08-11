@@ -121,6 +121,18 @@ function formatDate(d: string | Date | null | undefined): string {
   });
 }
 
+function providerFailureSummary(value: unknown): string | null {
+  if (!value || typeof value !== "object" || !("providerFailures" in value)) return null;
+  const failures = (value as { providerFailures?: unknown }).providerFailures;
+  if (!Array.isArray(failures) || failures.length === 0) return null;
+  const labels = failures.flatMap(item => {
+    if (!item || typeof item !== "object") return [];
+    const entry = item as { provider?: unknown; error?: unknown };
+    return [`${String(entry.provider ?? "provider")}: ${String(entry.error ?? "failed")}`];
+  });
+  return labels.length > 0 ? labels.slice(0, 3).join(" · ") : null;
+}
+
 function SourceRow({
   source,
   onStartCrawl,
@@ -534,12 +546,16 @@ function ProductRadarCard({
   competitors,
   onToggleTracking,
   trackingPending,
+  onDiscover,
+  discoveryPending,
 }: {
   product: CatalogProduct;
   mappings: CompetitorMapping[];
   competitors: Competitor[];
   onToggleTracking: () => void;
   trackingPending: boolean;
+  onDiscover: () => void;
+  discoveryPending: boolean;
 }) {
   const utils = trpc.useUtils();
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -599,17 +615,33 @@ function ProductRadarCard({
             </p>
           </div>
         </div>
-        <Button
-          type="button"
-          size="sm"
-          variant={product.isTracked ? "default" : "outline"}
-          aria-pressed={product.isTracked}
-          disabled={trackingPending}
-          onClick={onToggleTracking}
-          className="shrink-0"
-        >
-          {product.isTracked ? "Monitoring" : "Start monitoring"}
-        </Button>
+        <div className="flex items-center gap-2 shrink-0">
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            disabled={discoveryPending}
+            onClick={onDiscover}
+            title="Search public competitor offers for this product"
+          >
+            {discoveryPending ? (
+              <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <Search className="mr-1.5 h-3.5 w-3.5" />
+            )}
+            Discover
+          </Button>
+          <Button
+            type="button"
+            size="sm"
+            variant={product.isTracked ? "default" : "outline"}
+            aria-pressed={product.isTracked}
+            disabled={trackingPending}
+            onClick={onToggleTracking}
+          >
+            {product.isTracked ? "Monitoring" : "Start monitoring"}
+          </Button>
+        </div>
       </div>
 
       <div className="mt-5 border-t border-outline-variant/20 pt-4">
@@ -706,7 +738,8 @@ function ProductRadarCard({
                         competitorId &&
                         sourceProductId &&
                         (mapping.source === "price-radar" ||
-                          mapping.source === "scoop")
+                          mapping.source === "scoop" ||
+                          mapping.source === "automatic-discovery")
                       ) {
                         dismissMapping.mutate({
                           productId: mapping.productId,
@@ -756,10 +789,14 @@ function ProductRadarCard({
 }
 
 export default function PriceRadar() {
+  const utils = trpc.useUtils();
   const [createOpen, setCreateOpen] = useState(false);
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [crawlingSources, setCrawlingSources] = useState<Set<string>>(
     new Set()
+  );
+  const [discoveringProductId, setDiscoveringProductId] = useState<string | null>(
+    null
   );
 
   const { data: info } = trpc.priceRadar.info.useQuery();
@@ -802,6 +839,52 @@ export default function PriceRadar() {
     refetchOnMount: "always",
   });
   const { data: jobs } = trpc.priceRadar.history.useQuery({ limit: 100 });
+  const { data: discoveryStats } = trpc.intelligence.discoveryStats.useQuery(
+    undefined,
+    { staleTime: 1000 * 30 }
+  );
+  const { data: discoveryRuns } = trpc.intelligence.discoveryRuns.useQuery(
+    { limit: 5 },
+    { staleTime: 1000 * 30 }
+  );
+  const { data: rejectedDiscoveries } = trpc.intelligence.getDiscoveries.useQuery(
+    { status: "rejected", limit: 5 },
+    { staleTime: 1000 * 30 }
+  );
+
+  const invalidateDiscoveryData = useCallback(() => {
+    void utils.products.getCompetitorMappings.invalidate();
+    void utils.competitors.list.invalidate();
+    void utils.intelligence.discoveryStats.invalidate();
+    void utils.intelligence.discoveryRuns.invalidate();
+    void utils.intelligence.getDiscoveries.invalidate();
+  }, [utils]);
+
+  const discoverAll = trpc.intelligence.discoverAllProducts.useMutation({
+    onSuccess: result => {
+      invalidateDiscoveryData();
+      const verified = result.results.reduce(
+        (total, item) => total + item.validCompetitors,
+        0
+      );
+      toast.success(`Discovery complete: ${verified} verified competitor offers`);
+    },
+    onError: error => toast.error(error.message || "Competitor discovery failed"),
+  });
+
+  const discoverOne = trpc.intelligence.discoverCompetitors.useMutation({
+    onSuccess: result => {
+      invalidateDiscoveryData();
+      toast.success(
+        `Discovery complete: ${result.validCompetitors} verified offer${result.validCompetitors === 1 ? "" : "s"}`
+      );
+      setDiscoveringProductId(null);
+    },
+    onError: error => {
+      toast.error(error.message || "Competitor discovery failed");
+      setDiscoveringProductId(null);
+    },
+  });
 
   const createSource = trpc.priceRadar.createSource.useMutation({
     onSuccess: () => {
@@ -919,6 +1002,20 @@ export default function PriceRadar() {
         icon={Radar}
       >
         <div>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => discoverAll.mutate({})}
+            disabled={discoverAll.isPending || productList.length === 0}
+            title="Search public competitor offers for every active catalog product"
+          >
+            {discoverAll.isPending ? (
+              <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <Search className="mr-1.5 h-3.5 w-3.5" />
+            )}
+            Discover all products
+          </Button>
           <Dialog open={createOpen} onOpenChange={setCreateOpen}>
             <DialogTrigger asChild>
               <Button
@@ -1007,7 +1104,7 @@ export default function PriceRadar() {
       </PageHeader>
 
       {/* Summary stats */}
-      <div className="grid gap-4 sm:grid-cols-3">
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <div className="glass-card p-4 flex items-center justify-between">
           <div>
             <p className="text-2xl font-bold font-mono tracking-tight">
@@ -1037,7 +1134,76 @@ export default function PriceRadar() {
           </div>
           <Check className="h-8 w-8 text-primary/30" />
         </div>
+        <div className="glass-card p-4 flex items-center justify-between">
+          <div>
+            <p className="text-2xl font-bold font-mono tracking-tight">
+              {discoveryStats?.imported ?? 0}
+            </p>
+            <p className="label-caps text-muted-foreground/60">
+              Verified offers
+            </p>
+          </div>
+          <Globe className="h-8 w-8 text-primary/30" />
+        </div>
       </div>
+
+      {discoveryRuns && discoveryRuns.length > 0 && (
+        <section
+          aria-labelledby="radar-discovery-status-title"
+          className="glass-panel rounded-lg p-4 border border-primary/20"
+        >
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <h3 id="radar-discovery-status-title" className="text-sm font-semibold">
+                Automatic discovery status
+              </h3>
+              <p className="text-xs text-muted-foreground mt-1">
+                Last run: {discoveryRuns[0].status ?? "unknown"} · {discoveryRuns[0].productsProcessed ?? 0} product(s) · {discoveryRuns[0].errorsCount ?? 0} rejected/error(s)
+              </p>
+              {providerFailureSummary(discoveryRuns[0].errorDetails) && (
+                <p className="text-xs text-amber-400 mt-1">
+                  Provider issues: {providerFailureSummary(discoveryRuns[0].errorDetails)}
+                </p>
+              )}
+            </div>
+            <Clock className="h-5 w-5 text-primary/50" aria-hidden="true" />
+          </div>
+        </section>
+      )}
+
+      {rejectedDiscoveries && rejectedDiscoveries.length > 0 && (
+        <section
+          aria-labelledby="radar-rejected-title"
+          className="glass-panel rounded-lg p-4 border border-amber-500/20"
+        >
+          <div className="flex items-center gap-2 mb-3">
+            <AlertCircle className="h-4 w-4 text-amber-400" aria-hidden="true" />
+            <h3 id="radar-rejected-title" className="text-sm font-semibold">
+              Recent offers not added
+            </h3>
+          </div>
+          <div className="space-y-2">
+            {rejectedDiscoveries.map(discovery => (
+              <div
+                key={discovery.id}
+                className="rounded-md bg-surface-container-lowest border border-outline-variant/20 px-3 py-2"
+              >
+                <div className="flex items-center justify-between gap-3">
+                  <p className="text-xs font-medium truncate">
+                    {discovery.candidateTitle || discovery.candidateDomain}
+                  </p>
+                  <span className="text-[10px] text-muted-foreground shrink-0">
+                    {Math.round(discovery.confidence * 100)}% search confidence
+                  </span>
+                </div>
+                <p className="text-[11px] text-muted-foreground mt-1">
+                  {discovery.rejectionReason || "The page did not provide enough verified product data."}
+                </p>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
 
       {/* Product catalog and competitor mappings */}
       <section aria-labelledby="radar-mappings-title">
@@ -1055,9 +1221,9 @@ export default function PriceRadar() {
             </span>
           </div>
           <p className="text-xs text-muted-foreground">
-            Every product below comes from your Products catalog. Exact matching
-            competitor names are linked automatically; you can hide incorrect
-            matches or add a different listing manually.
+             Every product below comes from your Products catalog. Verified public
+             offers are linked automatically after identifier and page validation;
+             you can hide incorrect matches or add a different listing manually.
           </p>
         </div>
         <div className="relative max-w-md mb-4">
@@ -1116,6 +1282,13 @@ export default function PriceRadar() {
                 mappings={mappingsByProduct.get(product.id) ?? []}
                 competitors={competitorList}
                 trackingPending={toggleProductTracking.isPending}
+                discoveryPending={
+                  discoveringProductId === product.id || discoverOne.isPending
+                }
+                onDiscover={() => {
+                  setDiscoveringProductId(product.id);
+                  discoverOne.mutate({ productId: product.id });
+                }}
                 onToggleTracking={() =>
                   toggleProductTracking.mutate({
                     id: product.id,

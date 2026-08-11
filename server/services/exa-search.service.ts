@@ -88,8 +88,20 @@ async function searchProducts(
   query: string,
   maxResults: number = 10
 ): Promise<ExaSearchResult[]> {
+  return (await searchProductsDetailed(query, maxResults)).results;
+}
+
+export interface ExaSearchResultWithStatus {
+  results: ExaSearchResult[];
+  error?: string;
+}
+
+async function searchProductsDetailed(
+  query: string,
+  maxResults: number = 10
+): Promise<ExaSearchResultWithStatus> {
   const exa = createClient();
-  if (!exa) return [];
+  if (!exa) return { results: [], error: "provider-not-configured" };
 
   try {
     const results = await exa.search(query, {
@@ -100,16 +112,19 @@ async function searchProducts(
       },
     });
 
-    return results.results.map((r: any) => ({
+    return { results: results.results.map((r: any) => ({
       url: r.url as string,
       title: (r.title as string) ?? "",
       snippet: ((r.highlights as string[]) ?? []).join(" ... "),
       highlights: (r.highlights as string[]) ?? [],
       publishedDate: (r.publishedDate as string) ?? null,
-    }));
+    })) };
   } catch (err) {
     logger.warn({ query, err }, "Exa: search failed");
-    return [];
+    return {
+      results: [],
+      error: err instanceof Error ? err.message : "Exa search failed",
+    };
   }
 }
 
@@ -210,6 +225,7 @@ async function getContents(
 
 export const exaSearchService = {
   searchProducts,
+  searchProductsDetailed,
   structuredSearchProducts,
   getContents,
 };

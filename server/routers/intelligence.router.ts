@@ -151,6 +151,12 @@ export const intelligenceRouter = router({
     return competitorDiscoveryService.getStats(ctx.user!.id);
   }),
 
+  discoveryRuns: protectedProcedure
+    .input(z.object({ limit: z.number().min(1).max(100).optional() }).optional())
+    .query(async ({ ctx, input }) => {
+      return competitorDiscoveryService.getRuns(ctx.user!.id, input?.limit);
+    }),
+
   // ── AI Extraction ─────────────────────────────────────────────────────────
 
   extractFromUrl: protectedProcedure

@@ -8,6 +8,7 @@ import {
   classifyUrl,
   extractInternalLinks,
 } from "./url-policy";
+import { extractOfferQuantity } from "../competitor-discovery.normalization";
 
 const AMAZON_DOT_COM_PRICE_XPATH =
   "/html/body/div[1]/div[1]/div/div[5]/div[1]/div[7]/div/div[1]/div/div/div/form/div/div/div/div/div[3]/div/div[1]/div/div/div/span[1]/span[1]";
@@ -271,6 +272,14 @@ function decimal(value: unknown): string | null {
   return Number.isFinite(amount) && amount >= 0 ? amount.toFixed(2) : null;
 }
 
+const MAX_PERSISTED_MONEY = 99_999_999.99;
+
+function boundedMoney(value: unknown): string | null {
+  const normalized = decimal(value);
+  if (!normalized || Number(normalized) > MAX_PERSISTED_MONEY) return null;
+  return normalized;
+}
+
 function currencyFromPriceText(value: string | null): string | null {
   if (!value) return null;
   const code = /^([A-Z]{3})(?=\s*\d)/i.exec(value.trim())?.[1];
@@ -318,6 +327,50 @@ function getOffer(product: Record<string, unknown>): Record<string, unknown> {
   return offers && typeof offers === "object"
     ? (offers as Record<string, unknown>)
     : {};
+}
+
+function offerValue(offer: Record<string, unknown>, keys: string[]): unknown {
+  for (const key of keys) {
+    if (offer[key] != null) return offer[key];
+  }
+  return null;
+}
+
+function priceTypeValue(offer: Record<string, unknown>, html: string): string | null {
+  const explicit = stringValue(offerValue(offer, ["priceType", "pricingType"]));
+  if (explicit) return explicit.toLowerCase();
+  if (/\b(?:member|membership|prime)\s+price\b/i.test(html)) return "membership";
+  if (/\b(?:sale|deal|discount)\s+price\b/i.test(html)) return "sale";
+  return null;
+}
+
+function extractCoupon(html: string, offer: Record<string, unknown>): {
+  amount: string | null;
+  code: string | null;
+} {
+  const amount =
+    boundedMoney(offerValue(offer, ["couponAmount", "couponValue", "discountCoupon"])) ??
+    boundedMoney(
+      firstMatch(html, [
+        /\bcoupon\b[^$\d]{0,40}(?:[$â‚¬Â£Â¥]\s*)?([\d.,]+)/i,
+        /\bsave\b\s*(?:[$â‚¬Â£Â¥]\s*)?([\d.,]+)\s*\bwith\s+(?:coupon|promo)/i,
+      ])
+    );
+  const rawCode = stringValue(offerValue(offer, ["couponCode", "promoCode"]));
+  const code = rawCode ?? firstMatch(html, [
+    /\bcoupon\b[^A-Z0-9]{0,20}(?:code\s*[:#-]?\s*)?([A-Z0-9][A-Z0-9_-]{3,})\b/i,
+  ]);
+  return { amount, code: code?.slice(0, 64) ?? null };
+}
+
+function nestedDecimal(value: unknown, ...keys: string[]): string | null {
+  if (!value || typeof value !== "object") return null;
+  let current: unknown = value;
+  for (const key of keys) {
+    if (!current || typeof current !== "object") return null;
+    current = (current as Record<string, unknown>)[key];
+  }
+  return decimal(current);
 }
 
 function normalizeAttributes(value: unknown): Record<string, string> {
@@ -381,6 +434,18 @@ export function extractProductData(
   if (ogTitle || htmlTitle) methods.push("html-metadata");
   if (ebayProductFieldText) methods.push("ebay-xpath");
 
+  const declaredPriceType = priceTypeValue(offer, html);
+  const membershipPrice =
+    boundedMoney(offerValue(offer, ["membershipPrice", "memberPrice", "primePrice"])) ??
+    boundedMoney(firstMatch(html, [
+      /\b(?:member|membership|prime)\s+price\b[^$\d]{0,40}(?:[$â‚¬Â£Â¥]\s*)?([\d.,]+)/i,
+    ]));
+  const coupon = extractCoupon(html, offer);
+  const membershipOnly =
+    Boolean(membershipPrice) &&
+    ["membership", "member", "prime"].includes(declaredPriceType ?? "") &&
+    offerValue(offer, ["regularPrice", "basePrice", "listPrice", "originalPrice"]) == null;
+
   const amazonPriceText = isAmazonDotCom(pageUrl)
     ? textAtAbsoluteXPath(html, AMAZON_DOT_COM_PRICE_XPATH) ??
       firstMatch(html, [
@@ -397,28 +462,35 @@ export function extractProductData(
     : null;
   const sitePriceText =
     amazonPriceText ?? ebayPriceText ?? walmartPriceText;
-  const sitePrice = decimal(sitePriceText);
-  const price =
+  const sitePrice = boundedMoney(sitePriceText);
+  const extractedPrice =
     sitePrice ??
-    decimal(offer.price) ??
-    decimal(jsonLdProduct?.price) ??
-    decimal(meta(html, "product:price:amount")) ??
-    decimal(meta(html, "og:price:amount")) ??
-    decimal(
+    boundedMoney(offer.price) ??
+    boundedMoney(jsonLdProduct?.price) ??
+    boundedMoney(meta(html, "product:price:amount")) ??
+    boundedMoney(meta(html, "og:price:amount")) ??
+    boundedMoney(
       firstMatch(html, [
         /\b(?:sale[-_\s]?price|current[-_\s]?price|price)\b[^>]{0,120}content=["']([^"']+)["']/i,
         /(?:[$€£¥]\s?[\d.,]+|[\d.,]+\s?(?:USD|EUR|GBP|CAD|AUD))/i,
       ])
     );
+  const price = membershipOnly ? null : extractedPrice;
   const previousPrice =
-    decimal(offer.highPrice) ??
-    decimal(meta(html, "product:original_price:amount")) ??
-    decimal(
+    boundedMoney(offer.highPrice) ??
+    boundedMoney(meta(html, "product:original_price:amount")) ??
+    boundedMoney(
       firstMatch(html, [
-        /<(?:del|s)\b[^>]*>([\s\S]*?)<\/(?:del|s)>/i,
+        /<(?:del|s)\b[^>]*>([^<]{1,64})<\/(?:del|s)>/i,
         /\b(?:was|list[-_\s]?price|original[-_\s]?price)\b[^>]{0,100}>\s*([^<]+)/i,
       ])
     );
+  const basePrice =
+    boundedMoney(offerValue(offer, ["basePrice", "regularPrice", "listPrice", "originalPrice"])) ??
+    (previousPrice && price && Number(previousPrice) > Number(price) ? previousPrice : price);
+  const salePrice =
+    boundedMoney(offerValue(offer, ["salePrice", "discountPrice"])) ??
+    (previousPrice && price && Number(previousPrice) > Number(price) ? price : null);
   if (amazonPriceText && sitePrice) methods.push("amazon-price");
   else if (ebayPriceText && sitePrice) methods.push("ebay-price");
   else if (walmartPriceText && sitePrice) methods.push("walmart-price");
@@ -448,7 +520,12 @@ export function extractProductData(
     stringValue(jsonLdProduct?.gtin12) ??
     stringValue(jsonLdProduct?.gtin8) ??
     stringValue(jsonLdProduct?.gtin);
-  const barcode = stringValue(jsonLdProduct?.mpn) ?? gtin;
+  const barcode = gtin;
+  const mpn = stringValue(jsonLdProduct?.mpn) ?? meta(html, "product:mpn");
+  const modelNumber =
+    stringValue(jsonLdProduct?.model) ??
+    meta(html, "product:model") ??
+    mpn;
   const category =
     stringValue(jsonLdProduct?.category) ??
     meta(html, "product:category") ??
@@ -457,6 +534,26 @@ export function extractProductData(
   const attributes = normalizeAttributes(
     jsonLdProduct?.additionalProperty ?? jsonLdProduct?.additionalProperties
   );
+  const condition = stringValue(offer.itemCondition ?? jsonLdProduct?.itemCondition);
+  const variantParts = [
+    stringValue(jsonLdProduct?.color),
+    stringValue(jsonLdProduct?.size),
+    stringValue(jsonLdProduct?.material),
+  ].filter((value): value is string => !!value);
+  const variant = variantParts.length > 0 ? variantParts.join(" / ") : null;
+  const quantityFromAttributes = Object.entries(attributes).find(([key]) =>
+    /quantity|count|pack|units?/i.test(key)
+  )?.[1];
+  const quantityInfo = extractOfferQuantity(quantityFromAttributes ?? name ?? htmlTitle ?? null);
+  const shippingPrice =
+    boundedMoney(nestedDecimal(offer.shippingDetails, "shippingRate", "value")) ??
+    boundedMoney(offer.shippingAmount) ??
+    boundedMoney(meta(html, "product:shipping:amount"));
+  const taxAmount = boundedMoney(offer.tax) ?? boundedMoney(offer.taxAmount);
+  const discountAmount =
+    price && previousPrice && Number(previousPrice) > Number(price)
+      ? (Number(previousPrice) - Number(price)).toFixed(2)
+      : null;
   const pageKind = jsonLdProduct || (name && price) ? "product" : classifyUrl(pageUrl);
   const confidence =
     Math.min(
@@ -464,18 +561,20 @@ export function extractProductData(
       (jsonLdProduct ? 0.45 : 0) +
         (name ? 0.2 : 0) +
         (price ? 0.2 : 0) +
-        (sku || gtin ? 0.1 : 0) +
+        (sku || gtin || mpn || modelNumber ? 0.1 : 0) +
         (images.length ? 0.05 : 0)
     );
 
   if (!name) warnings.push("No product name found");
-  if (!price) warnings.push("No product price found");
+  if (!price) warnings.push(membershipOnly ? "Only a membership price was available" : "No product price found");
   const product: PriceRadarProduct | null =
     pageKind === "product" && name
       ? {
           name: name.slice(0, 500),
           brand: brand?.slice(0, 255) ?? null,
           price,
+          basePrice,
+          salePrice,
           currency,
           previousPrice,
           discountPercent: calculateDiscount(price, previousPrice),
@@ -485,16 +584,39 @@ export function extractProductData(
           sku: sku?.slice(0, 128) ?? null,
           barcode: barcode?.slice(0, 128) ?? null,
           gtin: gtin?.slice(0, 128) ?? null,
+          mpn: mpn?.slice(0, 128) ?? null,
+          modelNumber: modelNumber?.slice(0, 128) ?? null,
           category: category?.slice(0, 255) ?? null,
           attributes,
           rating: rating(aggregate.ratingValue),
           reviewCount: integer(aggregate.reviewCount ?? aggregate.ratingCount),
           seller: seller?.slice(0, 255) ?? null,
+          condition: condition?.slice(0, 32) ?? null,
+          variant: variant?.slice(0, 255) ?? null,
+          quantity: quantityInfo.quantity,
+          unit: quantityInfo.unit,
+          shippingPrice,
+          taxAmount,
+          discountAmount,
+          couponAmount: coupon.amount,
+          couponCode: coupon.code,
+          membershipPrice,
+          priceType: declaredPriceType,
           structuredMetadata: Object.fromEntries(
             [
               ["openGraphTitle", ogTitle],
               ["description", description],
               ["canonical", canonicalUrl],
+              ["shippingPrice", shippingPrice],
+              ["taxAmount", taxAmount],
+              ["basePrice", basePrice],
+              ["salePrice", salePrice],
+              ["couponAmount", coupon.amount],
+              ["couponCode", coupon.code],
+              ["membershipPrice", membershipPrice],
+              ["priceType", declaredPriceType],
+              ["condition", condition],
+              ["variant", variant],
             ].filter(([, value]) => value != null)
           ),
           jsonLd: jsonLdProduct,
@@ -525,6 +647,7 @@ export function shouldRenderWithBrowser(
   ) {
     return true;
   }
+  if (result.product && !result.product.price) return true;
   if (result.product?.price) return false;
   return (
     html.length < 1500 ||
