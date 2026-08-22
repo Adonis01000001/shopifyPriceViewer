@@ -164,8 +164,8 @@ function SourceRow({
 
   return (
     <div className="glass-panel rounded-lg overflow-hidden">
-      <div className="px-5 py-4 bg-surface-container/50">
-        <div className="flex items-start justify-between gap-4">
+      <div className="px-4 py-3 bg-surface-container/50">
+        <div className="flex items-start justify-between gap-3">
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2 mb-1">
               <h3 className="text-[15px] font-semibold truncate">
@@ -250,7 +250,7 @@ function SourceRow({
             return (
               <div
                 key={job.id}
-                className="px-5 py-3 flex items-center gap-4 hover:bg-muted/30 transition-colors"
+                className="px-4 py-2.5 flex items-center gap-3 hover:bg-muted/30 transition-colors"
               >
                 <span
                   className={cn(
@@ -588,18 +588,18 @@ function ProductRadarCard({
   };
 
   return (
-    <article className="glass-panel rounded-lg p-5">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+    <article className="glass-panel rounded-lg min-w-0 p-4">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div className="flex items-center gap-3 min-w-0">
           {product.imageUrl ? (
             <img
               src={product.imageUrl}
               alt=""
-              className="h-12 w-12 rounded object-cover border border-outline-variant shrink-0"
+              className="h-10 w-10 rounded object-cover border border-outline-variant shrink-0"
             />
           ) : (
             <div
-              className="h-12 w-12 rounded bg-surface-container-highest border border-outline-variant flex items-center justify-center text-sm font-bold text-muted-foreground shrink-0"
+              className="h-10 w-10 rounded bg-surface-container-highest border border-outline-variant flex items-center justify-center text-sm font-bold text-muted-foreground shrink-0"
               aria-hidden="true"
             >
               {product.title.charAt(0).toUpperCase()}
@@ -615,7 +615,7 @@ function ProductRadarCard({
             </p>
           </div>
         </div>
-        <div className="flex items-center gap-2 shrink-0">
+        <div className="flex w-full max-w-full flex-wrap items-center gap-2 sm:w-auto sm:shrink-0 sm:justify-end">
           <Button
             type="button"
             size="sm"
@@ -644,8 +644,8 @@ function ProductRadarCard({
         </div>
       </div>
 
-      <div className="mt-5 border-t border-outline-variant/20 pt-4">
-        <div className="flex items-center justify-between gap-3 mb-3">
+      <div className="mt-4 border-t border-outline-variant/20 pt-3">
+        <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
           <h4 className="text-[12px] font-semibold label-caps text-muted-foreground">
             Competitor Products ({mappings.length})
           </h4>
@@ -667,7 +667,7 @@ function ProductRadarCard({
             {mappings.map(mapping => (
               <div
                 key={mapping.id}
-                className="rounded-lg bg-surface-container-lowest border border-outline-variant/20 p-3 flex items-center gap-3"
+                className="rounded-lg bg-surface-container-lowest border border-outline-variant/20 p-3 flex min-w-0 flex-wrap items-center gap-3"
               >
                 <Link2
                   className="h-4 w-4 text-primary/70 shrink-0"
@@ -691,7 +691,7 @@ function ProductRadarCard({
                       : ""}
                   </p>
                 </div>
-                <div className="flex items-center gap-1 shrink-0">
+                <div className="flex max-w-full flex-wrap items-center gap-1 shrink-0">
                   {mapping.url && (
                     <a
                       href={mapping.url}
@@ -761,7 +761,7 @@ function ProductRadarCard({
             ))}
           </div>
         ) : (
-          <div className="rounded-lg border border-dashed border-outline-variant p-5 text-center text-muted-foreground">
+          <div className="rounded-lg border border-dashed border-outline-variant p-4 text-center text-muted-foreground">
             <Link2
               className="h-6 w-6 mx-auto mb-2 opacity-40"
               aria-hidden="true"
@@ -994,7 +994,7 @@ export default function PriceRadar() {
   const jobsList = jobs ?? [];
 
   return (
-    <div className="space-y-8">
+    <div className="price-radar-page space-y-6">
       <PageHeader
         eyebrow="Competitive monitoring"
         title="Price Radar"
@@ -1104,53 +1104,53 @@ export default function PriceRadar() {
       </PageHeader>
 
       {/* Summary stats */}
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <div className="glass-card p-4 flex items-center justify-between">
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="glass-card p-3 flex items-center justify-between">
           <div>
-            <p className="text-2xl font-bold font-mono tracking-tight">
+            <p className="text-xl font-bold font-mono tracking-tight">
               {sourceList.length}
             </p>
             <p className="label-caps text-muted-foreground/60">Sources</p>
           </div>
-          <Radar className="h-8 w-8 text-primary/30" />
+          <Radar className="h-6 w-6 text-primary/30" />
         </div>
-        <div className="glass-card p-4 flex items-center justify-between">
+        <div className="glass-card p-3 flex items-center justify-between">
           <div>
-            <p className="text-2xl font-bold font-mono tracking-tight">
+            <p className="text-xl font-bold font-mono tracking-tight">
               {jobsList.length}
             </p>
             <p className="label-caps text-muted-foreground/60">Crawl Jobs</p>
           </div>
-          <Activity className="h-8 w-8 text-primary/30" />
+          <Activity className="h-6 w-6 text-primary/30" />
         </div>
-        <div className="glass-card p-4 flex items-center justify-between">
+        <div className="glass-card p-3 flex items-center justify-between">
           <div>
-            <p className="text-2xl font-bold font-mono tracking-tight">
+            <p className="text-xl font-bold font-mono tracking-tight">
               {trackedProducts.length}
             </p>
             <p className="label-caps text-muted-foreground/60">
               Monitored Products
             </p>
           </div>
-          <Check className="h-8 w-8 text-primary/30" />
+          <Check className="h-6 w-6 text-primary/30" />
         </div>
-        <div className="glass-card p-4 flex items-center justify-between">
+        <div className="glass-card p-3 flex items-center justify-between">
           <div>
-            <p className="text-2xl font-bold font-mono tracking-tight">
+            <p className="text-xl font-bold font-mono tracking-tight">
               {discoveryStats?.imported ?? 0}
             </p>
             <p className="label-caps text-muted-foreground/60">
               Verified offers
             </p>
           </div>
-          <Globe className="h-8 w-8 text-primary/30" />
+          <Globe className="h-6 w-6 text-primary/30" />
         </div>
       </div>
 
       {discoveryRuns && discoveryRuns.length > 0 && (
         <section
           aria-labelledby="radar-discovery-status-title"
-          className="glass-panel rounded-lg p-4 border border-primary/20"
+          className="glass-panel rounded-lg p-3 border border-primary/20"
         >
           <div className="flex items-center justify-between gap-3">
             <div>
@@ -1174,7 +1174,7 @@ export default function PriceRadar() {
       {rejectedDiscoveries && rejectedDiscoveries.length > 0 && (
         <section
           aria-labelledby="radar-rejected-title"
-          className="glass-panel rounded-lg p-4 border border-amber-500/20"
+          className="glass-panel rounded-lg p-3 border border-amber-500/20"
         >
           <div className="flex items-center gap-2 mb-3">
             <AlertCircle className="h-4 w-4 text-amber-400" aria-hidden="true" />
@@ -1207,7 +1207,7 @@ export default function PriceRadar() {
 
       {/* Product catalog and competitor mappings */}
       <section aria-labelledby="radar-mappings-title">
-        <div className="flex flex-col gap-1 mb-4">
+        <div className="flex flex-col gap-1 mb-3">
           <div className="flex flex-wrap items-center gap-2">
             <h3
               id="radar-mappings-title"
@@ -1226,7 +1226,7 @@ export default function PriceRadar() {
              you can hide incorrect matches or add a different listing manually.
           </p>
         </div>
-        <div className="relative max-w-md mb-4">
+        <div className="relative max-w-md mb-3">
           <Search
             className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground"
             aria-hidden="true"
@@ -1244,7 +1244,7 @@ export default function PriceRadar() {
         catalogSearchError ||
         mappingsError ||
         competitorsError ? (
-          <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-4 text-sm">
+          <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-sm">
             <p className="text-destructive">
               {catalogError?.message ||
                 catalogSearchError?.message ||
@@ -1269,12 +1269,12 @@ export default function PriceRadar() {
           catalogSearchLoading ||
           mappingsLoading ||
           competitorsLoading ? (
-          <div className="flex items-center justify-center py-12 text-muted-foreground">
+          <div className="flex items-center justify-center py-8 text-muted-foreground">
             <Loader2 className="h-5 w-5 animate-spin" aria-hidden="true" />
             <span className="ml-2 text-sm">Loading product mappings...</span>
           </div>
         ) : catalogResults.length > 0 ? (
-          <div className="grid gap-4">
+          <div className="grid gap-3 lg:grid-cols-2">
             {catalogResults.map(product => (
               <ProductRadarCard
                 key={product.id}
@@ -1299,7 +1299,7 @@ export default function PriceRadar() {
             ))}
           </div>
         ) : (
-          <div className="glass-panel rounded-lg p-12 text-center text-muted-foreground">
+          <div className="glass-panel rounded-lg p-8 text-center text-muted-foreground">
             <Package
               className="h-10 w-10 mx-auto mb-3 opacity-30"
               aria-hidden="true"
@@ -1319,7 +1319,7 @@ export default function PriceRadar() {
         {!competitorsLoading &&
           competitorList.length === 0 &&
           productList.length > 0 && (
-            <div className="mt-4 rounded-lg border border-dashed border-outline-variant p-4 text-center text-muted-foreground">
+            <div className="mt-4 rounded-lg border border-dashed border-outline-variant p-3 text-center text-muted-foreground">
               <p className="text-sm font-medium">Add a competitor first</p>
               <p className="text-xs mt-1">
                 Create a competitor in the Competitors page before linking
@@ -1335,8 +1335,8 @@ export default function PriceRadar() {
       */}
       {/* Sources list */}
       {sourcesLoading && (
-        <div className="flex items-center justify-center py-16">
-          <Loader2 className="h-8 w-8 text-primary animate-spin" />
+        <div className="flex items-center justify-center py-10">
+          <Loader2 className="h-6 w-6 text-primary animate-spin" />
           <span className="ml-3 text-muted-foreground">Loading sources...</span>
         </div>
       )}
@@ -1357,8 +1357,8 @@ export default function PriceRadar() {
       )}
 
       {!sourcesLoading && sourceList.length === 0 && (
-        <div className="glass-card p-12 text-center text-muted-foreground">
-          <Radar className="h-12 w-12 mx-auto mb-3 opacity-30" />
+        <div className="glass-card p-8 text-center text-muted-foreground">
+          <Radar className="h-10 w-10 mx-auto mb-3 opacity-30" />
           <p className="text-sm font-medium">No sources yet</p>
           <p className="text-xs mt-1">
             Add a competitor URL to start crawling for prices.
@@ -1367,7 +1367,7 @@ export default function PriceRadar() {
       )}
 
       {/* Info card */}
-      <div className="glass-panel rounded-lg p-4 border border-outline-variant/20">
+      <div className="glass-panel rounded-lg p-3 border border-outline-variant/20">
         <div className="flex items-start gap-3">
           <AlertCircle className="h-4 w-4 text-muted-foreground shrink-0 mt-0.5" />
           <div className="text-[11px] text-muted-foreground space-y-1">

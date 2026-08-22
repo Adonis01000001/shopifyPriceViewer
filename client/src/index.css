@@ -881,6 +881,27 @@
   font-size: 0.86rem;
   line-height: 1.65;
 }
+/* Price Radar uses a denser page-specific header without changing other routes. */
+.price-radar-page .workspace-page-header {
+  gap: 1rem;
+  margin-bottom: 1.25rem;
+}
+.price-radar-page .workspace-page-heading {
+  gap: 0.65rem;
+}
+.price-radar-page .workspace-page-icon {
+  width: 2.35rem;
+  height: 2.35rem;
+  border-radius: 0.7rem;
+}
+.price-radar-page .page-title {
+  font-size: clamp(1.55rem, 2.8vw, 2.25rem);
+}
+.price-radar-page .page-description {
+  max-width: 40rem;
+  font-size: 0.78rem;
+  line-height: 1.5;
+}
 .glass-panel,
 .glass-card {
   background: var(--surface-raised);
