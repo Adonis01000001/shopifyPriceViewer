@@ -5,18 +5,15 @@ import {
   ArrowUpRight,
   BarChart3,
   Bell,
-  Brain,
   Check,
   CheckCircle2,
   ChevronRight,
   Download,
-  Globe,
   LayoutDashboard,
   LogOut,
   Menu,
   Moon,
   Package,
-  Radar,
   RefreshCw,
   Search,
   Settings2,
@@ -33,6 +30,7 @@ import { useLocation } from "wouter";
 import Papa from "papaparse";
 import { toast } from "sonner";
 import { trpc, type RouterOutputs } from "@/lib/trpc";
+import PipelineActivity from "@/components/dashboard/PipelineActivity";
 import { useTheme } from "@/contexts/ThemeContext";
 import { useRealtimeNotifications } from "@/hooks/use-realtime-notifications";
 import { DashboardLayoutSkeleton } from "./DashboardLayoutSkeleton";
@@ -45,31 +43,14 @@ type NavItem = {
   adminOnly?: boolean;
 };
 
-const navGroups: Array<{ label: string; items: NavItem[] }> = [
-  {
-    label: "Workspace",
-    items: [
-      { icon: LayoutDashboard, label: "Overview", path: "/" },
-      { icon: Package, label: "Products", path: "/products" },
-      { icon: Bell, label: "Alerts", path: "/alerts" },
-    ],
-  },
-  {
-    label: "Intelligence",
-    items: [
-      { icon: Radar, label: "Price Radar", path: "/price-radar" },
-      { icon: Globe, label: "Price Scout", path: "/scout" },
-      { icon: Brain, label: "Path of Wisdom", path: "/wisdom" },
-    ],
-  },
-  {
-    label: "Market",
-    items: [{ icon: Users, label: "Competitors", path: "/competitors" }],
-  },
-  {
-    label: "Account",
-    items: [{ icon: Settings2, label: "Settings", path: "/settings" }],
-  },
+// Five destinations do not need three headings above them. The labels match
+// the page each one opens, so the sidebar and the page agree on the name.
+const navItems: NavItem[] = [
+  { icon: LayoutDashboard, label: "What to do", path: "/" },
+  { icon: Package, label: "Your products", path: "/products" },
+  { icon: Users, label: "Competitors", path: "/competitors" },
+  { icon: Bell, label: "Price changes", path: "/alerts" },
+  { icon: Settings2, label: "Settings", path: "/settings" },
 ];
 
 const getInitials = (name?: string | null) => {
@@ -87,31 +68,64 @@ export default function DashboardLayout({
 }: {
   children: React.ReactNode;
 }) {
+  const utils = trpc.useUtils();
   const { data: user, isLoading } = trpc.auth.me.useQuery();
-  const { data: products } = trpc.products.list.useQuery(undefined, {
+  const productsQuery = trpc.products.list.useQuery(undefined, {
     enabled: !!user,
     staleTime: 60_000,
   });
-  const { data: stores } = trpc.shopify.listStores.useQuery(undefined, {
+  const storesQuery = trpc.shopify.listStores.useQuery(undefined, {
     enabled: !!user,
     staleTime: 60_000,
   });
-  const { data: competitorCount } = trpc.competitors.count.useQuery(undefined, {
-    enabled: !!user,
-    staleTime: 60_000,
-  });
+  const products = productsQuery.data;
+  const stores = storesQuery.data;
   const [onboardingOpen, setOnboardingOpen] = useState(false);
+  // Opening the checklist is a one-off. Without this the effect below reopened
+  // it every time a background refetch handed back a new array, which put it
+  // back on screen every minute while a run was in progress.
+  const onboardingOffered = useRef(false);
 
+  // Coming back from Shopify, the cached answers are a minute old and still
+  // say "no store", which left the checklist showing step one as unfinished
+  // until something forced a refetch.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (!params.has("shopify_connected")) return;
+    void utils.shopify.listStores.refetch();
+    void utils.products.list.refetch();
+    params.delete("shopify_connected");
+    const query = params.toString();
+    window.history.replaceState(
+      {},
+      "",
+      window.location.pathname + (query ? `?${query}` : "")
+    );
+  }, [utils]);
+
+  // Only decide once the answers are actually in. Reading a still-loading
+  // query as "no store" reopened this checklist on every page change, and the
+  // old condition also required a competitor — something the checklist stopped
+  // asking for, so nothing could ever satisfy it.
   useEffect(() => {
     if (!user || isLoading) return;
-    const dismissed = localStorage.getItem("onboarding-dismissed");
-    const hasProducts = (products?.length ?? 0) > 0;
-    const hasStores = (stores?.length ?? 0) > 0;
-    const hasCompetitors = (competitorCount ?? 0) > 0;
-    if (!dismissed && !(hasProducts && hasStores && hasCompetitors)) {
+    if (!storesQuery.isSuccess || !productsQuery.isSuccess) return;
+    if (localStorage.getItem("onboarding-dismissed")) return;
+    if (onboardingOffered.current) return;
+
+    const setUp = stores!.length > 0 && products!.length > 0;
+    if (!setUp) {
+      onboardingOffered.current = true;
       setOnboardingOpen(true);
     }
-  }, [user, isLoading, products, stores, competitorCount]);
+  }, [
+    user,
+    isLoading,
+    products,
+    stores,
+    productsQuery.isSuccess,
+    storesQuery.isSuccess,
+  ]);
 
   if (isLoading) return <DashboardLayoutSkeleton />;
   if (!user) return null;
@@ -122,7 +136,6 @@ export default function DashboardLayout({
         open={onboardingOpen}
         stores={stores ?? []}
         productCount={products?.length ?? 0}
-        competitorCount={competitorCount ?? 0}
         onOpenChange={setOnboardingOpen}
         onComplete={() => {
           localStorage.setItem("onboarding-dismissed", "true");
@@ -133,6 +146,8 @@ export default function DashboardLayout({
         user={user}
         products={products ?? []}
         stores={stores ?? []}
+        setupKnown={storesQuery.isSuccess && productsQuery.isSuccess}
+        onResumeSetup={() => setOnboardingOpen(true)}
       >
         {children}
       </DashboardLayoutContent>
@@ -144,6 +159,9 @@ type DashboardLayoutContentProps = {
   user: PublicUser;
   products: RouterOutputs["products"]["list"];
   stores: RouterOutputs["shopify"]["listStores"];
+  /** False until both setup questions have been answered by the server. */
+  setupKnown: boolean;
+  onResumeSetup: () => void;
   children: React.ReactNode;
 };
 
@@ -151,6 +169,8 @@ function DashboardLayoutContent({
   user,
   products,
   stores,
+  setupKnown,
+  onResumeSetup,
   children,
 }: DashboardLayoutContentProps) {
   const [location, setLocation] = useLocation();
@@ -254,8 +274,13 @@ function DashboardLayoutContent({
   }, [products]);
 
   const syncMutation = trpc.shopify.syncProducts.useMutation({
-    onSuccess: data =>
-      toast.success(data.message || `Synced ${data.synced} products`),
+    onSuccess: data => {
+      toast.success(data.message || `Synced ${data.synced} products`);
+      // The sync starts a pipeline run. Without this the indicator sits on its
+      // idle interval and takes up to a minute to notice, which reads as
+      // nothing having happened at the exact moment something did.
+      utils.pipeline.status.invalidate();
+    },
     onError: error => toast.error(error.message || "Sync failed"),
   });
 
@@ -292,13 +317,11 @@ function DashboardLayoutContent({
   const unreadCount = alertStats?.unread ?? 0;
   const notifications = unreadAlerts ?? [];
   const activeStore = stores.find(store => store.isActive);
-  const currentNav = navGroups
-    .flatMap(group => group.items)
-    .find(item =>
-      item.path === "/"
-        ? location === "/"
-        : location === item.path || location.startsWith(`${item.path}/`)
-    );
+  const currentNav = navItems.find(item =>
+    item.path === "/"
+      ? location === "/"
+      : location === item.path || location.startsWith(`${item.path}/`)
+  );
 
   const getAlertIcon = (alertType: string) => {
     if (alertType === "price_drop") return ArrowDownRight;
@@ -329,7 +352,7 @@ function DashboardLayoutContent({
             </span>
             <span>
               <span className="app-brand-name">PriceIntel</span>
-              <span className="app-brand-caption">Decision studio</span>
+              <span className="app-brand-caption">Competitor pricing</span>
             </span>
           </button>
         </div>
@@ -343,42 +366,39 @@ function DashboardLayoutContent({
             <span className="app-workspace-value">
               {activeStore?.storeName ??
                 activeStore?.shopDomain ??
-                "No store connected"}
+                (setupKnown ? "No store connected" : "Loading\u2026")}
             </span>
           </span>
         </div>
 
         <nav className="app-navigation">
-          {navGroups.map(group => (
-            <div className="app-nav-group" key={group.label}>
-              <span className="app-nav-label">{group.label}</span>
-              {group.items
-                .filter(item => !item.adminOnly || user.role === "admin")
-                .map(item => {
-                  const isActive =
-                    item.path === "/"
-                      ? location === "/"
-                      : location === item.path ||
-                        location.startsWith(`${item.path}/`);
-                  const Icon = item.icon;
-                  return (
-                    <button
-                      type="button"
-                      key={item.path}
-                      className={`app-nav-link ${isActive ? "is-active" : ""}`}
-                      onClick={() => setLocation(item.path)}
-                      aria-current={isActive ? "page" : undefined}
-                    >
-                      <span className="app-nav-link-icon" aria-hidden="true">
-                        <Icon className="h-4 w-4" />
-                      </span>
-                      <span className="app-nav-link-label">{item.label}</span>
-                      {isActive && <ChevronRight className="h-3.5 w-3.5" />}
-                    </button>
-                  );
-                })}
-            </div>
-          ))}
+          <div className="app-nav-group">
+            {navItems
+              .filter(item => !item.adminOnly || user.role === "admin")
+              .map(item => {
+                const isActive =
+                  item.path === "/"
+                    ? location === "/"
+                    : location === item.path ||
+                      location.startsWith(`${item.path}/`);
+                const Icon = item.icon;
+                return (
+                  <button
+                    type="button"
+                    key={item.path}
+                    className={`app-nav-link ${isActive ? "is-active" : ""}`}
+                    onClick={() => setLocation(item.path)}
+                    aria-current={isActive ? "page" : undefined}
+                  >
+                    <span className="app-nav-link-icon" aria-hidden="true">
+                      <Icon className="h-4 w-4" />
+                    </span>
+                    <span className="app-nav-link-label">{item.label}</span>
+                    {isActive && <ChevronRight className="h-3.5 w-3.5" />}
+                  </button>
+                );
+              })}
+          </div>
         </nav>
 
         <div className="app-sidebar-footer">
@@ -468,11 +488,9 @@ function DashboardLayoutContent({
               )}
             </button>
             <div className="app-topbar-context hidden sm:block">
-              <div className="app-topbar-eyebrow">
-                Price intelligence workspace
-              </div>
+              <div className="app-topbar-eyebrow">Competitor pricing</div>
               <div className="app-topbar-title">
-                {currentNav?.label ?? "Workspace"}
+                {currentNav?.label ?? "PriceIntel"}
               </div>
             </div>
             <div className="app-search" ref={searchRef} role="search">
@@ -595,6 +613,17 @@ function DashboardLayoutContent({
           </div>
 
           <div className="app-topbar-actions">
+            {setupKnown && (stores.length === 0 || products.length === 0) && (
+              <button
+                type="button"
+                className="app-topbar-button is-primary"
+                onClick={onResumeSetup}
+              >
+                <Store className="h-3.5 w-3.5" />
+                <span className="topbar-action-label">Finish setup</span>
+              </button>
+            )}
+            <PipelineActivity />
             <button
               type="button"
               className="app-topbar-button hidden xl:inline-flex"

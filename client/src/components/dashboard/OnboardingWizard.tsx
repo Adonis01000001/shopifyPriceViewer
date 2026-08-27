@@ -9,7 +9,6 @@ import {
 import {
   Store,
   Package,
-  Users,
   ArrowRight,
   Check,
   Loader2,
@@ -24,27 +23,20 @@ const steps = [
   {
     id: "shopify",
     title: "Connect your Shopify store",
-    description: "Sync your products and start monitoring prices in minutes.",
+    description:
+      "We read your products and their prices. Nothing in your store changes unless you approve it.",
     icon: Store,
     action: "Connect Shopify",
     color: "text-primary bg-primary/10 border-primary/20",
   },
   {
     id: "products",
-    title: "Import your products",
-    description: "Choose which products to track and set target prices.",
+    title: "Bring your products in",
+    description:
+      "We copy your catalogue across, then start looking for the shops that sell the same things. Finding competitors is our job, not yours.",
     icon: Package,
     action: "Sync Products",
     color: "text-blue-400 bg-blue-500/10 border-blue-500/20",
-  },
-  {
-    id: "competitor",
-    title: "Add your first competitor",
-    description: "Monitor competitor pricing to stay ahead of the market.",
-    icon: Users,
-    action: "Add Competitor",
-    color:
-      "text-[var(--success)] bg-[var(--success)]/10 border-[var(--success)]/20",
   },
 ];
 
@@ -52,7 +44,6 @@ interface OnboardingWizardProps {
   open: boolean;
   stores: Array<{ id: string; isActive: boolean }>;
   productCount: number;
-  competitorCount: number;
   onOpenChange: (open: boolean) => void;
   onComplete: () => void;
 }
@@ -61,7 +52,6 @@ export default function OnboardingWizard({
   open,
   stores,
   productCount,
-  competitorCount,
   onOpenChange,
   onComplete,
 }: OnboardingWizardProps) {
@@ -77,19 +67,24 @@ export default function OnboardingWizard({
     const ids = new Set(manuallyCompleted);
     if (stores.some(store => store.isActive)) ids.add("shopify");
     if (productCount > 0) ids.add("products");
-    if (competitorCount > 0) ids.add("competitor");
     return ids;
-  }, [competitorCount, manuallyCompleted, productCount, stores]);
+  }, [manuallyCompleted, productCount, stores]);
 
   const firstIncompleteStep = steps.findIndex(item => !completed.has(item.id));
   const allStepsComplete = firstIncompleteStep === -1;
 
   useEffect(() => {
-    if (!open || allStepsComplete) return;
+    if (!open) return;
+    // Every step done: close the checklist. Holding it open left the stepper
+    // on step 1 while the footer read "3 of 3 setup steps complete".
+    if (allStepsComplete) {
+      onOpenChange(false);
+      return;
+    }
     setStep(currentStep =>
       currentStep === firstIncompleteStep ? currentStep : firstIncompleteStep
     );
-  }, [allStepsComplete, firstIncompleteStep, open]);
+  }, [allStepsComplete, firstIncompleteStep, onOpenChange, open]);
 
   useEffect(() => {
     if (!open) return;
@@ -110,6 +105,10 @@ export default function OnboardingWizard({
       toast.success(data.message || `Synced ${data.synced} products`);
       setManuallyCompleted(prev => new Set(prev).add("products"));
       utils.products.list.invalidate();
+      // The sync starts a run. This is the first-time path, so it is the most
+      // important place for the indicator to react at once rather than on its
+      // idle interval.
+      utils.pipeline.status.invalidate();
     },
     onError: err => toast.error(err.message || "Sync failed"),
   });
@@ -127,11 +126,6 @@ export default function OnboardingWizard({
     }
     track("onboarding_step_started", { step: "products" });
     syncMutation.mutate({ storeId: activeStore.id });
-  };
-
-  const handleAddCompetitor = () => {
-    track("onboarding_step_started", { step: "competitor" });
-    window.location.href = "/competitors?onboarding=1";
   };
 
   const current = steps[step];
@@ -155,7 +149,7 @@ export default function OnboardingWizard({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-[540px]" showCloseButton={false}>
         <DialogHeader>
-          <p className="label-caps text-[10px] text-primary">
+          <p className="label-caps text-[12px] text-primary">
             Get your first pricing signal in under 5 minutes
           </p>
           <div className="flex items-center gap-2 mb-1">
@@ -205,24 +199,19 @@ export default function OnboardingWizard({
           <div className="text-center max-w-sm">
             {step === 0 && (
               <p className="text-xs text-muted-foreground">
-                Authorize PriceVision to access your Shopify store. We only read
-                product and pricing data — we never modify your store without
-                your approval.
+                We read your products and their prices, and nothing else. Your
+                store is never changed unless you press a button that says so.
               </p>
             )}
             {step === 1 && (
-              <p className="text-xs text-muted-foreground">
-                We&apos;ll import your product catalog from Shopify. You can
-                then select which products to actively monitor and track.
+              <p className="text-sm text-muted-foreground">
+                This is the last thing you have to do. Once your products are
+                in, we search for shops selling the same items, read their
+                prices, and work out what you should charge. Watch the progress
+                at the top of the screen.
               </p>
             )}
-            {step === 2 && (
-              <p className="text-xs text-muted-foreground">
-                Enter the website domain of a competitor. Our AI will discover
-                their products and match them to yours automatically.
-              </p>
-            )}
-            <p className="text-[11px] text-muted-foreground/70 mt-4">
+            <p className="text-[13px] text-muted-foreground/70 mt-4">
               {completed.size} of {steps.length} setup steps complete. You can
               leave and resume this checklist any time.
             </p>
@@ -234,9 +223,10 @@ export default function OnboardingWizard({
             variant="ghost"
             size="sm"
             onClick={() => onOpenChange(false)}
-            className="text-muted-foreground text-xs"
+            className="text-muted-foreground text-[13px]"
+            title="You can come back to this from the Finish setup button at the top"
           >
-            Skip for now
+            I&apos;ll do this later
           </Button>
           <div className="flex items-center gap-2">
             {!isCompleted ? (
@@ -246,7 +236,6 @@ export default function OnboardingWizard({
                 onClick={() => {
                   if (step === 0) handleConnectShopify();
                   else if (step === 1) handleSyncProducts();
-                  else if (step === 2) handleAddCompetitor();
                 }}
                 disabled={step === 1 ? syncMutation.isPending : false}
               >

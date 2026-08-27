@@ -36,32 +36,32 @@ import { useRealtimeNotifications } from "@/hooks/use-realtime-notifications";
 
 const severityConfig: Record<string, { label: string; className: string }> = {
   critical: {
-    label: "CRITICAL",
+    label: "Worth acting on",
     className:
       "bg-[var(--destructive)]/20 text-[var(--destructive)] border-[var(--destructive)]/30",
   },
   high: {
-    label: "HIGH",
+    label: "Worth a look",
     className:
       "bg-[var(--destructive)]/15 text-[var(--destructive)]/80 border-[var(--destructive)]/20",
   },
   medium: {
-    label: "MEDIUM",
+    label: "Small move",
     className:
       "bg-[var(--success)]/10 text-[var(--success)] border-[var(--success)]/20",
   },
   low: {
-    label: "LOW",
+    label: "Minor",
     className: "bg-blue-500/10 text-blue-400 border-blue-500/20",
   },
 };
 
 const typeConfig: Record<string, { label: string; icon: typeof TrendingDown }> =
   {
-    price_drop: { label: "Price Drop", icon: TrendingDown },
-    price_increase: { label: "Price Increase", icon: TrendingUp },
-    competitor_change: { label: "Competitor Change", icon: ArrowUpDown },
-    threshold: { label: "Threshold", icon: Zap },
+    price_drop: { label: "A rival dropped their price", icon: TrendingDown },
+    price_increase: { label: "A rival raised their price", icon: TrendingUp },
+    competitor_change: { label: "A rival changed something", icon: ArrowUpDown },
+    threshold: { label: "Past a limit you set", icon: Zap },
   };
 
 function AlertRow({
@@ -112,31 +112,29 @@ function AlertRow({
       </div>
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2 flex-wrap">
-          <p className="text-[13px] font-medium">{alert.title}</p>
+          <p className="text-[14px] font-medium">{alert.title}</p>
           <span
             className={cn(
-              "inline-flex items-center rounded px-1.5 py-0.5 text-[9px] font-bold label-caps",
+              "inline-flex items-center whitespace-nowrap rounded border px-2 py-0.5 text-[12px] font-semibold",
               severity.className
             )}
           >
             {severity.label}
           </span>
-          <span className="inline-flex min-h-6 items-center rounded-full bg-surface-container px-2 py-0.5 text-[9px] label-caps text-muted-foreground">
+          <span className="inline-flex min-h-6 items-center whitespace-nowrap rounded-full bg-surface-container px-2.5 py-0.5 text-[12px] text-muted-foreground">
             {type.label}
           </span>
         </div>
-        <p className="text-[12px] text-muted-foreground mt-1">
+        <p className="text-[13px] text-muted-foreground mt-1">
           {alert.message}
         </p>
-        <p className="text-[10px] label-caps text-muted-foreground/60 mt-1.5">
-          {createdAt}
-        </p>
+        <p className="mt-1.5 text-[12px] text-muted-foreground">{createdAt}</p>
       </div>
       {!alert.isResolved && (
         <Button
           variant="outline"
           size="sm"
-          className="shrink-0 text-[11px] border-outline-variant"
+          className="shrink-0 text-[13px] border-outline-variant"
           onClick={() => onResolve(alert.id)}
           disabled={isResolving}
         >
@@ -175,8 +173,8 @@ export default function Alerts() {
     return (
       <div className="space-y-8">
         <PageHeader
-          eyebrow="Attention queue"
-          title="Alerts"
+          eyebrow="Price changes"
+          title="Price changes"
           description="Failed to load alerts."
           icon={AlertTriangle}
         />
@@ -211,9 +209,9 @@ export default function Alerts() {
     return (
       <div className="space-y-8">
         <PageHeader
-          eyebrow="Attention queue"
-          title="Alerts"
-          description="No alerts yet. Alerts will appear when price changes or threshold breaches are detected."
+          eyebrow="Price changes"
+          title="Price changes"
+          description="When a shop we watch changes a price on something you sell, it turns up here."
           icon={ShieldCheck}
         />
         <Empty>
@@ -223,13 +221,13 @@ export default function Alerts() {
           <EmptyHeader>
             <EmptyTitle>All clear</EmptyTitle>
             <EmptyDescription>
-              You'll receive alerts when competitor prices change, thresholds
-              are breached, or significant market movements are detected.
+              Nobody we watch has changed a price on anything you sell.
             </EmptyDescription>
           </EmptyHeader>
           <EmptyContent>
-            <p className="text-[10px] text-muted-foreground/60">
-              Set price alert thresholds in the settings panel.
+            <p className="text-[13px] text-muted-foreground">
+              Nothing is needed from you. We check every day and this fills in
+              when a rival moves a price on something you sell.
             </p>
           </EmptyContent>
         </Empty>
@@ -240,9 +238,9 @@ export default function Alerts() {
   return (
     <div className="space-y-8">
       <PageHeader
-        eyebrow="Attention queue"
-        title="Alerts"
-        description="Monitor price changes, competitor movements, and threshold breaches."
+        eyebrow="Price changes"
+        title="Price changes"
+        description="We tell you here when a competitor moves a price on something you sell."
         icon={AlertTriangle}
       />
 
@@ -254,7 +252,7 @@ export default function Alerts() {
           </div>
           <div>
             <p className="text-2xl font-bold font-mono">{criticalCount}</p>
-            <p className="label-caps text-muted-foreground/60">Critical</p>
+            <p className="text-[13px] text-muted-foreground">Worth acting on</p>
           </div>
         </div>
         <div className="glass-card p-5 flex items-center gap-4">
@@ -263,7 +261,7 @@ export default function Alerts() {
           </div>
           <div>
             <p className="text-2xl font-bold font-mono">{activeCount}</p>
-            <p className="label-caps text-muted-foreground/60">Active</p>
+            <p className="text-[13px] text-muted-foreground">Still open</p>
           </div>
         </div>
         <div className="glass-card p-5 flex items-center gap-4">
@@ -272,7 +270,7 @@ export default function Alerts() {
           </div>
           <div>
             <p className="text-2xl font-bold font-mono">{resolvedCount}</p>
-            <p className="label-caps text-muted-foreground/60">Resolved</p>
+            <p className="text-[13px] text-muted-foreground">Dealt with</p>
           </div>
         </div>
       </div>
@@ -310,17 +308,17 @@ export default function Alerts() {
             className="space-y-4"
           >
             <TabsList className="h-9 bg-surface-container border border-outline-variant">
-              <TabsTrigger value="all" className="text-[11px] label-caps">
-                All ({allAlerts.length})
+              <TabsTrigger value="all" className="text-[13px]">
+                Everything ({allAlerts.length})
               </TabsTrigger>
-              <TabsTrigger value="active" className="text-[11px] label-caps">
-                Active ({activeCount})
+              <TabsTrigger value="active" className="text-[13px]">
+                Still open ({activeCount})
               </TabsTrigger>
-              <TabsTrigger value="critical" className="text-[11px] label-caps">
-                Critical ({criticalCount})
+              <TabsTrigger value="critical" className="text-[13px]">
+                Worth acting on ({criticalCount})
               </TabsTrigger>
-              <TabsTrigger value="resolved" className="text-[11px] label-caps">
-                Resolved ({resolvedCount})
+              <TabsTrigger value="resolved" className="text-[13px]">
+                Dealt with ({resolvedCount})
               </TabsTrigger>
             </TabsList>
             <TabsContent value={activeTab} className="space-y-3 mt-4">
