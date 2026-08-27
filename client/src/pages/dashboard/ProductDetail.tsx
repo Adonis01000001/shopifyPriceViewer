@@ -8,51 +8,30 @@ import {
   TrendingUp,
   TrendingDown,
   Minus,
-  Sparkles,
-  AlertTriangle,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { PageSkeleton } from "@/components/dashboard/PageSkeleton";
 import { PricingRecommendationWidget } from "@/components/dashboard/PricingRecommendationWidget";
-import { toast } from "sonner";
+import { ProductEvidence } from "@/components/dashboard/ProductEvidence";
 
-function getWisdomFactors(value: unknown): {
-  marketContext: string;
-  riskFactors: string[];
-} | null {
-  if (value === null || typeof value !== "object" || Array.isArray(value)) {
-    return null;
-  }
-  const factors = value as Record<string, unknown>;
-  if (factors.source !== "path-of-wisdom") return null;
-  return {
-    marketContext:
-      typeof factors.marketContext === "string" ? factors.marketContext : "",
-    riskFactors: Array.isArray(factors.riskFactors)
-      ? factors.riskFactors.filter(
-          (risk): risk is string => typeof risk === "string"
-        )
-      : [],
-  };
-}
 
 const statusConfig: Record<string, { label: string; className: string }> = {
   optimal: {
-    label: "Optimal",
+    label: "Priced well",
     className: "bg-primary/[0.1] text-primary border border-primary/20",
   },
   underpriced: {
-    label: "Underpriced",
+    label: "Under the market",
     className: "bg-blue-500/10 text-blue-400 border border-blue-500/20",
   },
   overpriced: {
-    label: "Overpriced",
+    label: "Over the market",
     className:
       "bg-[var(--destructive)]/15 text-[var(--destructive)] border border-[var(--destructive)]/30",
   },
   alert: {
-    label: "Alert",
+    label: "Needs a look",
     className:
       "bg-[var(--destructive)]/20 text-[var(--destructive)] border border-[var(--destructive)]/30",
   },
@@ -76,30 +55,6 @@ export default function ProductDetail() {
     { productId: productId ?? "" },
     { enabled: !!productId }
   );
-  const { data: savedRecommendations } =
-    trpc.recommendations.getByProduct.useQuery(
-      { productId: productId ?? "" },
-      { enabled: !!productId }
-    );
-  const utils = trpc.useUtils();
-  const implementWisdomMutation = trpc.recommendations.implement.useMutation({
-    onSuccess: () => {
-      toast.success("Path of Wisdom recommendation applied");
-      if (productId) {
-        utils.products.getById.invalidate({ id: productId });
-        utils.recommendations.getByProduct.invalidate({ productId });
-      }
-    },
-    onError: error =>
-      toast.error(error.message || "Failed to apply recommendation"),
-  });
-
-  const wisdomRecommendation = savedRecommendations?.find(recommendation =>
-    getWisdomFactors(recommendation.factors)
-  );
-  const wisdomFactors = wisdomRecommendation
-    ? getWisdomFactors(wisdomRecommendation.factors)
-    : null;
 
   if (error) {
     return (
@@ -170,16 +125,16 @@ export default function ProductDetail() {
               </h1>
               <span
                 className={cn(
-                  "inline-flex items-center rounded px-2 py-0.5 text-[10px] font-bold label-caps",
+                  "inline-flex items-center whitespace-nowrap rounded px-2 py-0.5 text-[13px] font-semibold",
                   status.className
                 )}
               >
-                {status.label.toUpperCase()}
+                {status.label}
               </span>
             </div>
             <div className="flex items-center gap-4 mt-2 text-sm text-muted-foreground flex-wrap">
               {product.sku && (
-                <span className="font-mono text-[12px]">
+                <span className="font-mono text-[13px]">
                   SKU: {product.sku}
                 </span>
               )}
@@ -205,102 +160,6 @@ export default function ProductDetail() {
       <div className="grid gap-6 lg:grid-cols-2">
         {/* Left: Pricing Recommendation Widget */}
         <div className="space-y-6">
-          {wisdomRecommendation && wisdomFactors && (
-            <div className="glass-panel rounded-lg overflow-hidden border border-primary/20">
-              <div className="px-5 py-3 bg-primary/10 flex items-center gap-2">
-                <Sparkles className="h-4 w-4 text-primary" />
-                <h3 className="text-[14px] font-semibold">
-                  Path of Wisdom Recommendation
-                </h3>
-                <Badge
-                  variant="outline"
-                  className="ml-auto text-[10px] font-mono capitalize"
-                >
-                  {wisdomRecommendation.status}
-                </Badge>
-              </div>
-              <div className="p-5 space-y-4">
-                <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-                  <div className="glass-card rounded p-3">
-                    <p className="label-caps text-muted-foreground/60 text-[10px]">
-                      Current
-                    </p>
-                    <p className="mt-1 text-lg font-bold font-mono">
-                      ${Number(wisdomRecommendation.currentPrice).toFixed(2)}
-                    </p>
-                  </div>
-                  <div className="glass-card rounded p-3">
-                    <p className="label-caps text-muted-foreground/60 text-[10px]">
-                      Recommended
-                    </p>
-                    <p className="mt-1 text-lg font-bold font-mono text-primary">
-                      $
-                      {Number(wisdomRecommendation.recommendedPrice).toFixed(2)}
-                    </p>
-                  </div>
-                  <div className="glass-card rounded p-3 col-span-2 sm:col-span-1">
-                    <p className="label-caps text-muted-foreground/60 text-[10px]">
-                      Change
-                    </p>
-                    <p className="mt-1 text-lg font-bold font-mono">
-                      {Number(wisdomRecommendation.priceChange) > 0 ? "+" : ""}$
-                      {Number(wisdomRecommendation.priceChange).toFixed(2)}
-                    </p>
-                  </div>
-                </div>
-
-                <p className="text-[12px] text-muted-foreground leading-relaxed">
-                  {wisdomRecommendation.reason}
-                </p>
-
-                {wisdomFactors.marketContext && (
-                  <div className="rounded bg-surface-container-highest/50 p-3">
-                    <p className="text-[11px] text-muted-foreground leading-relaxed">
-                      {wisdomFactors.marketContext}
-                    </p>
-                  </div>
-                )}
-
-                {wisdomFactors.riskFactors.length > 0 && (
-                  <div className="space-y-1.5">
-                    <p className="label-caps text-[10px] font-bold text-muted-foreground/60">
-                      Risks
-                    </p>
-                    {wisdomFactors.riskFactors.map((risk, index) => (
-                      <div key={index} className="flex items-start gap-2">
-                        <AlertTriangle className="h-3 w-3 text-yellow-500 mt-0.5 shrink-0" />
-                        <p className="text-[11px] text-muted-foreground">
-                          {risk}
-                        </p>
-                      </div>
-                    ))}
-                  </div>
-                )}
-
-                <Button
-                  type="button"
-                  className="w-full"
-                  onClick={() =>
-                    implementWisdomMutation.mutate({
-                      id: wisdomRecommendation.id,
-                    })
-                  }
-                  disabled={
-                    wisdomRecommendation.status !== "pending" ||
-                    implementWisdomMutation.isPending
-                  }
-                >
-                  {implementWisdomMutation.isPending
-                    ? "Applying..."
-                    : wisdomRecommendation.status === "implemented"
-                      ? "Recommendation applied"
-                      : wisdomRecommendation.status === "dismissed"
-                        ? "Recommendation dismissed"
-                        : "Apply recommendation"}
-                </Button>
-              </div>
-            </div>
-          )}
           <PricingRecommendationWidget productId={product.id} />
         </div>
 
@@ -308,9 +167,11 @@ export default function ProductDetail() {
         <div className="glass-panel rounded-lg overflow-hidden">
           <div className="px-5 py-3 bg-surface-container/50 flex items-center gap-2">
             <ExternalLink className="h-4 w-4 text-primary" />
-            <h3 className="text-[14px] font-semibold">Competitor Prices</h3>
-            <Badge variant="outline" className="ml-auto text-[10px] font-mono">
-              {competitorPrices?.length ?? 0} matched
+            <h3 className="text-[15px] font-semibold">
+              Shops selling the same thing
+            </h3>
+            <Badge variant="outline" className="ml-auto text-[12px] font-mono">
+              {competitorPrices?.length ?? 0} found
             </Badge>
           </div>
           <div className="divide-y divide-outline-variant/20">
@@ -326,15 +187,19 @@ export default function ProductDetail() {
                     className="flex items-center justify-between px-5 py-3 transition-colors hover:bg-surface-container-low"
                   >
                     <div className="min-w-0 flex-1">
-                      <p className="text-[13px] font-medium truncate">
+                      <p className="text-[14px] font-medium truncate">
                         {cp.title || cp.competitorDomain || "Unknown"}
                       </p>
                       <div className="flex items-center gap-2 mt-0.5">
-                        <span className="text-[11px] text-muted-foreground">
+                        <span className="text-[13px] text-muted-foreground">
                           {cp.competitorName}
                         </span>
-                        <span className="text-[10px] font-mono text-muted-foreground">
-                          match: {Number(cp.matchScore).toFixed(0)}%
+                        <span
+                          className="text-[12px] font-mono text-muted-foreground"
+                          title="How sure we are this is the same product"
+                        >
+                          {Math.round(Number(cp.matchScore) * 100)}% sure it is
+                          the same product
                         </span>
                       </div>
                     </div>
@@ -346,26 +211,26 @@ export default function ProductDetail() {
                         {diff > 0 ? (
                           <>
                             <TrendingUp className="h-3 w-3 text-[var(--destructive)]" />
-                            <span className="text-[10px] font-mono text-[var(--destructive)]">
+                            <span className="text-[12px] font-mono text-[var(--destructive)]">
                               +${diff.toFixed(2)}
                             </span>
                           </>
                         ) : diff < 0 ? (
                           <>
                             <TrendingDown className="h-3 w-3 text-[var(--success)]" />
-                            <span className="text-[10px] font-mono text-[var(--success)]">
+                            <span className="text-[12px] font-mono text-[var(--success)]">
                               -${Math.abs(diff).toFixed(2)}
                             </span>
                           </>
                         ) : (
                           <>
                             <Minus className="h-3 w-3 text-muted-foreground" />
-                            <span className="text-[10px] font-mono text-muted-foreground">
+                            <span className="text-[12px] font-mono text-muted-foreground">
                               $0.00
                             </span>
                           </>
                         )}
-                        <span className="text-[10px] font-mono text-muted-foreground">
+                        <span className="text-[12px] font-mono text-muted-foreground">
                           ({diffPct > 0 ? "+" : ""}
                           {diffPct.toFixed(1)}%)
                         </span>
@@ -375,13 +240,17 @@ export default function ProductDetail() {
                 );
               })
             ) : (
-              <div className="px-5 py-12 text-center text-muted-foreground text-sm">
-                No competitor prices tracked for this product yet.
+              <div className="px-5 py-12 text-center text-[14px] text-muted-foreground">
+                No shop was found selling this exact product. The list below
+                shows every shop we looked at and why each was ruled out.
               </div>
             )}
           </div>
         </div>
       </div>
+
+      {/* The working behind the suggestion */}
+      <ProductEvidence productId={product.id} />
 
       {/* Product Metadata */}
       {product.description && (
@@ -389,7 +258,7 @@ export default function ProductDetail() {
           <div className="px-5 py-3 bg-surface-container/50">
             <h3 className="text-[14px] font-semibold">Description</h3>
           </div>
-          <div className="p-5 text-[13px] text-muted-foreground leading-relaxed whitespace-pre-wrap">
+          <div className="p-5 text-[14px] text-muted-foreground leading-relaxed whitespace-pre-wrap">
             {product.description}
           </div>
         </div>
