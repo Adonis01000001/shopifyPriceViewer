@@ -1,6 +1,14 @@
 # Shopify Price Intelligence (PriceVision)
 
-A full-stack SaaS platform for competitive price monitoring and optimization, integrated with Shopify. It tracks scheduled competitor price observations, provides AI-powered pricing recommendations, and automates alerts.
+A full-stack SaaS platform for competitive price monitoring, integrated with
+Shopify. Once a day it searches for shops selling the same products, reads
+their prices, and works out what to charge.
+
+A language model is used for one job only: deciding whether a competitor's page
+is selling the same product, and pulling the price off it. The suggested price
+itself is arithmetic — the average of the confirmed competitor prices, reduced
+by the merchant's undercut setting, never below cost plus their margin setting.
+Both settings live on the user row and are editable under Settings.
 
 ## Tech Stack
 
@@ -72,6 +80,7 @@ pnpm smoke        # Smoke-test a running deployment (set SMOKE_BASE_URL)
 - [Launch readiness checklist](docs/LAUNCH-READINESS-CHECKLIST.md)
 - [Production deployment runbook](docs/RELEASE-DEPLOYMENT.md)
 - [Legal and privacy release inputs](docs/LEGAL-PRIVACY-INPUTS.md)
+- [Known work](docs/TODO.md) — open gaps and defects, with what each one costs
 
 The application is not approved for public paid release until every blocker in
 the launch checklist has an owner, evidence, and a completed staging test.
