@@ -5,7 +5,6 @@ import { pricingEngine } from "../services/pricing-engine.service";
 import { pricingRulesService } from "../services/pricing-rules.service";
 import { recommendationService } from "../services/recommendation.service";
 import { productService } from "../services/product.service";
-import { getAiRecommendation } from "../services/ai-recommendation.service";
 import {
   products,
   competitors,
@@ -81,97 +80,6 @@ export const pricingEngineRouter = router({
   /**
    * AI-powered pricing recommendation using OpenRouter (or OpenAI fallback).
    * Returns an LLM-generated analysis with contextual reasoning.
-   */
-  aiRecommendation: protectedProcedure
-    .input(z.object({ productId: z.string().uuid() }))
-    .query(async ({ ctx, input }) => {
-      const database = await requireDb();
-
-      const product = await database
-        .select()
-        .from(products)
-        .where(
-          and(
-            eq(products.id, input.productId),
-            eq(products.userId, ctx.user!.id)
-          )
-        )
-        .limit(1);
-
-      if (product.length === 0) return null;
-
-      const compRows = await database
-        .select({
-          price: competitorProducts.price,
-          name: competitors.name,
-        })
-        .from(competitorProducts)
-        .innerJoin(
-          competitors,
-          eq(competitorProducts.competitorId, competitors.id)
-        )
-        .where(
-          and(
-            eq(competitorProducts.productId, input.productId),
-            eq(competitors.userId, ctx.user!.id),
-            eq(competitorProducts.isActive, true),
-            or(
-              isNull(competitorProducts.matchMethod),
-              ne(
-                competitorProducts.matchMethod,
-                AUTO_GENERATED_COMPETITOR_MATCH_METHOD
-              )
-            )
-          )
-        );
-
-      const prices = compRows.map(c => Number(c.price));
-      const merchantPrice = Number(product[0].price);
-      const costPrice =
-        product[0].costPrice != null ? Number(product[0].costPrice) : null;
-
-      const analysis = pricingEngine.analyzeProduct({
-        merchantPrice,
-        costPrice,
-        competitorPrices: prices,
-        rules: await pricingRulesService.forUser(ctx.user!.id),
-      });
-
-      const aiResult = await getAiRecommendation({
-        productTitle: product[0].title,
-        productCategory: product[0].category,
-        merchantPrice,
-        costPrice,
-        competitorCount: prices.length,
-        competitorPrices: compRows.map(c => ({
-          name: c.name,
-          price: Number(c.price),
-        })),
-        marketPosition: analysis.position.status,
-        avgCompetitorPrice: analysis.marketSnapshot.avgCompetitorPrice,
-      });
-
-      if (!aiResult) {
-        return {
-          aiRecommendation: null,
-          deterministicRecommendation: analysis.recommendation,
-          fallbackReason:
-            aiResult === null
-              ? "AI unavailable — showing rules-based recommendation"
-              : null,
-        };
-      }
-
-      return {
-        aiRecommendation: aiResult,
-        deterministicRecommendation: analysis.recommendation,
-        fallbackReason: null,
-      };
-    }),
-
-  /**
-   * Ensure a product has enough competitor data, auto-generating if needed,
-   * then return the full pricing analysis including AI recommendation.
    */
   ensureAnalysis: protectedProcedure
     .input(z.object({ productId: z.string().uuid() }))

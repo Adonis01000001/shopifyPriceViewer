@@ -236,9 +236,6 @@ export const ENV = {
     .map(m => m.trim())
     .filter(Boolean),
 
-  // Exa — neural web search for product pricing
-  exaApiKey: process.env.EXA_API_KEY ?? "",
-
   // OpenAI — AI validation + extraction
   openaiApiKey: process.env.OPENAI_API_KEY ?? "",
   openaiModel: process.env.OPENAI_MODEL ?? "gpt-4o-mini",
