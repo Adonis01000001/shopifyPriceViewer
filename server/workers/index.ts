@@ -4,7 +4,7 @@ import Redis from "ioredis";
 import { closeDb } from "../db";
 import { ENV } from "../_core/env";
 import { logger } from "../_core/logger";
-import { competitorDiscoveryService } from "../services/competitor-discovery.service";
+import { pipelineService } from "../services/pipeline.service";
 import { priceMonitoringService } from "../services/price-monitoring.service";
 import { reportEmailService } from "../services/report-email.service";
 import type { UserJobPayload } from "../services/job-queue.service";
@@ -29,7 +29,7 @@ const workers = [
     async job => {
       if (!job.data.userId)
         throw new Error("Competitor discovery job has no user ID");
-      return competitorDiscoveryService.discoverForAllProducts(job.data.userId);
+      return pipelineService.runForUser(job.data.userId);
     },
     { connection, concurrency: ENV.workerConcurrency }
   ),

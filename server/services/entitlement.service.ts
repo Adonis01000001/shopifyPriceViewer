@@ -39,7 +39,7 @@ export const entitlementService = {
 
   async assertCanAdd(
     userId: string,
-    resource: "products" | "competitors" | "radarSources",
+    resource: "products" | "competitors",
     amount = 1
   ) {
     return this.assertWithinLimit(userId, resource, amount);

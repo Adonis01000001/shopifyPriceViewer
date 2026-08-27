@@ -13,7 +13,14 @@ describe("plan catalog", () => {
     for (const plan of Object.values(PLAN_CATALOG)) {
       expect(plan.name).toBeTruthy();
       expect(plan.features.length).toBeGreaterThan(0);
-      expect(Object.keys(plan.entitlements)).toHaveLength(7);
+      expect(Object.keys(plan.entitlements).sort()).toEqual([
+        "advancedAnalytics",
+        "aiRecommendations",
+        "anomalyDetection",
+        "dailyReports",
+        "emailAlerts",
+        "teamAccess",
+      ]);
       expect(plan.limits.products === null || plan.limits.products > 0).toBe(
         true
       );

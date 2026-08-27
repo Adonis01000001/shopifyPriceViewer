@@ -5,7 +5,7 @@ import { requireDb } from "../_core/db-assert";
 import { scrapeJobs } from "../../drizzle/schema";
 import { logger } from "../_core/logger";
 import { ENV } from "../_core/env";
-import { assertPublicUrl } from "./price-radar/url-policy";
+import { assertPublicUrl } from "./shared/url-policy";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 

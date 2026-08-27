@@ -226,6 +226,16 @@ export const ENV = {
   // SerpAPI — competitor discovery search
   serpApiKey: process.env.SERP_API_KEY ?? "",
 
+  // Serper - cheaper Google search provider. Preferred over SerpApi when set.
+  serperApiKey: process.env.SERPER_API_KEY ?? "",
+
+  // Ordered fallback list of models. Free models share an upstream pool and
+  // 429 frequently, so the pipeline rotates through these.
+  openrouterModels: (process.env.OPENROUTER_MODELS ?? "")
+    .split(",")
+    .map(m => m.trim())
+    .filter(Boolean),
+
   // Exa — neural web search for product pricing
   exaApiKey: process.env.EXA_API_KEY ?? "",
 

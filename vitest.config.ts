@@ -1,5 +1,9 @@
 import { defineConfig } from "vitest/config";
 import path from "path";
+// The tests need a database, and it is already configured in .env. Reading it
+// here means `pnpm test` works on its own rather than needing DATABASE_URL
+// spelled out on every invocation.
+import "dotenv/config";
 
 const templateRoot = path.resolve(import.meta.dirname);
 

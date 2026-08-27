@@ -5,7 +5,7 @@ import {
   products,
   type AiExtraction,
 } from "../../drizzle/schema";
-import { invokeLLM } from "../_core/llm";
+import { invokeLLMWithFallback } from "../_core/llm";
 import { logger } from "../_core/logger";
 import { ENV } from "../_core/env";
 
@@ -143,7 +143,12 @@ function buildExtractionPrompt(input: ExtractionInput): {
 } {
   const { merchantProduct, competitorPageContent, competitorUrl } = input;
 
-  const system = `You are a product matching and price extraction AI. Analyze a competitor's product page and determine if it matches the merchant's product, then extract structured data.
+  const system = `Return ONLY a single JSON object with EXACTLY these top-level keys and no others:
+isMatch (boolean), confidence (0-1), matchConfidence (0-1), skuMatchConfidence (0-1), titleSimilarity (0-1), variantSimilarity (0-1), price (number or null), currency (string), salePrice (number or null), originalPrice (number or null), title (string or null), description (string or null), features (array of strings), reasoning (string).
+Do not nest these under any other key. Do not wrap them in objects such as "match" or "competitor". Do not add commentary before or after the JSON.
+"price" MUST be a number you literally read on the competitor page. If the page shows no price, set price to null. Never copy the merchant's own price.
+
+You are a product matching and price extraction AI. Analyze a competitor's product page and determine if it matches the merchant's product, then extract structured data.
 
 Rules:
 - Compare brand, model, SKU, storage, color, size, and variant details carefully.
@@ -181,10 +186,43 @@ ${competitorPageContent.slice(0, 8000)}
 
 // ─── Response Parser ─────────────────────────────────────────────────────────
 
+/**
+ * Pull the first balanced JSON object out of a model response.
+ * Not every provider honours response_format: json_schema. Reasoning models in
+ * particular return prose and then the object, so locating the object is more
+ * reliable than trusting the whole body to be JSON.
+ */
+function extractJsonObject(text: string): string | null {
+  const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/);
+  const haystack = fenced ? fenced[1] : text;
+  const start = haystack.indexOf("{");
+  if (start === -1) return null;
+
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+  for (let i = start; i < haystack.length; i++) {
+    const ch = haystack[i];
+    if (escaped) { escaped = false; continue; }
+    if (ch === "\\") { escaped = true; continue; }
+    if (ch === '"') { inString = !inString; continue; }
+    if (inString) continue;
+    if (ch === "{") depth++;
+    else if (ch === "}") {
+      depth--;
+      if (depth === 0) return haystack.slice(start, i + 1);
+    }
+  }
+  return null;
+}
+
 function parseExtractionResponse(raw: string): ExtractionResult {
-  let jsonStr = raw.trim();
-  const jsonMatch = jsonStr.match(/```(?:json)?\s*([\s\S]*?)```/);
-  if (jsonMatch) jsonStr = jsonMatch[1].trim();
+  const jsonStr = extractJsonObject(raw);
+  if (jsonStr === null) {
+    throw new Error(
+      `LLM returned no JSON object. First 200 chars: ${raw.trim().slice(0, 200)}`
+    );
+  }
 
   const parsed = JSON.parse(jsonStr);
 
@@ -227,7 +265,7 @@ export const aiExtractionService = {
   ): Promise<ValidatedExtraction> {
     const { system, user } = buildExtractionPrompt(input);
 
-    const result = await invokeLLM({
+    const result = await invokeLLMWithFallback({
       messages: [
         { role: "system", content: system },
         { role: "user", content: user },

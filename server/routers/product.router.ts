@@ -50,7 +50,157 @@ async function getOrCreateManualStore(userId: string): Promise<string> {
   return result[0].id;
 }
 
+/**
+ * Minimal RFC4180-ish CSV parser: handles quoted fields with embedded commas,
+ * newlines and doubled quotes. Enough for merchant catalogue exports and it
+ * avoids adding a dependency.
+ */
+function parseCsv(text: string): string[][] {
+  const rows: string[][] = [];
+  let row: string[] = [];
+  let field = "";
+  let inQuotes = false;
+
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (inQuotes) {
+      if (ch === '"') {
+        if (text[i + 1] === '"') { field += '"'; i++; }
+        else inQuotes = false;
+      } else field += ch;
+      continue;
+    }
+    if (ch === '"') { inQuotes = true; continue; }
+    if (ch === ",") { row.push(field); field = ""; continue; }
+    if (ch === "\r") continue;
+    if (ch === "\n") { row.push(field); rows.push(row); row = []; field = ""; continue; }
+    field += ch;
+  }
+  if (field.length > 0 || row.length > 0) { row.push(field); rows.push(row); }
+  return rows.filter(r => r.some(c => c.trim() !== ""));
+}
+
+/** Accept the header names merchants actually export. */
+const COLUMN_ALIASES: Record<string, string[]> = {
+  title: ["title", "name", "product", "product name", "product_title"],
+  sku: ["sku", "variant sku", "code", "reference"],
+  price: ["price", "selling price", "retail price", "variant price"],
+  cost: ["cost", "cost price", "cost per item", "buy price", "wholesale"],
+  category: ["category", "type", "product type", "product_type"],
+  vendor: ["vendor", "brand", "manufacturer", "supplier"],
+};
+
+function mapHeaders(header: string[]): Record<string, number> {
+  const found: Record<string, number> = {};
+  header.forEach((raw, idx) => {
+    const key = raw.trim().toLowerCase();
+    for (const [field, aliases] of Object.entries(COLUMN_ALIASES)) {
+      if (found[field] === undefined && aliases.includes(key)) found[field] = idx;
+    }
+  });
+  return found;
+}
+
 export const productRouter = router({
+  /**
+   * Import a catalogue from CSV. This is what makes the product usable by a
+   * merchant who is not on Shopify: same destination table, same downstream
+   * pipeline, no platform assumptions.
+   */
+  importCsv: protectedProcedure
+    .input(
+      z.object({
+        csv: z.string().min(1).max(5_000_000),
+        runPipeline: z.boolean().optional(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const rows = parseCsv(input.csv);
+      if (rows.length < 2) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "The file needs a header row and at least one product.",
+        });
+      }
+
+      const cols = mapHeaders(rows[0]);
+      if (cols.title === undefined || cols.price === undefined) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message:
+            "Could not find a title and a price column. Expected headers such as: title, price, sku, cost, category, vendor.",
+        });
+      }
+
+      const database = await db.getDb();
+      if (!database) {
+        throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
+      }
+
+      const storeId = await getOrCreateManualStore(ctx.user!.id);
+      const errors: Array<{ row: number; reason: string }> = [];
+      const toInsert: Array<Record<string, unknown>> = [];
+
+      for (let i = 1; i < rows.length; i++) {
+        const cell = (idx?: number) =>
+          idx === undefined ? undefined : (rows[i][idx] ?? "").trim();
+
+        const title = cell(cols.title);
+        const priceRaw = (cell(cols.price) ?? "").replace(/[^0-9.,-]/g, "").replace(",", ".");
+        const price = Number(priceRaw);
+
+        if (!title) { errors.push({ row: i + 1, reason: "missing title" }); continue; }
+        if (!Number.isFinite(price) || price <= 0) {
+          errors.push({ row: i + 1, reason: `invalid price "${cell(cols.price) ?? ""}"` });
+          continue;
+        }
+
+        const costRaw = (cell(cols.cost) ?? "").replace(/[^0-9.,-]/g, "").replace(",", ".");
+        const cost = Number(costRaw);
+
+        toInsert.push({
+          userId: ctx.user!.id,
+          storeId,
+          title,
+          sku: cell(cols.sku) || null,
+          vendor: cell(cols.vendor) || null,
+          category: cell(cols.category) || null,
+          productType: cell(cols.category) || null,
+          price: price.toFixed(2),
+          costPrice: Number.isFinite(cost) && cost > 0 ? cost.toFixed(2) : null,
+          currency: "USD",
+          status: "optimal" as const,
+          isTracked: true,
+          isActive: true,
+        });
+      }
+
+      if (toInsert.length === 0) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: `No usable rows. First problem: ${errors[0]?.reason ?? "unknown"}`,
+        });
+      }
+
+      await entitlementService.assertCanAdd(ctx.user!.id, "products");
+      const imported = await productService.bulkUpsertProducts(toInsert as never);
+
+      // Same trigger as a Shopify sync: importing products starts the chain.
+      if (input.runPipeline !== false) {
+        const uid = ctx.user!.id;
+        void import("../services/pipeline.service")
+          .then(({ pipelineService }) => pipelineService.runForUser(uid))
+          .catch(() => undefined);
+      }
+
+      return {
+        imported,
+        skipped: errors.length,
+        errors: errors.slice(0, 20),
+        message: `Imported ${imported} products${errors.length ? `, skipped ${errors.length}` : ""}. Finding competitor prices now.`,
+      };
+    }),
+
   list: protectedProcedure
     .input(
       z
@@ -246,20 +396,6 @@ export const productRouter = router({
   getCompetitorMappings: protectedProcedure.query(({ ctx }) =>
     productService.getCompetitorPricesForUser(ctx.user!.id)
   ),
-
-  dismissCompetitorMapping: protectedProcedure
-    .input(
-      z.object({
-        productId: z.string().uuid(),
-        competitorId: z.string().uuid(),
-        sourceType: z.enum(["price-radar", "scoop", "automatic-discovery"]),
-        sourceProductId: z.string().uuid(),
-      })
-    )
-    .mutation(async ({ ctx, input }) => {
-      await productService.dismissCompetitorMapping(ctx.user!.id, input);
-      return { success: true };
-    }),
 
   stats: protectedProcedure.query(async ({ ctx }) => {
     return productService.getStats(ctx.user!.id);

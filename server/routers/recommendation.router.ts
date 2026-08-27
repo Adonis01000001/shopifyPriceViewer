@@ -63,16 +63,52 @@ export const recommendationRouter = router({
       return rec;
     }),
 
+  /**
+   * Accept a recommendation. With pushToStore the new price is written back to
+   * Shopify; without it the recommendation is only marked as actioned, so a
+   * merchant can change the price themselves and still clear the item.
+   */
   implement: protectedProcedure
-    .input(z.object({ id: z.string().uuid() }))
+    .input(
+      z.object({
+        id: z.string().uuid(),
+        pushToStore: z.boolean().optional(),
+      })
+    )
     .mutation(async ({ ctx, input }) => {
+      const existing = await recommendationService.getById(ctx.user!.id, input.id);
+      if (!existing)
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "Recommendation not found",
+        });
+
+      let pushed: { previousPrice: string; newPrice: number } | null = null;
+      if (input.pushToStore) {
+        const { pipelineService } = await import("../services/pipeline.service");
+        try {
+          const result = await pipelineService.pushPriceToShopify(
+            ctx.user!.id,
+            existing.productId,
+            Number(existing.recommendedPrice)
+          );
+          pushed = { previousPrice: result.previousPrice, newPrice: result.newPrice };
+        } catch (err) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message:
+              err instanceof Error ? err.message : "Could not update the price in Shopify",
+          });
+        }
+      }
+
       const rec = await recommendationService.implement(ctx.user!.id, input.id);
       if (!rec)
         throw new TRPCError({
           code: "NOT_FOUND",
           message: "Recommendation not found",
         });
-      return rec;
+      return { ...rec, pushed };
     }),
 
   dismiss: protectedProcedure

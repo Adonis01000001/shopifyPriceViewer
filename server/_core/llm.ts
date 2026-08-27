@@ -1,4 +1,7 @@
 import { ENV } from "./env";
+import { logger } from "./logger";
+
+const LLM_REQUEST_TIMEOUT_MS = 90_000;
 
 export type Role = "system" | "user" | "assistant" | "tool" | "function";
 
@@ -75,6 +78,8 @@ export type InvokeParams = {
   baseUrl?: string;
   /** Override API key (e.g., OpenRouter key) */
   apiKey?: string;
+  /** Force a specific model, bypassing env defaults. Used by the fallback rotation. */
+  modelOverride?: string;
 };
 
 export type ToolCall = {
@@ -301,9 +306,9 @@ export async function invokeLLM(params: InvokeParams): Promise<InvokeResult> {
   } = params;
 
   const useOpenRouter = baseUrl || (!ENV.openaiApiKey && !!ENV.openrouterApiKey);
-  const model = useOpenRouter
-    ? ENV.openrouterModel
-    : "gemini-2.5-flash";
+  const model =
+    params.modelOverride ??
+    (useOpenRouter ? ENV.openrouterModel : "gemini-2.5-flash");
 
   const payload: Record<string, unknown> = {
     model,
@@ -353,14 +358,59 @@ export async function invokeLLM(params: InvokeParams): Promise<InvokeResult> {
     method: "POST",
     headers,
     body: JSON.stringify(payload),
+    // The pipeline runs unattended on a cron. Without this, one hung
+    // connection stalls the whole run indefinitely.
+    signal: AbortSignal.timeout(LLM_REQUEST_TIMEOUT_MS),
   });
 
   if (!response.ok) {
     const errorText = await response.text();
-    throw new Error(
+    const err = new Error(
       `LLM invoke failed: ${response.status} ${response.statusText} – ${errorText}`
-    );
+    ) as Error & { status?: number };
+    err.status = response.status;
+    throw err;
   }
 
   return (await response.json()) as InvokeResult;
+}
+
+/**
+ * Free models share an upstream pool and return 429 often. Try each configured
+ * model in turn before giving up, so one busy provider does not stall a run.
+ * Set OPENROUTER_MODELS to a comma-separated list to control the order.
+ */
+export async function invokeLLMWithFallback(
+  params: InvokeParams
+): Promise<InvokeResult> {
+  const candidates = ENV.openrouterModels.length
+    ? ENV.openrouterModels
+    : [ENV.openrouterModel];
+
+  let lastErr: unknown;
+  for (const model of candidates) {
+    // Free models share an upstream pool, so 429 is usually transient rather
+    // than a reason to abandon a model that returns the right shape.
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        return await invokeLLM({ ...params, modelOverride: model });
+      } catch (err) {
+        lastErr = err;
+        const status = (err as { status?: number })?.status;
+        const timedOut = (err as Error)?.name === "TimeoutError";
+        if (timedOut) break; // this model is not answering: next one
+        if (status !== 429) {
+          if (status === 402 || status === 404) break; // model gone: next one
+          throw err;
+        }
+        if (attempt < 2) {
+          const waitMs = 1500 * Math.pow(2, attempt);
+          logger.warn({ model, attempt: attempt + 1, waitMs }, "LLM: rate limited, backing off");
+          await new Promise(r => setTimeout(r, waitMs));
+        }
+      }
+    }
+    logger.warn({ model }, "LLM: giving up on model, trying next");
+  }
+  throw lastErr;
 }
