@@ -1,576 +1,117 @@
-# API Documentation
+# The API
 
-## Base URL
+Everything the client calls goes over **tRPC**, mounted at `/api/trpc`. There
+is no REST API and no `/api/v1`. An earlier version of this document described
+one in detail; it did not exist then either.
 
+The practical consequence: you do not write requests by hand. The client
+imports the router's type and gets the procedure list, its inputs and its
+return type from TypeScript. If you want to know what a procedure takes, open
+its `z.object(...)` in `server/routers/`.
+
+## Talking to it
+
+**From the client.** `client/src/lib/trpc.ts` exports a typed client.
+
+```ts
+const { data } = trpc.products.list.useQuery();
+const mutate = trpc.recommendations.dismiss.useMutation();
 ```
-http://localhost:8000/api/v1
+
+**From outside**, for a one-off check. Queries take their input in the query
+string; mutations take a JSON body.
+
+```bash
+curl 'http://localhost:3000/api/trpc/products.list?input={"json":null}' \
+  -H 'Cookie: app_session_id=...'
 ```
 
 ## Authentication
 
-All endpoints (except `/auth/register` and `/auth/login`) require authentication via JWT token.
-
-Include the token in the `Authorization` header:
-
-```
-Authorization: Bearer <token>
-```
-
-## Endpoints
-
-### Authentication
-
-#### Register User
-
-```
-POST /auth/register
-Content-Type: application/json
-
-{
-  "email": "user@example.com",
-  "username": "username",
-  "password": "password",
-  "full_name": "John Doe"
-}
-
-Response: 200 OK
-{
-  "id": "uuid",
-  "email": "user@example.com",
-  "username": "username",
-  "full_name": "John Doe",
-  "is_active": true,
-  "is_verified": false,
-  "email_notifications": true,
-  "notification_frequency": "daily",
-  "created_at": "2024-01-01T00:00:00",
-  "updated_at": "2024-01-01T00:00:00",
-  "last_login": null
-}
-```
-
-#### Login User
-
-```
-POST /auth/login
-Content-Type: application/json
-
-{
-  "email": "user@example.com",
-  "password": "password"
-}
-
-Response: 200 OK
-{
-  "user_id": "uuid",
-  "email": "user@example.com",
-  "message": "Login successful"
-}
-```
-
-#### Shopify OAuth Callback
-
-```
-GET /auth/shopify/callback?code=<code>&shop=<shop>
-
-Response: 200 OK
-{
-  "status": "success",
-  "message": "Shopify store connected"
-}
-```
-
-### Products
-
-#### Create Product
-
-```
-POST /products
-Content-Type: application/json
-Authorization: Bearer <token>
-
-{
-  "shopify_store_id": "store-uuid",
-  "title": "Product Title",
-  "description": "Product description",
-  "sku": "SKU123",
-  "price": 99.99,
-  "compare_at_price": 129.99,
-  "category": "Electronics",
-  "vendor": "Vendor Name"
-}
-
-Response: 200 OK
-{
-  "id": "product-uuid",
-  "shopify_store_id": "store-uuid",
-  "title": "Product Title",
-  "description": "Product description",
-  "sku": "SKU123",
-  "price": 99.99,
-  "compare_at_price": 129.99,
-  "quantity": 0,
-  "category": "Electronics",
-  "vendor": "Vendor Name",
-  "is_active": true,
-  "is_tracked": false,
-  "created_at": "2024-01-01T00:00:00",
-  "updated_at": "2024-01-01T00:00:00",
-  "synced_at": "2024-01-01T00:00:00"
-}
-```
-
-#### Get Product
-
-```
-GET /products/{product_id}
-Authorization: Bearer <token>
-
-Response: 200 OK
-{
-  "id": "product-uuid",
-  "shopify_store_id": "store-uuid",
-  "title": "Product Title",
-  ...
-}
-```
-
-#### List Store Products
-
-```
-GET /products/store/{store_id}?skip=0&limit=100
-Authorization: Bearer <token>
-
-Response: 200 OK
-[
-  {
-    "id": "product-uuid",
-    "title": "Product Title",
-    ...
-  }
-]
-```
-
-#### Update Product
-
-```
-PUT /products/{product_id}
-Content-Type: application/json
-Authorization: Bearer <token>
-
-{
-  "title": "Updated Title",
-  "price": 89.99,
-  "is_tracked": true
-}
-
-Response: 200 OK
-{
-  "id": "product-uuid",
-  "title": "Updated Title",
-  "price": 89.99,
-  "is_tracked": true,
-  ...
-}
-```
-
-#### Delete Product
-
-```
-DELETE /products/{product_id}
-Authorization: Bearer <token>
-
-Response: 200 OK
-{
-  "message": "Product deleted"
-}
-```
-
-#### Track Product
-
-```
-POST /products/{product_id}/track
-Authorization: Bearer <token>
-
-Response: 200 OK
-{
-  "message": "Product tracking enabled",
-  "product_id": "product-uuid"
-}
-```
-
-#### Untrack Product
-
-```
-POST /products/{product_id}/untrack
-Authorization: Bearer <token>
-
-Response: 200 OK
-{
-  "message": "Product tracking disabled",
-  "product_id": "product-uuid"
-}
-```
-
-#### Add Competitor Product
-
-```
-POST /products/{product_id}/competitors
-Content-Type: application/json
-Authorization: Bearer <token>
-
-{
-  "competitor_name": "Amazon",
-  "competitor_url": "https://amazon.com/product",
-  "title": "Competitor Product",
-  "price": 79.99,
-  "currency": "USD"
-}
-
-Response: 200 OK
-{
-  "id": "competitor-uuid",
-  "product_id": "product-uuid",
-  "competitor_name": "Amazon",
-  "competitor_url": "https://amazon.com/product",
-  "title": "Competitor Product",
-  "price": 79.99,
-  "currency": "USD",
-  "match_score": 0.0,
-  "match_method": "embedding",
-  "is_active": true,
-  "is_verified": false,
-  "created_at": "2024-01-01T00:00:00",
-  "updated_at": "2024-01-01T00:00:00",
-  "last_scraped": null
-}
-```
-
-#### Get Competitor Products
-
-```
-GET /products/{product_id}/competitors
-Authorization: Bearer <token>
-
-Response: 200 OK
-[
-  {
-    "id": "competitor-uuid",
-    "competitor_name": "Amazon",
-    "price": 79.99,
-    "match_score": 0.85,
-    ...
-  }
-]
-```
-
-### Alerts
-
-#### Create Alert
-
-```
-POST /alerts
-Content-Type: application/json
-Authorization: Bearer <token>
-
-{
-  "user_id": "user-uuid",
-  "alert_type": "price_drop",
-  "product_id": "product-uuid",
-  "trigger_price": 79.99,
-  "trigger_condition": "below",
-  "notify_email": true,
-  "notify_in_app": true,
-  "description": "Alert when price drops below $80"
-}
-
-Response: 200 OK
-{
-  "id": "alert-uuid",
-  "user_id": "user-uuid",
-  "alert_type": "price_drop",
-  "product_id": "product-uuid",
-  "trigger_price": 79.99,
-  "trigger_condition": "below",
-  "is_active": true,
-  "is_triggered": false,
-  "notify_email": true,
-  "notify_in_app": true,
-  "created_at": "2024-01-01T00:00:00",
-  "updated_at": "2024-01-01T00:00:00",
-  "expires_at": null
-}
-```
-
-#### Get Alert
-
-```
-GET /alerts/{alert_id}
-Authorization: Bearer <token>
-
-Response: 200 OK
-{
-  "id": "alert-uuid",
-  "alert_type": "price_drop",
-  ...
-}
-```
-
-#### List User Alerts
-
-```
-GET /alerts/user/{user_id}
-Authorization: Bearer <token>
-
-Response: 200 OK
-[
-  {
-    "id": "alert-uuid",
-    "alert_type": "price_drop",
-    ...
-  }
-]
-```
-
-#### Update Alert
-
-```
-PUT /alerts/{alert_id}
-Content-Type: application/json
-Authorization: Bearer <token>
-
-{
-  "alert_type": "price_increase",
-  "trigger_price": 99.99
-}
-
-Response: 200 OK
-{
-  "id": "alert-uuid",
-  "alert_type": "price_increase",
-  "trigger_price": 99.99,
-  ...
-}
-```
-
-#### Delete Alert
-
-```
-DELETE /alerts/{alert_id}
-Authorization: Bearer <token>
-
-Response: 200 OK
-{
-  "message": "Alert deleted"
-}
-```
-
-#### Activate Alert
-
-```
-POST /alerts/{alert_id}/activate
-Authorization: Bearer <token>
-
-Response: 200 OK
-{
-  "message": "Alert activated",
-  "alert_id": "alert-uuid"
-}
-```
-
-#### Deactivate Alert
-
-```
-POST /alerts/{alert_id}/deactivate
-Authorization: Bearer <token>
-
-Response: 200 OK
-{
-  "message": "Alert deactivated",
-  "alert_id": "alert-uuid"
-}
-```
-
-### Recommendations
-
-#### Get Recommendation
-
-```
-GET /recommendations/{recommendation_id}
-Authorization: Bearer <token>
-
-Response: 200 OK
-{
-  "id": "recommendation-uuid",
-  "product_id": "product-uuid",
-  "current_price": 99.99,
-  "recommended_price": 89.99,
-  "price_change": -10.00,
-  "price_change_percent": -10.01,
-  "recommendation_reason": "Based on 5 competitors...",
-  "confidence_score": 0.92,
-  "factors": {...},
-  "is_active": true,
-  "is_implemented": false,
-  "created_at": "2024-01-01T00:00:00",
-  "updated_at": "2024-01-01T00:00:00",
-  "implemented_at": null
-}
-```
-
-#### List Product Recommendations
-
-```
-GET /recommendations/product/{product_id}
-Authorization: Bearer <token>
-
-Response: 200 OK
-[
-  {
-    "id": "recommendation-uuid",
-    "current_price": 99.99,
-    "recommended_price": 89.99,
-    ...
-  }
-]
-```
-
-#### Get Latest Recommendation
-
-```
-GET /recommendations/product/{product_id}/latest
-Authorization: Bearer <token>
-
-Response: 200 OK
-{
-  "id": "recommendation-uuid",
-  "current_price": 99.99,
-  "recommended_price": 89.99,
-  ...
-}
-```
-
-#### Calculate Recommendation
-
-```
-POST /recommendations/{product_id}/calculate
-Authorization: Bearer <token>
-
-Response: 200 OK
-{
-  "id": "recommendation-uuid",
-  "current_price": 99.99,
-  "recommended_price": 89.99,
-  ...
-}
-```
-
-#### Implement Recommendation
-
-```
-POST /recommendations/{recommendation_id}/implement
-Authorization: Bearer <token>
-
-Response: 200 OK
-{
-  "message": "Recommendation implemented",
-  "recommendation_id": "recommendation-uuid"
-}
-```
-
-#### Get High Confidence Recommendations
-
-```
-GET /recommendations/high-confidence/list?min_confidence=0.7
-Authorization: Bearer <token>
-
-Response: 200 OK
-[
-  {
-    "id": "recommendation-uuid",
-    "confidence_score": 0.92,
-    ...
-  }
-]
-```
-
-## Error Responses
-
-### 400 Bad Request
-
-```json
-{
-  "detail": "Invalid request data"
-}
-```
-
-### 401 Unauthorized
-
-```json
-{
-  "detail": "Invalid credentials"
-}
-```
-
-### 404 Not Found
-
-```json
-{
-  "detail": "Resource not found"
-}
-```
-
-### 500 Internal Server Error
-
-```json
-{
-  "detail": "Internal server error"
-}
-```
-
-## Rate Limiting
-
-Currently no rate limiting is implemented. This should be added for production.
-
-## Pagination
-
-List endpoints support pagination via query parameters:
-
-- `skip`: Number of items to skip (default: 0)
-- `limit`: Number of items to return (default: 100, max: 1000)
-
-## Sorting
-
-Sorting can be implemented by adding `sort_by` and `order` parameters to list endpoints.
-
-## Filtering
-
-Filtering can be implemented by adding filter parameters to list endpoints.
-
-## Webhooks
-
-Webhooks for real-time events can be implemented for:
-
-- Price changes
-- Alert triggers
-- Recommendation updates
-- Product synchronization
-
-## Rate Limits (Recommended)
-
-- 100 requests per minute for authenticated users
-- 10 requests per minute for unauthenticated endpoints
-- 1000 requests per hour for bulk operations
-
-## Versioning
-
-The API uses URL-based versioning (`/api/v1`). Future versions will be available at `/api/v2`, etc.
-
-## CORS
-
-CORS is enabled for the following origins:
-
-- http://localhost:3000
-- http://localhost:8000
-
-Additional origins can be configured in `.env`.
+A session is an httpOnly cookie, `app_session_id`, holding a signed JWT. There
+is no `Authorization: Bearer` header — a token in a header would be readable
+by any script on the page, which is the thing the cookie is avoiding.
+
+- `auth.login` and `auth.register` set the cookie and a refresh cookie.
+- `auth.refreshSession` rotates them.
+- `auth.logout` clears both.
+- Mutations also require a CSRF token from `GET /api/csrf-token`, because a
+  cookie alone is sent by the browser on cross-site requests too.
+
+`protectedProcedure` rejects with `UNAUTHORIZED` when the cookie is missing or
+expired. `adminProcedure` additionally requires `role = 'admin'`.
+
+## The routers
+
+One file per namespace under `server/routers/`.
+
+| Namespace | What it is for |
+| --- | --- |
+| `auth` | Register, log in, refresh, reset a password, who am I |
+| `products` | The catalogue: list, create, update, CSV import, Shopify sync, competitor prices for one product |
+| `competitors` | The shops we found, their matched products, their feed |
+| `recommendations` | Suggested prices: list, generate, implement, dismiss |
+| `pricingEngine` | Analysis on demand — market position, the suggested price, dashboard counts |
+| `pipeline` | What the daily run is doing, what became of each product, and the full trail for one |
+| `prices` | Price history and trends |
+| `alerts` | Competitor price movements, read and resolved state |
+| `intelligence` | The action centre, extraction by URL, cron status |
+| `account` | Plans, usage, and the two pricing rules |
+| `billing` | Stripe: status, checkout, portal, plan changes |
+| `notifications`, `reports`, `activity`, `analytics`, `system` | Preferences, report runs, the activity log, event tracking, health |
+
+## The endpoints that are not tRPC
+
+These are plain Express routes, because something other than our own client
+calls them.
+
+| Route | Who calls it |
+| --- | --- |
+| `GET /healthz`, `GET /health/live` | Uptime checks. Liveness only — it does not touch the database |
+| `GET /health/ready` | Readiness: checks the database and the queue |
+| `GET /api/csrf-token` | The client, before any mutation |
+| `GET /api/shopify/login` | The merchant, to start OAuth |
+| `GET /api/shopify/callback` | Shopify, after the merchant approves |
+| `POST /api/shopify/connect` | The client, for the token-exchange path |
+| `DELETE /api/shopify/disconnect` | The client |
+| `POST /api/shopify/webhooks` | Shopify: `app/uninstalled` and the three GDPR compliance topics, each HMAC-verified |
+| `POST /api/billing/webhook` | Stripe, signature-verified |
+| `GET /api/oauth/google/start`, `GET /api/oauth/google/callback` | Google sign-in |
+| `GET /api/notifications/stream` | The client, server-sent events for live alerts |
+
+Note that anything not matching a route falls through to the SPA and returns
+`200` with `index.html`. A `200` from a made-up path is not evidence the
+endpoint exists — check this table.
+
+## Errors
+
+tRPC returns its own codes rather than bare HTTP statuses. The ones you will
+meet:
+
+| Code | Means |
+| --- | --- |
+| `BAD_REQUEST` | Zod rejected the input. The message names the field |
+| `UNAUTHORIZED` | No session, or it expired |
+| `FORBIDDEN` | Signed in, but not allowed — wrong role, or a plan limit |
+| `NOT_FOUND` | No such row, or it belongs to someone else |
+| `TOO_MANY_REQUESTS` | Rate limited. Note this covers `/api/csrf-token` too, so a client that hits it cannot sign back in until the window passes |
+| `INTERNAL_SERVER_ERROR` | Everything else. The response carries a request id that matches the server log |
+
+## Rate limits
+
+Set in `server/_core/rate-limit.ts`, per IP, in-memory.
+
+| Limiter | Window | Ceiling |
+| --- | --- | --- |
+| General API | 15 min | 1200 |
+| Auth | 15 min | tighter — see the file |
+| Scraping | 15 min | tighter — see the file |
+
+The server sets `trust proxy` to one hop, so behind the Cloudflare tunnel these
+count real visitors rather than counting everyone as the tunnel.
+
+## Tenancy
+
+Every protected procedure filters by `ctx.user.id`. There is no workspace or
+team concept: data belongs to a user, which is why a shop cannot yet be shared
+by two people. That limitation is written up in `docs/TODO.md`.

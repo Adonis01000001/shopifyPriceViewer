@@ -58,13 +58,14 @@ shopify-price-viwer/
 - **Price History** — Historical price records with trend analysis
 - **Pricing Recommendations** — Automated pricing suggestions based on competitor analysis
 - **Alerts** — Price drop/increase alerts, threshold notifications
-- **Dashboard** — KPIs, pricing insights, category mix, and next-best actions
+- **Dashboard** — every product with what to do about its price, and the working behind each suggestion
 - **Email Notifications** — Configurable SMTP settings with encrypted credentials at rest
 
 ## Development
 
 ```bash
-pnpm dev          # Start dev server (Express + Vite)
+pnpm start        # Tunnel and app together; Ctrl-C stops both
+pnpm dev          # App only, watches files and restarts itself
 pnpm check        # TypeScript type check
 pnpm lint         # ESLint
 pnpm test         # Run tests (vitest)
@@ -73,7 +74,27 @@ pnpm db:migrate   # Apply committed Drizzle migrations
 pnpm db:push      # Local development only; do not use in production
 pnpm db:seed      # Seed database
 pnpm smoke        # Smoke-test a running deployment (set SMOKE_BASE_URL)
+pnpm reset        # Wipe every account and everything hanging off it
+pnpm demo:save    # Snapshot the database; demo:load restores it
+pnpm tunnel:setup # Once: a named tunnel on a hostname you own
 ```
+
+Full setup, including which environment variables actually matter, is in
+[docs/SETUP.md](docs/SETUP.md).
+
+## Documentation
+
+Current, and kept current:
+
+- [Setting the project up](docs/SETUP.md) — start here
+- [Architecture](docs/ARCHITECTURE.md) — how a run works, end to end
+- [The API](docs/API.md) — tRPC namespaces and the handful of plain routes
+- [Known work](docs/TODO.md) — what is still wrong, with enough detail to pick up cold
+- [UI clarity pass](docs/UI-CLARITY-PLAN.md) — what was changed on screen and why
+
+Historical, kept as a record and marked as such at the top of each: the phase
+briefs, the technical audit, the improvement plan, `BACKEND.md` (which
+describes a Python backend this repository never had) and `DEPLOYMENT.md`.
 
 ## Version 1.0 release documentation
 
@@ -124,7 +145,9 @@ pnpm dev
 
 ## API Endpoints (tRPC)
 
-All API endpoints are exposed via tRPC at `/api/trpc`.
+All API endpoints are exposed via tRPC at `/api/trpc`. The list below is a
+sample; [docs/API.md](docs/API.md) covers the namespaces and the plain Express
+routes, and `server/routers/` is the source of truth.
 
 ### Auth
 

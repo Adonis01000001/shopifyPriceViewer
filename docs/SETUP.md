@@ -1,270 +1,129 @@
-# Setup Instructions
+# Setting the project up
+
+What you need to get the app running locally, and what each piece is for. If
+something here does not match what the code does, the code is right and this
+file is wrong — say so.
+
+## What this is
+
+An Express server and a React app served from the same process. tRPC carries
+the calls between them, Drizzle talks to PostgreSQL, and a daily job searches
+for competitor prices and works out what to charge.
+
+There is no separate API server, no Python, no SQL Server and no Redis
+requirement. Earlier versions of this document described all four; they were
+describing a different application.
 
 ## Prerequisites
 
-- Python 3.11+
-- Node.js 18+
-- Microsoft SQL Server 2019+ (local or remote)
-- Redis (for task queue)
-- Git
+| Need | Version | Notes |
+| --- | --- | --- |
+| Node | 20+ | |
+| pnpm | 9+ | `npm install -g pnpm` |
+| PostgreSQL | 14+ | Local install or Docker, either is fine |
+| A Shopify Partner account | — | Only needed to connect a real store; the app runs without one |
 
-## Windows Local Development Setup
+Redis is optional. Without `REDIS_URL` the queue runs inline in the same
+process, which is what you want locally.
 
-### 1. Install SQL Server
-
-Download and install Microsoft SQL Server 2019 or later from [Microsoft SQL Server](https://www.microsoft.com/en-us/sql-server/sql-server-downloads).
-
-Create a database:
-
-```sql
-CREATE DATABASE shopify_price_intelligence;
-```
-
-### 2. Install Redis
-
-Download and install Redis from [Redis Windows](https://github.com/microsoftarchive/redis/releases) or use Windows Subsystem for Linux (WSL).
-
-### 3. Clone and Setup Project
+## First run
 
 ```bash
-git clone <repository-url>
-cd shopify-price-intelligence
-cp .env.example .env
+pnpm install
+cp .env.example .env          # then fill in the four values below
+createdb pv_review            # or point DATABASE_URL at a database you have
+pnpm db:migrate
+pnpm start
 ```
 
-### 4. Backend Setup
+`pnpm start` brings up the app and, if you have set a tunnel up, the tunnel
+too. Both stop on Ctrl-C. It refuses to start if something is already
+listening on the port rather than half-starting.
+
+The app is on http://localhost:3000.
+
+### The four values you must set
+
+Everything else in `.env.example` has a working default or is optional.
+
+| Variable | Why |
+| --- | --- |
+| `DATABASE_URL` | Where the data goes. |
+| `JWT_SECRET` | Signs session cookies. Generate: `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"` |
+| `ENCRYPTION_KEY_SALT` | Encrypts stored Shopify access tokens. Generate the same way. |
+| `SHOPIFY_API_KEY` / `SHOPIFY_API_SECRET` | Only needed to connect a real store. |
+
+### The keys the pipeline needs
+
+The app runs without these; the daily run just finds nothing.
+
+| Variable | What it buys |
+| --- | --- |
+| `SERPER_API_KEY` or `SERP_API_KEY` | Finding shops that sell your products. Serper is cheaper and is preferred when both are set. |
+| `OPENROUTER_API_KEY` | Deciding whether a page sells the same product, and reading the price off it. |
+| `OPENROUTER_MODELS` | A comma-separated fallback list. Free models share an upstream pool and return 429 often, so the pipeline rotates through these rather than giving up. |
+| `FIRECRAWL_API_KEY` | Reading pages that resist a plain fetch. Jina Reader is tried first and is free, and there is a Playwright fallback, so this is optional. |
+
+One more worth knowing about: `MATCH_CONFIDENCE_THRESHOLD` decides how sure the
+model has to be that a page sells the same product. It defaults to `0.85`.
+Lowering it finds more shops and admits more wrong ones; the machine the demo
+was recorded on runs at `0.75`, so results will not match exactly out of the
+box.
+
+## Connecting a Shopify store
+
+Shopify has to be able to reach your machine over HTTPS, and it pins the
+callback URL to whatever the app was released with. A quick tunnel hands out a
+new hostname every restart, which means re-releasing the app every time.
 
 ```bash
-cd backend
-python -m venv venv
-venv\Scripts\activate
-pip install -r requirements.txt
+pnpm tunnel:setup     # once: creates a named tunnel on a hostname you own
 ```
 
-Create `.env` file in backend directory:
+After that the address never changes and Shopify never needs telling again.
+`pnpm start` brings the tunnel up with the app.
 
-```env
-DATABASE_URL=mssql+pyodbc://sa:YourPassword@localhost:1433/shopify_price_intelligence?driver=ODBC+Driver+17+for+SQL+Server
-REDIS_URL=redis://localhost:6379/0
-SHOPIFY_API_KEY=your_key
-SHOPIFY_API_SECRET=your_secret
-OPENAI_API_KEY=your_key
-SECRET_KEY=your-secret-key-change-in-production
+## Day to day
+
+| Command | Does |
+| --- | --- |
+| `pnpm start` | App plus tunnel, one terminal, Ctrl-C stops both |
+| `pnpm dev` | App only, watches files and restarts itself |
+| `pnpm reset` | Wipes every account and everything hanging off it. Asks first; `--yes` skips the prompt |
+| `pnpm demo:save` / `demo:load` | Snapshot and restore the database, so a demo can be re-run from a known state without re-scraping |
+| `pnpm test` | Vitest, 60 tests |
+| `pnpm build` | Type-checks and builds client, server and worker |
+| `pnpm db:generate` | Writes a migration from a schema change |
+| `pnpm db:migrate` | Applies pending migrations |
+
+Scripts under `scripts/dev/` drive individual pieces by hand — run the pipeline
+for one product, push a price, fetch a Shopify token.
+
+## Where things are
+
+```
+client/src/pages/dashboard/   the five screens
+client/src/components/        shared UI
+server/routers/               tRPC procedures, one file per namespace
+server/services/              the work: pipeline, pricing, scraping, extraction
+server/_core/                 auth, env, rate limiting, Shopify OAuth
+drizzle/schema.ts             every table
+drizzle/migrations/           applied in order, never edited after the fact
+docs/TODO.md                  what is still wrong, with enough detail to pick up cold
 ```
 
-Run migrations:
+## If it will not start
 
-```bash
-alembic upgrade head
-```
+**"Something is already listening on port 3000."** Another copy is running.
+`lsof -nP -iTCP:3000 -sTCP:LISTEN` will name it.
 
-Start backend server:
+**"column ... does not exist."** A migration has not been applied. `pnpm
+db:migrate`.
 
-```bash
-python run.py
-```
+**Shopify says the app failed to install.** The tunnel is down, so the
+callback had nowhere to land. Check `/tmp/priceintel-tunnel.log`.
 
-Backend will be available at `http://localhost:8000`
-
-### 5. Frontend Setup
-
-```bash
-cd frontend
-npm install
-```
-
-Create `.env.local` file:
-
-```env
-NEXT_PUBLIC_API_URL=http://localhost:8000
-NEXT_PUBLIC_APP_NAME=Shopify Price Intelligence
-```
-
-Start frontend development server:
-
-```bash
-npm run dev
-```
-
-Frontend will be available at `http://localhost:3000`
-
-### 6. Celery Worker (Optional)
-
-In a new terminal:
-
-```bash
-cd backend
-venv\Scripts\activate
-celery -A app.tasks worker --loglevel=info
-```
-
-## Access the Application
-
-- Frontend: `http://localhost:3000`
-- Backend API: `http://localhost:8000`
-- API Documentation: `http://localhost:8000/docs`
-
-## Database Migrations
-
-### Create a new migration
-
-```bash
-cd backend
-alembic revision --autogenerate -m "Description of changes"
-```
-
-### Apply migrations
-
-```bash
-alembic upgrade head
-```
-
-### Rollback migrations
-
-```bash
-alembic downgrade -1
-```
-
-## Environment Variables
-
-### Backend (.env)
-
-| Variable           | Description                  | Example                                      |
-| ------------------ | ---------------------------- | -------------------------------------------- |
-| DATABASE_URL       | SQL Server connection string | mssql+pyodbc://sa:password@localhost:1433/db |
-| REDIS_URL          | Redis connection string      | redis://localhost:6379/0                     |
-| SHOPIFY_API_KEY    | Shopify app API key          | your_key                                     |
-| SHOPIFY_API_SECRET | Shopify app API secret       | your_secret                                  |
-| OPENAI_API_KEY     | OpenAI API key               | sk-...                                       |
-| SECRET_KEY         | JWT secret key               | your-secret                                  |
-| API_HOST           | API host                     | 0.0.0.0                                      |
-| API_PORT           | API port                     | 8000                                         |
-| ENVIRONMENT        | Environment                  | development                                  |
-
-### Frontend (.env.local)
-
-| Variable             | Description      | Example                    |
-| -------------------- | ---------------- | -------------------------- |
-| NEXT_PUBLIC_API_URL  | Backend API URL  | http://localhost:8000      |
-| NEXT_PUBLIC_APP_NAME | Application name | Shopify Price Intelligence |
-
-## Troubleshooting
-
-### SQL Server Connection Issues
-
-1. Ensure SQL Server is running
-2. Check connection string in .env
-3. Verify ODBC driver is installed: `pip install pyodbc`
-4. On Windows, install "ODBC Driver 17 for SQL Server"
-
-### Redis Connection Issues
-
-1. Ensure Redis is running
-2. Check Redis URL in .env
-3. Test connection: `redis-cli ping`
-
-### Python Dependencies Issues
-
-```bash
-# Clear pip cache
-pip cache purge
-
-# Reinstall dependencies
-pip install -r requirements.txt --force-reinstall
-```
-
-### Node Dependencies Issues
-
-```bash
-# Clear npm cache
-npm cache clean --force
-
-# Reinstall dependencies
-npm install --force
-```
-
-## Production Deployment
-
-See `docs/DEPLOYMENT.md` for production deployment instructions.
-
-## Development Tips
-
-1. Use `npm run dev` for hot-reload frontend development
-2. Use `python run.py` for auto-reloading backend (requires `reload=True` in config)
-3. Check API docs at `http://localhost:8000/docs` for available endpoints
-4. Use browser DevTools to debug frontend issues
-5. Check backend logs for API errors
-
-## Testing
-
-### Backend Tests
-
-```bash
-cd backend
-pytest tests/
-pytest --cov=app tests/  # With coverage
-```
-
-### Frontend Tests
-
-```bash
-cd frontend
-npm test
-npm run test:coverage  # With coverage
-```
-
-## Common Commands
-
-### Backend
-
-```bash
-# Start development server
-python run.py
-
-# Run migrations
-alembic upgrade head
-
-# Create migration
-alembic revision --autogenerate -m "message"
-
-# Start Celery worker
-celery -A app.tasks worker --loglevel=info
-
-# Run tests
-pytest
-
-# Format code
-black app/
-
-# Lint code
-flake8 app/
-```
-
-### Frontend
-
-```bash
-# Start development server
-npm run dev
-
-# Build for production
-npm run build
-
-# Start production server
-npm start
-
-# Run linter
-npm run lint
-
-# Format code
-npm run format
-```
-
-## Next Steps
-
-1. Configure Shopify OAuth credentials
-2. Set up email notifications (SMTP)
-3. Configure OpenAI API key for embeddings
-4. Connect your first Shopify store
-5. Add products to track
-6. Set up price alerts
-7. Monitor competitor prices
+**Everything returns 429 and you cannot log back in.** The rate limit covers
+the CSRF token endpoint, so the app cannot fetch the token it needs to sign in
+again. Wait out the window, or raise the ceiling in
+`server/_core/rate-limit.ts` if you are hammering it deliberately.

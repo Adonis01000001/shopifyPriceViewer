@@ -20,27 +20,23 @@
 │  ┌─────────────────────────────────────────────────────────────┐    │
 │  │                    Services Layer                            │    │
 │  │  ┌──────────────────┐  ┌──────────────────────────────┐     │    │
-│  │  │ Competitor       │  │ AI Extraction Service        │     │    │
-│  │  │ Discovery Svc    │  │ (single LLM call per page)   │     │    │
-│  │  │ (SerpAPI +       │  │                              │     │    │
-│  │  │  Firecrawl)      │  │ • Product match validation   │     │    │
-│  │  │                  │  │ • Price extraction           │     │    │
-│  │  │ • Country-aware  │  │ • Description extraction     │     │    │
-│  │  │ • Language-aware │  │ • Structured JSON output     │     │    │
-│  │  │ • URL dedup      │  │ • Confidence scoring         │     │    │
-│  │  │ • Confidence     │  └──────────────────────────────┘     │    │
+│  │  │ Pipeline Service │  │ AI Extraction Service        │     │    │
+│  │  │ (the whole run)  │  │ (single LLM call per page)   │     │    │
+│  │  │                  │  │                              │     │    │
+│  │  │ • Search         │  │ • Product match validation   │     │    │
+│  │  │ • Scrape         │  │ • Price extraction           │     │    │
+│  │  │ • Match + guard  │  │ • Structured JSON output     │     │    │
+│  │  │ • Price + floor  │  │ • Confidence scoring         │     │    │
+│  │  │ • Narrate steps  │  └──────────────────────────────┘     │    │
 │  │  └──────────────────┘                                       │    │
 │  │  ┌──────────────────┐  ┌──────────────────────────────┐     │    │
-│  │  │ Price Monitoring │  │ Cron Scheduler               │     │    │
-│  │  │ Engine           │  │                              │     │    │
-│  │  │                  │  │ • Hourly price monitoring    │     │    │
-│  │  │ • Scrape pages   │  │ • Daily competitor discovery │     │    │
-│  │  │ • AI extraction  │  │ • Staggered job starts       │     │    │
-│  │  │ • Detect changes │  │ • Overlap prevention         │     │    │
-│  │  │ • Store snapshots│  └──────────────────────────────┘     │    │
-│  │  │ • Generate alerts│                                       │    │
-│  │  │ • Timeline events│                                       │    │
-│  │  └──────────────────┘                                       │    │
+│  │  │ Pricing Engine   │  │ Cron Scheduler               │     │    │
+│  │  │                  │  │                              │     │    │
+│  │  │ • Average        │  │ • Price refresh              │     │    │
+│  │  │ • Undercut       │  │ • Daily full run             │     │    │
+│  │  │ • Margin floor   │  │ • Skips a job already run    │     │    │
+│  │  │ • Position       │  │ • Overlap prevention         │     │    │
+│  │  └──────────────────┘  └──────────────────────────────┘     │    │
 │  └─────────────────────────────────────────────────────────────┘    │
 │  ┌─────────────────────────────────────────────────────────────┐    │
 │  │                    Data Access (Drizzle ORM)                 │    │
@@ -48,110 +44,112 @@
 └───────────┬──────────────────┬──────────────────┬───────────────────┘
             │                  │                  │
    ┌────────▼──────┐  ┌───────▼───────┐  ┌───────▼───────┐
-   │  PostgreSQL   │  │   Firecrawl   │  │   OpenAI /    │
-   │  (Drizzle)    │  │   API         │  │   Forge LLM   │
+   │  PostgreSQL   │  │ Serper/SerpApi│  │  OpenRouter   │
+   │  (Drizzle)    │  │ Jina, Firecrawl│ │  (rotating)   │
    └───────────────┘  └───────────────┘  └───────────────┘
 ```
 
 ## Core Workflow
 
-### 1. Product Import
+One run does all of it, in `server/services/pipeline.service.ts`. There is no
+separate discovery step to trigger and no candidate queue to approve: three
+earlier systems worked that way and were removed, because a merchant could not
+tell which of them a price had come from.
 
-- Merchant connects Shopify store via OAuth
-- Products synced via Shopify Admin API (`shopify.syncProducts`)
-- Stored in `products` table with title, SKU, GTIN, vendor, price
+### 1. Product import
 
-### 2. Automated Competitor Discovery
+The merchant connects Shopify over OAuth; the catalogue syncs through the
+Admin API into `products`, with cost prices where Shopify exposes them. A CSV
+import is the alternative for merchants not on Shopify.
 
-- Triggered manually via `intelligence.discoverCompetitors` or daily cron
-- Uses SerpAPI (primary) or Firecrawl search (fallback)
-- Generates localized search queries per product
-- Deduplicates URLs against known domains
-- Scores confidence based on title overlap, brand match, position
-- Stores candidates in `competitor_discoveries` table
+### 2. Search, in the merchant's own market
 
-### 3. Intelligent Scraping Layer
+Serper if a key is set, otherwise SerpApi. The query is built from the product
+title and run with the country and language the merchant's store sells in —
+a price a shopper in that market would not see is not a competitor price.
+Results from the merchant's own domain are dropped.
 
-- **Primary**: Firecrawl API — handles JS-heavy sites, Cloudflare
-- **Fallback**: Playwright — full JS rendering, human-like navigation
-- Scraper adapter pattern for extensibility
-- Retry logic with exponential backoff
+### 3. Read the page, cheapest source first
 
-### 4. Single AI Validation + Extraction Call
+Jina Reader first: free, no key, and enough for most retailer pages. Firecrawl
+only when Jina comes back empty, because it costs credits. Playwright last,
+when there is no Firecrawl key at all.
 
-- One LLM call per competitor page performs ALL tasks:
-  - **Product Match Validation**: Brand, model, SKU, storage, color, size
-  - **Price Extraction**: Current, sale, original price + currency
-  - **Description Extraction**: Title, description, key features
-  - **Structured Output**: Strict JSON with confidence scores
-- JSON schema validation enforced
-- Results stored in `ai_extractions` table
+Heavily protected retailers - Amazon, Best Buy - block all three. Those
+candidates are skipped and the next domain is tried. This shows in the log as
+`no price on page (likely blocked), skipping AI call`, which is the guard
+working rather than a fault.
 
-### 5. Price Monitoring Engine
+### 4. One model call per page, and three guards
 
-- Hourly cron job (`price_monitor`)
-- For each active competitor-product match:
-  1. Scrape page (Firecrawl)
-  2. Run AI extraction
-  3. Compare against latest snapshot
-  4. Detect changes (price increase/decrease, OOS, promotion)
-  5. Store immutable snapshot
-  6. Generate timeline event
-  7. Create alert for significant changes (>2%)
+The call decides whether the page sells the same product and reads the price
+off it. Nothing is recorded unless it survives all three:
 
-### 6. Activity Timeline
+1. **The page must contain a price at all.** Checked before the model call, so
+   a blocked page costs nothing.
+2. **The match must reach the confidence threshold** —
+   `MATCH_CONFIDENCE_THRESHOLD`, default `0.85`. Lowering it matches more
+   shops and admits more wrong ones; the local `.env` on the demo machine runs
+   at `0.75`, which is worth knowing when comparing results.
+3. **The price must appear in the page text.** If the model returns a number
+   that is not there, it is thrown away. This catches the failure where a
+   model repeats the merchant's own price back, or invents one.
 
-- Generated automatically from price change events
-- Stored in `activity_logs` table
-- Paginated API endpoint
-- Examples: "Amazon lowered price from $699 to $679 (3.2% decrease)"
+A price outside a plausible band around the merchant's own - under a quarter or
+over four times - is also rejected as a parse artefact.
 
-### 7. Confidence & Quality System
+### 5. Work out the price
 
-- **Search confidence**: Based on search result position
-- **AI confidence**: Overall extraction confidence (0-1)
-- **SKU match confidence**: Exact SKU/barcode match
-- **Title similarity**: Word overlap between titles
-- **Variant similarity**: Color/size/storage match
-- **Default threshold**: 0.85 — matches below are rejected
+Average what was confirmed, take the merchant's undercut off it, and never go
+below cost plus their margin. Both percentages are per-merchant settings; see
+`server/services/pricing-rules.service.ts`. A change under 1% is not raised at
+all, because a suggestion to move a price by pennies is noise on a list of
+things to do.
+
+### 6. Narrate it
+
+Every step writes a line to `activity_logs` naming the shop and what came of
+it. That is what the top-bar indicator reads, and what the product page shows
+as "everything we checked" — so a merchant can audit a suggestion rather than
+trust it.
+
+### 7. What runs when
+
+| Job | Interval | Does |
+| --- | --- | --- |
+| `price_monitor` | `MONITORING_INTERVAL_HOURS` | Re-reads pages already matched. No new searching, so no new search spend |
+| `competitor_discovery` | 24h | The full run above, per user |
+| `daily_reports` | 24h | Report generation for plans that include it |
+
+The scheduler reads `cron_runs` before starting a job and skips one that has
+already run within its interval, so restarting the server does not re-run a
+day's work.
 
 ## Database Schema (Key Tables)
 
 | Table                    | Purpose                            |
 | ------------------------ | ---------------------------------- |
 | `products`               | Merchant's products                |
+| `users`                  | Accounts, and the two pricing rules |
 | `competitors`            | Known competitor stores            |
 | `competitor_products`    | Matched competitor products        |
-| `competitor_discoveries` | Search-discovered candidate URLs   |
 | `ai_extractions`         | AI validation + extraction results |
 | `price_snapshots`        | Immutable price history            |
 | `price_changes`          | Detected change events             |
 | `scrape_logs`            | Per-URL scrape attempt logs        |
 | `cron_runs`              | Monitoring job tracking            |
-| `activity_logs`          | Merchant-facing timeline events    |
+| `activity_logs`          | Timeline events, and the pipeline's step-by-step narration |
 | `alerts`                 | Price change alerts                |
 
-## API Endpoints (tRPC)
+## The API
 
-### Intelligence Router
+See `docs/API.md`. In short: tRPC at `/api/trpc`, one router file per
+namespace under `server/routers/`, sessions in an httpOnly cookie.
 
-| Endpoint                                   | Type     | Description                        |
-| ------------------------------------------ | -------- | ---------------------------------- |
-| `intelligence.discoverCompetitors`         | mutation | Discover competitors for a product |
-| `intelligence.discoverAllProducts`         | mutation | Discover for all tracked products  |
-| `intelligence.getDiscoveries`              | query    | List discovered candidates         |
-| `intelligence.approveDiscovery`            | mutation | Approve a discovery                |
-| `intelligence.rejectDiscovery`             | mutation | Reject a discovery                 |
-| `intelligence.importDiscoveryAsCompetitor` | mutation | Import as tracked competitor       |
-| `intelligence.extractFromUrl`              | mutation | AI extract from any URL            |
-| `intelligence.getExtractions`              | query    | List AI extractions                |
-| `intelligence.runMonitoring`               | mutation | Trigger price monitoring run       |
-| `intelligence.getPriceChanges`             | query    | List detected price changes        |
-| `intelligence.getTimeline`                 | query    | Get activity timeline              |
-| `intelligence.getCronRuns`                 | query    | List monitoring job runs           |
-| `intelligence.getCronStatus`               | query    | Get scheduler status               |
-| `intelligence.getSnapshotHistory`          | query    | Get price snapshot history         |
-| `intelligence.scrapeAndExtract`            | mutation | Scrape + AI extract combined       |
+The intelligence router used to carry a dozen discovery endpoints - approve a
+candidate, reject one, import one as a competitor. They went with the systems
+behind them. What is left there is the action centre, extraction by URL, and
+cron status.
 
 ## Deployment
 
@@ -165,16 +163,21 @@ docker-compose up -d
 
 ```bash
 pnpm install
-pnpm db:push        # Run migrations
-pnpm db:seed        # Seed data (optional)
-pnpm dev            # Development
-pnpm build && pnpm start  # Production
+pnpm db:migrate     # Apply migrations
+pnpm start          # Tunnel and app together
 ```
+
+Full instructions are in `docs/SETUP.md`.
 
 ## Scalability Considerations
 
-- **Concurrent scraping**: Semaphore-controlled (default 5)
-- **Cron jobs**: In-process with overlap prevention
+- **Concurrent scraping**: Semaphore-controlled (`MAX_CONCURRENT_SCRAPES`, default 5)
+- **Per-product deadline**: six minutes, after which the run abandons that
+  product and moves on rather than stalling everything behind it
+- **Model refusals**: free models share an upstream pool and 429 often, so the
+  call rotates through `OPENROUTER_MODELS` before giving up
+- **Cron jobs**: In-process with overlap prevention, and a `cron_runs` check so
+  a restart does not repeat a day's work
 - **Database**: Indexed for analytics queries on product_id, competitor_id, created_at
 - **Snapshots**: Immutable — never overwritten, only appended
 - **AI costs**: Single call per page, structured output minimizes tokens
