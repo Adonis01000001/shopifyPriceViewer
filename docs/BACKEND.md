@@ -1,5 +1,13 @@
 # Backend Architecture
 
+> **Retired guide.** This describes a FastAPI and Python 3.11 backend with a
+> REST API under `/api/v1`. This repository has never contained one: the server
+> is Express with tRPC, in TypeScript, and the document appears to have been
+> carried over from a different project.
+>
+> For what is actually here, read `docs/ARCHITECTURE.md` and `docs/API.md`.
+> Kept only so that anyone who finds a reference to it knows it is wrong.
+
 > **Retired guide:** This document describes an older Python, SQL Server, and
 > Celery architecture. Do not use it for Version 1.0. Follow the current
 > [Version 1.0 deployment runbook](RELEASE-DEPLOYMENT.md) and repository

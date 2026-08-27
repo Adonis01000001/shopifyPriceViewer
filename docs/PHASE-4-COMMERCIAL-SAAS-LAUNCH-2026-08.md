@@ -1,5 +1,8 @@
 # Phase 4 — Commercial SaaS Launch Readiness
 
+> **Historical record, 2026-08.** Kept as written. Price Radar and the
+> competitor-discovery service it refers to have since been removed.
+
 Date: 2026-08-05
 
 ## Executive outcome

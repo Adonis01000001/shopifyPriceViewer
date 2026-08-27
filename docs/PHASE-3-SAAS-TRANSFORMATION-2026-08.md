@@ -1,5 +1,11 @@
 # Phase 3 — SaaS Transformation
 
+> **Historical record, 2026-08-05.** Kept as written. Since then the three
+> parallel discovery systems it names — Price Radar, Scoop and Path of Wisdom —
+> have been removed in favour of a single pipeline, so the "existing
+> ingredients" list no longer describes the codebase. The product thesis in
+> the executive section is still the one being built to.
+
 Date: 2026-08-05  
 Product: Shopify Price Intelligence / PriceVision
 

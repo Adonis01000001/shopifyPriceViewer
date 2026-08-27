@@ -1,5 +1,9 @@
 # Improvement Plan — "make the app much better"
 
+> **Historical.** A plan written before the discovery consolidation. Items
+> referring to Price Radar, Scoop or Path of Wisdom no longer apply — those
+> systems were removed. The current open list is `docs/TODO.md`.
+
 > **Hard constraint:** database-untouchable. No changes to `drizzle/schema.ts`,
 > `drizzle/migrations/*`, no `db:push` / `db:generate`, no new columns / tables /
 > indexes. Every fix is code-only (TypeScript handlers, Zod schemas, React

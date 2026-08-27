@@ -1,5 +1,9 @@
 # Phase 5 — Market Leadership Product Brief
 
+> **Historical record, 2026-08-05.** Kept as written. Price Radar, Price Scout
+> and Path of Wisdom have since been removed; where this document treats them
+> as differentiators, read the single pipeline instead.
+
 Status: implemented increment, 2026-08-05
 
 ## Merchant perspective

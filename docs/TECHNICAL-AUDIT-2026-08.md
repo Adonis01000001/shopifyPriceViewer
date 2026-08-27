@@ -1,5 +1,11 @@
 # Shopify Price Intelligence — Technical Audit
 
+> **Historical audit, 2026-08.** Kept as written, and largely acted on. The
+> Price Radar, Scoop and Path of Wisdom systems it examines no longer exist,
+> and the Exa search provider went with them. Findings about the pipeline,
+> tenancy and test coverage are still live — those carried forward into
+> `docs/TODO.md`, which is the current list.
+
 **Audit date:** 2026-08-05  
 **Repository:** shopify-price-intelligence  
 **Scope:** TypeScript/React application source, database schema/migrations, deployment files, CI, tests, and authoritative documentation.
