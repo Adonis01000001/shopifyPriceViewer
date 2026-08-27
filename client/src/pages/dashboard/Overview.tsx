@@ -1,6 +1,8 @@
+import { useState } from "react";
 import { Badge } from "@/components/ui/badge";
-import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip } from "recharts";
 import { trpc } from "@/lib/trpc";
+import { usePipelineRun } from "@/hooks/usePipelineRun";
+import { recommendationFacts } from "@/lib/recommendation-facts";
 import {
   AlertTriangle,
   ArrowRight,
@@ -14,7 +16,7 @@ import {
   TrendingDown,
   TrendingUp,
   Users,
-  X,
+  Check,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useEffect, useMemo, useRef } from "react";
@@ -23,14 +25,16 @@ import { PricingDashboardSummary } from "@/components/dashboard/PricingRecommend
 import { UpgradePrompt } from "@/components/dashboard/UpgradePrompt";
 import { useProductAnalytics } from "@/lib/analytics";
 import { toast } from "sonner";
-
-const CHART_COLORS = [
-  "var(--chart-1)",
-  "var(--chart-2)",
-  "var(--chart-3)",
-  "var(--chart-4)",
-  "var(--chart-5)",
-];
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
 function timeAgo(date: Date | string): string {
   const d = new Date(date);
@@ -48,6 +52,16 @@ function timeAgo(date: Date | string): string {
 export default function Overview() {
   const [, setLocation] = useLocation();
   const utils = trpc.useUtils();
+  const run = usePipelineRun();
+  const { data: outcomes } = trpc.pipeline.productOutcomes.useQuery(undefined, {
+    staleTime: 1000 * 20,
+  });
+  const [pushTarget, setPushTarget] = useState<{
+    id: string;
+    title: string;
+    from: string;
+    to: string;
+  } | null>(null);
   const { data: products } = trpc.products.list.useQuery();
   const { data: productStats } = trpc.products.stats.useQuery();
   const { data: competitorStats } = trpc.competitors.stats.useQuery();
@@ -64,32 +78,43 @@ export default function Overview() {
     { status: "pending", limit: 200 },
     { enabled: isAdmin }
   );
+  // The table lists every product, so it needs every pending suggestion. At 6
+  // the seventh onward silently read as "nothing to do" when there was.
   const userQuery = trpc.recommendations.list.useQuery(
-    { status: "pending", limit: 6 },
+    { status: "pending", limit: 200 },
     { enabled: !isAdmin }
   );
-  const recommendations = isAdmin
-    ? (adminQuery.data ?? [])
-    : (userQuery.data ?? []);
+  const adminRecommendations = adminQuery.data;
+  const userRecommendations = userQuery.data;
+  const recommendations = useMemo(
+    () => (isAdmin ? (adminRecommendations ?? []) : (userRecommendations ?? [])),
+    [isAdmin, adminRecommendations, userRecommendations]
+  );
   const { data: notifications } = trpc.alerts.list.useQuery({
     unreadOnly: true,
     limit: 6,
   });
   const implementRecommendation = trpc.recommendations.implement.useMutation({
-    onSuccess: () => {
+    onSuccess: result => {
       utils.recommendations.list.invalidate();
       utils.recommendations.stats.invalidate();
       utils.products.list.invalidate();
       utils.intelligence.actionCenter.invalidate();
-      toast.success("Pricing insight approved");
+      const pushed = (result as { pushed?: { newPrice: number } | null })?.pushed;
+      toast.success(
+        pushed
+          ? `Price updated in Shopify: $${pushed.newPrice.toFixed(2)}`
+          : "Taken off your list. Your shop was not changed."
+      );
     },
+    onError: err => toast.error(err.message),
   });
   const dismissRecommendation = trpc.recommendations.dismiss.useMutation({
     onSuccess: () => {
       utils.recommendations.list.invalidate();
       utils.recommendations.stats.invalidate();
       utils.intelligence.actionCenter.invalidate();
-      toast.success("Pricing insight dismissed");
+      toast.success("Hidden. Your shop was not changed.");
     },
   });
   const markAlertRead = trpc.alerts.markRead.useMutation({
@@ -98,16 +123,6 @@ export default function Overview() {
       utils.alerts.stats.invalidate();
       utils.intelligence.actionCenter.invalidate();
     },
-  });
-
-  const generateRecommendation = trpc.recommendations.generate.useMutation({
-    onSuccess: () => {
-      utils.recommendations.list.invalidate();
-      utils.recommendations.listAll.invalidate();
-      utils.intelligence.actionCenter.invalidate();
-      toast.success("Recommendation generated");
-    },
-    onError: err => toast.error(err.message || "Failed to generate"),
   });
 
   // Build movement items from the tenant-scoped Action Center query.
@@ -129,39 +144,49 @@ export default function Overview() {
   }, [actionCenter?.recentChanges]);
 
   const allProducts = useMemo(() => products ?? [], [products]);
-  const productById = useMemo(
-    () => new Map(allProducts.map(product => [product.id, product])),
-    [allProducts]
-  );
-  const pricingInsights = recommendations ?? [];
-  const notificationItems = notifications ?? [];
-
-  const categoryData = useMemo(() => {
-    if (!allProducts.length) return [];
-    const cats: Record<string, number> = {};
-    for (const p of allProducts) {
-      const c = p.category || "Uncategorized";
-      cats[c] = (cats[c] || 0) + 1;
+  // Every product belongs on this list. Showing only the ones we solved made
+  // the rest look lost — a merchant could not tell "still working" from
+  // "nothing found" from "not imported". Actionable ones sort to the top,
+  // biggest saving first; everything else follows with its reason.
+  const recommendationByProduct = useMemo(() => {
+    const map = new Map<string, (typeof recommendations)[number]>();
+    for (const rec of recommendations ?? []) {
+      if (!map.has(rec.productId)) map.set(rec.productId, rec);
     }
-    const total = allProducts.length;
-    const entries = Object.entries(cats);
-    if (!entries.length) return [];
-    const raw = entries.map(([name, count]) => {
-      const e = (count / total) * 100;
-      return { name, exact: e, floor: Math.floor(e) };
+    return map;
+  }, [recommendations]);
+
+  const pricingRows = useMemo(() => {
+    const rows = allProducts.map(product => {
+      const recommendation = recommendationByProduct.get(product.id) ?? null;
+      const facts = recommendation
+        ? recommendationFacts({
+            currentPrice: recommendation.currentPrice,
+            recommendedPrice: recommendation.recommendedPrice,
+            costPrice: product.costPrice,
+            marginProtectionApplied: recommendation.marginProtectionApplied,
+            factors: recommendation.factors,
+          })
+        : null;
+      const actionable = !!facts && !facts.needsACloserLook;
+      return {
+        product,
+        recommendation,
+        facts,
+        actionable,
+        outcome: outcomes?.[product.id],
+      };
     });
-    const sum = raw.reduce((s, e) => s + e.floor, 0);
-    const rem = 100 - sum;
-    const sorted = raw
-      .map((e, i) => ({ ...e, index: i, frac: e.exact - e.floor }))
-      .sort((a, b) => b.frac - a.frac);
-    for (let i = 0; i < rem; i++) sorted[i % sorted.length].floor += 1;
-    return sorted.map(({ name, floor }, i) => ({
-      name,
-      value: floor ?? 0,
-      color: CHART_COLORS[i % CHART_COLORS.length],
-    }));
-  }, [allProducts]);
+
+    return rows.sort((left, right) => {
+      if (left.actionable !== right.actionable) return left.actionable ? -1 : 1;
+      const leftMoney = left.facts?.changeAmount ?? -1;
+      const rightMoney = right.facts?.changeAmount ?? -1;
+      if (leftMoney !== rightMoney) return rightMoney - leftMoney;
+      return left.product.title.localeCompare(right.product.title);
+    });
+  }, [allProducts, recommendationByProduct, outcomes]);
+  const notificationItems = notifications ?? [];
 
   const totalProducts = productStats?.total ?? 0;
   const avgPrice = productStats?.avgPrice
@@ -205,13 +230,13 @@ export default function Overview() {
   return (
     <div className="space-y-8">
       <PageHeader
-        eyebrow="Decision workspace"
+        eyebrow="Today"
         title="Overview"
-        description="See what changed, what matters, and which pricing decision deserves your attention next."
+        description="What changed since you last looked, and the price changes worth making today."
       >
         <div className="hidden items-center gap-2 rounded-full border border-border bg-card/60 px-3 py-1.5 text-xs text-muted-foreground sm:flex">
           <span className="h-1.5 w-1.5 rounded-full bg-primary" />
-          Monitoring active
+          Checked once a day
         </div>
       </PageHeader>
 
@@ -223,12 +248,12 @@ export default function Overview() {
               <Sparkles className="h-4 w-4" aria-hidden="true" />
             </div>
             <div>
-              <p className="label-caps text-[10px] text-primary">
-                NEXT BEST ACTION
+              <p className="text-[13px] font-medium text-primary">
+                Start here
               </p>
-              <h3 className="mt-1 text-sm font-semibold">
+              <h3 className="mt-1 text-[15px] font-semibold">
                 {topRecommendation
-                  ? `Review ${topRecommendation.productTitle}`
+                  ? topRecommendation.productTitle
                   : topAlert
                     ? topAlert.title
                     : topMovement
@@ -237,20 +262,25 @@ export default function Overview() {
                         ? "Connect your store to get your first pricing signal"
                         : "Your pricing workspace is ready for a competitor scan"}
               </h3>
-              <p className="mt-1 max-w-2xl text-xs text-muted-foreground">
+              <p className="mt-1 max-w-2xl text-[14px] text-muted-foreground">
                 {topRecommendation
-                  ? `${topRecommendation.reason} ${Number(topRecommendation.currentPrice).toFixed(2)} → ${Number(topRecommendation.recommendedPrice).toFixed(2)}.`
+                  ? (() => {
+                      const from = Number(topRecommendation.currentPrice);
+                      const to = Number(topRecommendation.recommendedPrice);
+                      const verb = to < from ? "Drop" : "Raise";
+                      return `${verb} it from $${from.toFixed(2)} to $${to.toFixed(2)}, based on what other shops are charging.`;
+                    })()
                   : topAlert
                     ? topAlert.message
                     : topMovement
                       ? `Detected ${changesLast24Hours} competitor movement${changesLast24Hours === 1 ? "" : "s"} in the last 24 hours.`
-                      : "Add a competitor and we’ll surface the price changes that deserve your attention."}
+                      : "Nothing needs a decision right now. We check every day and this fills in when something changes."}
               </p>
             </div>
           </div>
           <button
             type="button"
-            className="inline-flex shrink-0 items-center justify-center gap-1.5 rounded-md bg-primary px-3 py-2 text-[11px] font-bold text-primary-foreground transition hover:brightness-110"
+            className="inline-flex shrink-0 items-center justify-center gap-1.5 rounded-md bg-primary px-3 py-2 text-[13px] font-bold text-primary-foreground transition hover:brightness-110"
             onClick={() =>
               setLocation(
                 topRecommendation
@@ -359,203 +389,249 @@ export default function Overview() {
       {/* Pricing Position Summary */}
       <PricingDashboardSummary />
 
-      {/* Main Grid */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-        {/* Pricing Insights */}
-        <div className="lg:col-span-8">
+      {/* The decision list, full width */}
+      <div>
+        <div>
           <div className="glass-panel rounded-lg overflow-hidden">
             <div className="px-5 py-4 bg-surface-container/50 flex justify-between items-center">
               <div className="flex items-center gap-3">
                 <LineChart className="h-4 w-4 text-primary" />
-                <h3 className="text-[15px] font-semibold">Pricing Insights</h3>
+                <h3 className="text-[15px] font-semibold">What to do about your prices</h3>
               </div>
-              <span className="label-caps text-[10px] bg-[var(--color-secondary,var(--primary))]/20 text-[var(--color-secondary,var(--primary))] px-2 py-0.5 rounded border border-[var(--color-secondary,var(--primary))]/20">
-                AI POWERED
-              </span>
+
             </div>
             <div className="overflow-x-auto">
               <table className="w-full text-left border-collapse">
                 <thead>
                   <tr className="bg-surface-container/30 label-caps text-muted-foreground">
                     <th className="px-5 py-3 font-normal">Product</th>
-                    <th className="px-5 py-3 font-normal">Current</th>
-                    <th className="px-5 py-3 font-normal">Target</th>
-                    <th className="px-5 py-3 font-normal">Impact</th>
-                    <th className="px-5 py-3 font-normal text-right">
-                      Actions
-                    </th>
+                    <th className="px-5 py-3 font-normal">You charge</th>
+                    <th className="px-5 py-3 font-normal">We suggest</th>
+                    <th className="px-5 py-3 font-normal text-right">&nbsp;</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-white/[0.03]">
-                  {pricingInsights.length > 0 ? (
-                    pricingInsights.map(insight => {
-                      const product = productById.get(insight.productId);
-                      const currentPrice = Number(insight.currentPrice);
-                      const recommendedPrice = Number(insight.recommendedPrice);
-                      const priceChange = Number(insight.priceChange);
-                      const confidence = Math.round(
-                        Number(insight.confidenceScore) * 100
-                      );
+                  {pricingRows.length > 0 ? (
+                    pricingRows.map(row => {
+                      const { product, facts, outcome } = row;
+                      const insight = row.recommendation;
+                      const currentPrice = Number(product.price);
+                      const recommendedPrice = insight
+                        ? Number(insight.recommendedPrice)
+                        : 0;
                       return (
                         <tr
-                          key={insight.id}
+                          key={product.id}
                           className="transition-colors hover:bg-surface-container-low"
                         >
-                          <td className="px-5 py-3">
-                            <div className="flex items-center gap-3">
-                              <div className="w-9 h-9 rounded bg-surface-container-highest border border-outline-variant flex items-center justify-center text-xs font-bold text-muted-foreground">
+                          <td className="px-5 py-3 min-w-[16rem]">
+                            <div className="flex items-start gap-3">
+                              <div className="mt-0.5 w-9 h-9 shrink-0 rounded bg-surface-container-highest border border-outline-variant flex items-center justify-center text-xs font-bold text-muted-foreground">
                                 {(product?.title ?? "P").charAt(0)}
                               </div>
                               <div>
-                                <p className="text-[13px] font-medium">
+                                <p className="text-[14px] font-medium">
                                   {product?.title ?? "Tracked product"}
                                 </p>
-                                <p className="text-[10px] label-caps text-muted-foreground">
-                                  {product?.sku || `${confidence}% confidence`}
+                                <p className="text-[13px] leading-snug text-muted-foreground">
+                            {!facts ? (
+                              outcome?.failed ? (
+                                <>We could not check this one. It will be tried again tomorrow.</>
+                              ) : outcome?.skipped === "already priced about right" ? (
+                                <>Your price already sits where the market is.</>
+                              ) : outcome?.skipped === "no confident matches" ? (
+                                <>We found shops but none selling this exact item.</>
+                              ) : outcome?.skipped === "no candidates found" ? (
+                                <>No shops found selling this yet.</>
+                              ) : run.running ? (
+                                <>Waiting to be checked.</>
+                              ) : (
+                                <>Not checked yet.</>
+                              )
+                            ) : facts.heldAtFloor ? (
+                              <>
+                                Your cost sets the floor here. Rivals average $
+                                {facts.avgCompetitorPrice?.toFixed(2) ?? "—"},
+                                but going below your floor would break your
+                                margin rule.
+                              </>
+                            ) : facts.direction === "rise" ? (
+                              <>
+                                You are under the market. Other shops average $
+                                {facts.avgCompetitorPrice?.toFixed(2) ?? "—"}.
+                              </>
+                            ) : (
+                              <>
+                                Other shops average $
+                                {facts.avgCompetitorPrice?.toFixed(2) ?? "—"}.
+                                This sits just under them.
+                              </>
+                            )}
+                            {facts?.marginPercent != null && (
+                              <>
+                                {" "}
+                                Leaves you {Math.round(facts.marginPercent)}%
+                                margin.
+                              </>
+                            )}
+                            {facts?.floorPrice != null &&
+                              facts.floorPrice > 0 &&
+                              facts.costPrice != null && (
+                                <span
+                                  className="mt-1 block text-[12px] text-muted-foreground/80"
+                                  title="Your margin rule, applied to this product's cost"
+                                >
+                                  Your floor: $
+                                  {facts.costPrice.toFixed(2)} cost &rarr; never
+                                  below ${facts.floorPrice.toFixed(2)}
+                                </span>
+                              )}
+                            {facts?.needsACloserLook && (
+                              <span className="mt-1 block font-medium text-[var(--destructive)]">
+                                Only {facts.sources} shop
+                                {facts.sources === 1 ? "" : "s"} found, and it
+                                sits far above you. We would rather wait for
+                                more before suggesting a price.
+                              </span>
+                            )}
+                          </p>
+                                <p className="mt-0.5 text-[12px] text-muted-foreground/80">
+                                  {!facts
+                                    ? product.sku || ""
+                                    : facts.sources === 0
+                                      ? "no shops confirmed"
+                                      : `based on ${facts.sources} shop${facts.sources === 1 ? "" : "s"}`}
+                                  {facts?.evidence === "thin" &&
+                                    " · only one, so treat it carefully"}
                                 </p>
                               </div>
                             </div>
                           </td>
-                          <td className="px-5 py-3 font-mono text-[13px] font-medium">
+                          <td className="px-5 py-3 font-mono text-[14px] font-medium">
                             ${currentPrice.toFixed(2)}
                           </td>
                           <td className="px-5 py-3">
-                            <span className="font-mono text-[13px] font-medium text-primary">
-                              ${recommendedPrice.toFixed(2)}
-                            </span>
-                          </td>
-                          <td
-                            className={cn(
-                              "px-5 py-3 font-mono text-[13px] font-medium",
-                              priceChange < 0
-                                ? "text-[var(--destructive)]"
-                                : "text-primary"
+                            {!facts ? (
+                              <span className="text-[13px] text-muted-foreground">
+                                {run.running && !outcome
+                                  ? "Checking\u2026"
+                                  : "Keep as is"}
+                              </span>
+                            ) : facts.needsACloserLook ? (
+                              <span className="text-[13px] text-muted-foreground">
+                                Not enough to go on yet
+                              </span>
+                            ) : (
+                              <>
+                                <span
+                                  className={cn(
+                                    "font-mono text-[14px] font-semibold",
+                                    facts.direction === "rise"
+                                      ? "text-[var(--warning,var(--destructive))]"
+                                      : "text-primary"
+                                  )}
+                                >
+                                  ${recommendedPrice.toFixed(2)}
+                                </span>
+                                <span className="ml-1.5 text-[12px] text-muted-foreground">
+                                  {facts.direction === "rise"
+                                    ? `up ${Math.round(facts.changePercent)}%`
+                                    : facts.direction === "cut"
+                                      ? `down ${Math.round(facts.changePercent)}%`
+                                      : "no change"}
+                                </span>
+                              </>
                             )}
-                          >
-                            {priceChange >= 0 ? "+" : ""}$
-                            {priceChange.toFixed(2)}
                           </td>
                           <td className="px-5 py-3">
-                            <div className="flex justify-end gap-2">
-                              <button
-                                type="button"
-                                className="p-1.5 hover:bg-[var(--destructive)]/20 text-muted-foreground hover:text-[var(--destructive)] rounded text-sm disabled:opacity-50"
-                                onClick={() =>
-                                  dismissRecommendation.mutate({
-                                    id: insight.id,
-                                  })
-                                }
-                                disabled={
-                                  dismissRecommendation.isPending ||
-                                  implementRecommendation.isPending
-                                }
-                              >
-                                <X className="h-3.5 w-3.5" />
-                                {"×"}
-                              </button>
-                              <button
-                                type="button"
-                                className="px-3 py-1 bg-primary text-primary-foreground text-[10px] font-bold label-caps rounded hover:brightness-110 disabled:opacity-50"
-                                onClick={() =>
-                                  implementRecommendation.mutate({
-                                    id: insight.id,
-                                  })
-                                }
-                                disabled={
-                                  dismissRecommendation.isPending ||
-                                  implementRecommendation.isPending
-                                }
-                              >
-                                APPROVE
-                              </button>
-                            </div>
+                            {insight && facts ? (
+                              <div className="flex flex-col items-end gap-1.5">
+                                <button
+                                  type="button"
+                                  className="w-full max-w-[10.5rem] whitespace-nowrap rounded bg-primary px-3 py-2 text-[13px] font-semibold text-primary-foreground hover:brightness-110 disabled:opacity-50"
+                                  title="Writes this price to your live Shopify store"
+                                  onClick={() =>
+                                    setPushTarget({
+                                      id: insight.id,
+                                      title: product?.title ?? "this product",
+                                      from: Number(insight.currentPrice).toFixed(2),
+                                      to: Number(insight.recommendedPrice).toFixed(2),
+                                    })
+                                  }
+                                  disabled={
+                                    facts.needsACloserLook ||
+                                    dismissRecommendation.isPending ||
+                                    implementRecommendation.isPending
+                                  }
+                                >
+                                  Change the price
+                                </button>
+                                <div className="flex items-center gap-2 text-[12px] text-muted-foreground">
+                                  <button
+                                    type="button"
+                                    className="underline-offset-4 hover:text-foreground hover:underline disabled:opacity-50"
+                                    title="Takes it off this list. Your store is not touched."
+                                    onClick={() =>
+                                      implementRecommendation.mutate({
+                                        id: insight.id,
+                                      })
+                                    }
+                                    disabled={
+                                      dismissRecommendation.isPending ||
+                                      implementRecommendation.isPending
+                                    }
+                                  >
+                                    I&apos;ll do it myself
+                                  </button>
+                                  <span aria-hidden="true">&middot;</span>
+                                  <button
+                                    type="button"
+                                    className="underline-offset-4 hover:text-foreground hover:underline disabled:opacity-50"
+                                    title="Hides this suggestion. Your store is not touched, and it may come back tomorrow if the market moves."
+                                    onClick={() =>
+                                      dismissRecommendation.mutate({
+                                        id: insight.id,
+                                      })
+                                    }
+                                    disabled={
+                                      dismissRecommendation.isPending ||
+                                      implementRecommendation.isPending
+                                    }
+                                  >
+                                    Ignore
+                                  </button>
+                                </div>
+                              </div>
+                            ) : (
+                              <div className="text-right text-[13px] text-muted-foreground">
+                                Nothing to do
+                              </div>
+                            )}
                           </td>
                         </tr>
                       );
                     })
-                  ) : allProducts.length > 0 ? (
-                    allProducts.slice(0, 10).map(product => (
-                      <tr
-                        key={product.id}
-                        className="transition-colors hover:bg-surface-container-low"
-                      >
-                        <td className="px-5 py-3">
-                          <div className="flex items-center gap-3">
-                            <div className="w-9 h-9 rounded bg-surface-container-highest border border-outline-variant flex items-center justify-center text-xs font-bold text-muted-foreground">
-                              {(product.title ?? "P").charAt(0)}
-                            </div>
-                            <div>
-                              <p className="text-[13px] font-medium">
-                                {product.title ?? "Untitled"}
-                              </p>
-                              <p className="text-[10px] label-caps text-muted-foreground">
-                                {product.sku || product.category || "No SKU"}
-                              </p>
-                            </div>
-                          </div>
-                        </td>
-                        <td className="px-5 py-3 font-mono text-[13px] font-medium">
-                          ${Number(product.price).toFixed(2)}
-                        </td>
-                        <td className="px-5 py-3">
-                          <span className="font-mono text-[13px] text-muted-foreground">
-                            —
-                          </span>
-                        </td>
-                        <td className="px-5 py-3">
-                          <span className="font-mono text-[13px] text-muted-foreground">
-                            —
-                          </span>
-                        </td>
-                        <td className="px-5 py-3">
-                          <div className="flex justify-end">
-                            <button
-                              type="button"
-                              className="px-3 py-1 bg-primary/10 text-primary text-[10px] font-bold label-caps rounded hover:bg-primary/20 disabled:opacity-50"
-                              onClick={() =>
-                                generateRecommendation.mutate({
-                                  productId: product.id,
-                                })
-                              }
-                              disabled={generateRecommendation.isPending}
-                            >
-                              {generateRecommendation.isPending
-                                ? "..."
-                                : "GENERATE"}
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    ))
                   ) : (
                     <tr>
                       <td
                         colSpan={5}
                         className="py-10 text-center text-muted-foreground text-sm"
                       >
-                        No products yet. Add products to start tracking pricing
-                        insights.
+                        {run.running
+                          ? `${run.progressLabel}. Recommendations appear as each product finishes.`
+                          : "Nothing to decide yet. Sync your store and we will work out what to charge."}
                       </td>
                     </tr>
                   )}
                 </tbody>
               </table>
             </div>
-            <div className="p-3 text-center">
-              <button
-                type="button"
-                className="text-primary label-caps text-[11px] hover:underline"
-                onClick={() => (window.location.href = "/products")}
-              >
-                VIEW ALL RECOMMENDATIONS
-              </button>
-            </div>
           </div>
         </div>
 
         {/* Competitor Movement Feed */}
-        <div className="lg:col-span-4">
-          <div className="glass-panel rounded-lg flex flex-col h-full">
+        <div className="mt-6">
+          <div className="glass-panel rounded-lg flex flex-col">
             <div className="px-5 py-4 bg-surface-container/50 flex items-center gap-3">
               <RefreshCw className="h-4 w-4 text-[var(--success)]" />
               <h3 className="text-[15px] font-semibold">Competitor Movement</h3>
@@ -563,10 +639,13 @@ export default function Overview() {
             <div className="p-3">
               {movementItems.length === 0 ? (
                 <div className="py-8 text-center text-muted-foreground text-sm">
-                  <p className="font-medium mb-1">No recent movements</p>
+                  <p className="font-medium mb-1">
+                    {run.running ? "Checking prices now" : "No price changes yet"}
+                  </p>
                   <p className="text-xs">
-                    Movements will appear here as monitored competitors change
-                    price.
+                    {run.running
+                      ? `${run.progressLabel}.`
+                      : "We re-check every competitor once a day. When one of them moves a price, it shows up here."}
                   </p>
                 </div>
               ) : movementItems.length > 0 ? (
@@ -595,17 +674,17 @@ export default function Overview() {
                         )}
                       </div>
                       <div className="min-w-0 flex-1">
-                        <p className="text-[11px] font-medium truncate leading-tight">
+                        <p className="text-[13px] font-medium truncate leading-tight">
                           {item.productTitle}
                         </p>
-                        <p className="text-[10px] text-muted-foreground leading-tight mt-0.5">
+                        <p className="text-[12px] text-muted-foreground leading-tight mt-0.5">
                           <span className="text-muted-foreground/70">
                             {item.competitorName}
                           </span>
                           {item.oldPrice && (
                             <>
                               {" · "}
-                              <span className="font-mono text-[10px]">
+                              <span className="font-mono text-[12px]">
                                 ${Number(item.oldPrice).toFixed(2)}
                               </span>{" "}
                               →
@@ -613,7 +692,7 @@ export default function Overview() {
                           )}{" "}
                           <span
                             className={cn(
-                              "font-mono text-[10px] font-medium",
+                              "font-mono text-[12px] font-medium",
                               item.type === "price_drop"
                                 ? "text-primary"
                                 : item.type === "price_increase"
@@ -625,7 +704,7 @@ export default function Overview() {
                           </span>
                         </p>
                       </div>
-                      <span className="text-[9px] text-muted-foreground/50 shrink-0 mt-0.5">
+                      <span className="text-[12px] text-muted-foreground/50 shrink-0 mt-0.5">
                         {timeAgo(item.date)}
                       </span>
                     </div>
@@ -635,7 +714,7 @@ export default function Overview() {
                 <div className="py-6 text-muted-foreground text-xs text-center">
                   <RefreshCw className="h-6 w-6 mx-auto mb-2 opacity-30" />
                   <p>Monitoring for price changes...</p>
-                  <p className="text-[10px] mt-1 text-muted-foreground/60">
+                  <p className="text-[12px] mt-1 text-muted-foreground/60">
                     Movements will appear when competitors update prices.
                   </p>
                 </div>
@@ -653,7 +732,7 @@ export default function Overview() {
             <h3 className="text-[15px] font-semibold">Notifications</h3>
           </div>
           {notificationItems.length > 0 && (
-            <span className="label-caps text-[10px] bg-[var(--destructive)]/15 text-[var(--destructive)] px-2 py-0.5 rounded border border-[var(--destructive)]/20">
+            <span className="label-caps text-[12px] bg-[var(--destructive)]/15 text-[var(--destructive)] px-2 py-0.5 rounded border border-[var(--destructive)]/20">
               {notificationItems.length} unread
             </span>
           )}
@@ -684,12 +763,12 @@ export default function Overview() {
                 </div>
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2">
-                    <p className="text-[13px] font-medium truncate">
+                    <p className="text-[14px] font-medium truncate">
                       {alert.title}
                     </p>
                     <Badge
                       className={cn(
-                        "label-caps text-[9px] border",
+                        "label-caps text-[12px] border",
                         alert.severity === "critical"
                           ? "bg-[var(--destructive)]/20 text-[var(--destructive)] border-[var(--destructive)]/30"
                           : alert.severity === "high"
@@ -702,10 +781,10 @@ export default function Overview() {
                       {alert.severity}
                     </Badge>
                   </div>
-                  <p className="text-[11px] text-muted-foreground line-clamp-2 mt-1">
+                  <p className="text-[13px] text-muted-foreground line-clamp-2 mt-1">
                     {alert.message}
                   </p>
-                  <p className="text-[10px] text-muted-foreground/60 mt-1">
+                  <p className="text-[12px] text-muted-foreground/60 mt-1">
                     {timeAgo(alert.createdAt)}
                   </p>
                 </div>
@@ -716,7 +795,7 @@ export default function Overview() {
                   disabled={markAlertRead.isPending}
                   title="Mark as read"
                 >
-                  <X className="h-3.5 w-3.5" />
+                  <Check className="h-3.5 w-3.5" />
                 </button>
               </div>
             ))}
@@ -728,78 +807,71 @@ export default function Overview() {
         )}
       </div>
 
-      {/* Bottom Row */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <div className="glass-card p-5 rounded-lg">
-          <h4 className="text-[14px] font-semibold mb-4">Category Mix</h4>
-          {categoryData.length > 0 ? (
-            <>
-              <ResponsiveContainer width="100%" height={180}>
-                <PieChart>
-                  <Pie
-                    data={categoryData}
-                    cx="50%"
-                    cy="50%"
-                    innerRadius={50}
-                    outerRadius={75}
-                    paddingAngle={3}
-                    dataKey="value"
-                  >
-                    {categoryData.map((e, i) => (
-                      <Cell key={i} fill={e.color} />
-                    ))}
-                  </Pie>
-                  <Tooltip
-                    contentStyle={{
-                      backgroundColor: "var(--card)",
-                      border: "1px solid var(--border)",
-                      borderRadius: "var(--radius)",
-                      fontSize: 12,
-                    }}
-                  />
-                </PieChart>
-              </ResponsiveContainer>
-              <div className="mt-2 space-y-1.5">
-                {categoryData.map(c => (
-                  <div
-                    key={c.name}
-                    className="flex items-center justify-between text-xs"
-                  >
-                    <div className="flex items-center gap-2">
-                      <div
-                        className="h-2.5 w-2.5 rounded-full"
-                        style={{ backgroundColor: c.color }}
-                      />
-                      <span className="text-muted-foreground">{c.name}</span>
-                    </div>
-                    <span className="font-medium">{c.value}%</span>
-                  </div>
-                ))}
-              </div>
-            </>
-          ) : (
-            <div className="flex h-[180px] items-center justify-center text-sm text-muted-foreground">
-              No categories yet
+      {/* What the app will and will not do on its own */}
+      <div className="glass-card rounded-lg p-5">
+        <h4 className="text-[15px] font-semibold">
+          Nothing here changes your shop on its own
+        </h4>
+        <p className="mt-2 max-w-3xl text-[14px] leading-relaxed text-muted-foreground">
+          Every price above is a suggestion. Your Shopify prices only change
+          when you press &ldquo;Change the price&rdquo; on a product and confirm
+          it. We check the market once a day and update this list.
+        </p>
+        <button
+          type="button"
+          className="mt-4 inline-flex items-center gap-1 text-[14px] font-medium text-primary hover:underline"
+          onClick={() => setLocation("/settings")}
+        >
+          See how a suggested price is worked out
+          <ArrowRight className="h-3.5 w-3.5" aria-hidden="true" />
+        </button>
+      </div>
+
+      <AlertDialog
+        open={!!pushTarget}
+        onOpenChange={open => {
+          if (!open) setPushTarget(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Change the price in your store?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This writes the new price to Shopify straight away, and shoppers
+              will see it. Nothing else about the product changes.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          {pushTarget && (
+            <div className="rounded-md border border-outline-variant bg-surface-container-lowest px-4 py-3">
+              <p className="text-[14px] font-medium">{pushTarget.title}</p>
+              <p className="mt-1 font-mono text-[14px]">
+                ${pushTarget.from}{" "}
+                <span className="text-muted-foreground">&rarr;</span>{" "}
+                <span className="font-semibold text-primary">
+                  ${pushTarget.to}
+                </span>
+              </p>
             </div>
           )}
-        </div>
-        <div className="glass-card rounded-lg p-5">
-          <h4 className="text-[14px] font-semibold mb-4">Decision hygiene</h4>
-          <p className="text-xs leading-relaxed text-muted-foreground">
-            Recommendations are suggestions, not automatic price changes. Review
-            the evidence and approve only the products that fit your margin and
-            inventory strategy.
-          </p>
-          <button
-            type="button"
-            className="mt-4 inline-flex items-center gap-1 text-[11px] font-bold label-caps text-primary hover:underline"
-            onClick={() => setLocation("/products")}
-          >
-            Review product controls
-            <ArrowRight className="h-3 w-3" aria-hidden="true" />
-          </button>
-        </div>
-      </div>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Keep the current price</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                if (pushTarget) {
+                  implementRecommendation.mutate({
+                    id: pushTarget.id,
+                    pushToStore: true,
+                  });
+                }
+                setPushTarget(null);
+              }}
+            >
+              Change it in Shopify
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
     </div>
   );
 }
