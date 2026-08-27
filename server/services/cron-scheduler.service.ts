@@ -1,7 +1,7 @@
+import { desc, eq } from "drizzle-orm";
 import { requireDb } from "../_core/db-assert";
-import { users } from "../../drizzle/schema";
-import { priceMonitoringService } from "./price-monitoring.service";
-import { competitorDiscoveryService } from "./competitor-discovery.service";
+import * as db from "../db";
+import { cronRuns, users } from "../../drizzle/schema";
 import { logger } from "../_core/logger";
 import { ENV } from "../_core/env";
 import { jobQueueService } from "./job-queue.service";
@@ -41,7 +41,7 @@ export class CronScheduler {
       const stagger = this.jobs.indexOf(job) * 5000;
       const startupTimer = setTimeout(() => {
         this.startupTimers.delete(startupTimer);
-        void this.runJob(job);
+        void this.runJobOnStartup(job);
       }, stagger);
       this.startupTimers.add(startupTimer);
       const intervalTimer = setInterval(
@@ -71,6 +71,42 @@ export class CronScheduler {
     logger.info("Cron scheduler stopped");
   }
 
+  /**
+   * A daily job should not run again just because the process restarted.
+   * Discovery costs a paid search per product, so an afternoon of restarts
+   * used to mean an afternoon of full runs. Ask the database when this job
+   * last finished and honour the interval across restarts.
+   */
+  private async runJobOnStartup(job: ScheduledJob) {
+    try {
+      const database = await db.getDb();
+      if (database) {
+        const [previous] = await database
+          .select({ startedAt: cronRuns.startedAt })
+          .from(cronRuns)
+          .where(eq(cronRuns.jobType, job.name))
+          .orderBy(desc(cronRuns.startedAt))
+          .limit(1);
+
+        if (previous) {
+          const since = Date.now() - previous.startedAt.getTime();
+          if (since < job.intervalMs) {
+            const dueIn = Math.round((job.intervalMs - since) / 60000);
+            logger.info(
+              { job: job.name, minutesUntilDue: dueIn },
+              "Cron job ran recently, not repeating it on startup"
+            );
+            return;
+          }
+        }
+      }
+    } catch (err) {
+      logger.warn({ job: job.name, err }, "Could not read the last cron run");
+    }
+
+    await this.runJob(job);
+  }
+
   private async runJob(job: ScheduledJob) {
     if (job.running) {
       logger.warn({ job: job.name }, "Job still running, skipping this cycle");
@@ -78,6 +114,7 @@ export class CronScheduler {
     }
     job.running = true;
     job.lastRun = Date.now();
+    void this.recordRun(job.name);
 
     const run = this.executeJob(job);
     this.activeRuns.add(run);
@@ -85,6 +122,18 @@ export class CronScheduler {
       await run;
     } finally {
       this.activeRuns.delete(run);
+    }
+  }
+
+  /** Leaves the mark that runJobOnStartup reads after a restart. */
+  private async recordRun(jobType: string) {
+    try {
+      const database = await db.getDb();
+      if (database) {
+        await database.insert(cronRuns).values({ jobType, status: "running" });
+      }
+    } catch (err) {
+      logger.warn({ job: jobType, err }, "Could not record the cron run");
     }
   }
 
@@ -128,7 +177,10 @@ cronScheduler.register(
       );
       return;
     }
-    await priceMonitoringService.runFullMonitoring();
+    // Re-read the competitor pages we already know about. Discovery is not
+    // repeated here: it is the expensive call and runs once per product.
+    const { pipelineService } = await import("./pipeline.service");
+    await pipelineService.refreshPrices();
   }
 );
 
@@ -150,7 +202,8 @@ cronScheduler.register(
       await Promise.all(
         batch.map(async user => {
           try {
-            await competitorDiscoveryService.discoverForAllProducts(user.id);
+            const { pipelineService } = await import("./pipeline.service");
+            await pipelineService.runForUser(user.id);
           } catch (err) {
             logger.warn(
               { userId: user.id, err },
