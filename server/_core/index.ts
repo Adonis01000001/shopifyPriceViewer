@@ -21,7 +21,6 @@ import { appRouter } from "../routers";
 import { createContext } from "./context";
 import { serveStatic, setupVite } from "./vite";
 import { cronScheduler } from "../services/cron-scheduler.service";
-import { priceRadarService } from "../services/price-radar/price-radar.service";
 import { notificationBroadcaster } from "../services/notification-broadcaster";
 import type { BroadcastEvent } from "../services/notification-broadcaster";
 import { sdk } from "./sdk";
@@ -52,6 +51,10 @@ async function findAvailablePort(startPort: number = 3000): Promise<number> {
 
 async function startServer() {
   const app = express();
+  // One hop: the Cloudflare tunnel in front of us. Without this every request
+  // reads as coming from the tunnel's own address, so the rate limiter counts
+  // all visitors as one and locks everybody out together.
+  app.set("trust proxy", 1);
   const server = createServer(app);
   app.use(requestIdMiddleware);
 
@@ -88,8 +91,6 @@ async function startServer() {
 
   // Scrape rate limiting (tRPC mutation endpoint)
   app.use("/api/trpc/competitors.scrapeProducts", scrapeLimiter);
-  app.use("/api/trpc/scout", scrapeLimiter);
-  app.use("/api/trpc/priceRadar.startCrawl", scrapeLimiter);
 
   // Stripe signs the exact raw request body. This route must run before the
   // JSON parser and intentionally bypasses CSRF because Stripe authenticates
@@ -272,7 +273,6 @@ async function startServer() {
     shuttingDown = true;
     logger.info({ signal }, "Graceful shutdown started");
     await cronScheduler.stop();
-    await priceRadarService.shutdown();
     await jobQueueService.close();
     await closeRateLimitStore();
     const forceCloseTimer = setTimeout(() => {

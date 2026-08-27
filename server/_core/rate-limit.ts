@@ -20,10 +20,18 @@ function createStore(namespace: string) {
   return redis ? new RedisRateLimitStore(redis, namespace) : undefined;
 }
 
-// General API rate limit: 100 requests per 15 minutes per IP
+// General API rate limit, per IP.
+//
+// This is here to stop abuse, not to ration ordinary use. The dashboard is a
+// single-page app that polls while a pipeline run is in progress, and every
+// page load issues several queries, so a real session spends requests far
+// faster than a page-per-click site would. The old ceiling of 100 per 15
+// minutes was under half of what one active session needs, and hitting it
+// logged people out: the 429 covers /api/csrf-token too, so the app could not
+// even fetch the token needed to sign back in.
 export const apiLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 100,
+  max: 1200,
   store: createStore("api"),
   standardHeaders: true,
   legacyHeaders: false,
