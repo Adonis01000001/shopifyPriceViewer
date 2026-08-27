@@ -7,8 +7,6 @@ import {
   products,
   shopifyStores,
   competitors,
-  competitorDiscoveries,
-  competitorProducts,
 } from "../../../drizzle/schema";
 import { requireDb } from "../../_core/db-assert";
 
@@ -137,60 +135,4 @@ describe("competitor product mappings", () => {
     });
   });
 
-  it("exposes automatic discovery links as automatic mappings", async () => {
-    const db = await requireDb();
-    const product = await productService.create({
-      userId,
-      storeId,
-      title: "Automatically Discovered Product",
-      sku: "AUTO-001",
-      price: "29.99",
-    });
-    const competitor = await createCompetitor(userId, "Discovery Market");
-    const [discovery] = await db
-      .insert(competitorDiscoveries)
-      .values({
-        userId,
-        productId: product.id,
-        searchQuery: '"AUTO-001" price',
-        searchEngine: "exa",
-        candidateUrl: "https://discovery.example.com/auto-001",
-        candidateDomain: "discovery.example.com",
-        candidateTitle: "Automatically Discovered Product",
-        confidence: 0.97,
-        status: "imported",
-        matchType: "exact",
-        checkedAt: new Date(),
-      })
-      .returning({ id: competitorDiscoveries.id });
-
-    await db.insert(competitorProducts).values({
-      competitorId: competitor.id,
-      productId: product.id,
-      competitorProductUrl: "https://discovery.example.com/auto-001",
-      competitorProductTitle: "Automatically Discovered Product",
-      competitorSku: "AUTO-001",
-      price: "27.99",
-      currency: "USD",
-      matchScore: 0.97,
-      matchMethod: "exact-sku",
-      sourceType: "automatic-discovery",
-      sourceProductId: discovery.id,
-      isVerified: true,
-      isActive: true,
-      lastPriceUpdate: new Date(),
-    });
-
-    const mappings = await productService.getCompetitorPricesForUser(userId);
-
-    expect(mappings).toContainEqual(
-      expect.objectContaining({
-        productId: product.id,
-        competitorId: competitor.id,
-        source: "automatic-discovery",
-        isAutomatic: true,
-        price: "27.99",
-      })
-    );
-  });
 });

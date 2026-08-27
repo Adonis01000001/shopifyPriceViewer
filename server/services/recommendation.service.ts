@@ -1,4 +1,4 @@
-import { eq, and, desc, sql, inArray } from "drizzle-orm";
+import { eq, and, desc, sql } from "drizzle-orm";
 import { requireDb } from "../_core/db-assert";
 import {
   recommendations,
@@ -15,108 +15,7 @@ function round(n: number): number {
   return Math.round(n * 100) / 100;
 }
 
-type WisdomRecommendationInput = {
-  productId: string;
-  currentPrice: number;
-  recommendedPrice: number;
-  confidence: "low" | "medium" | "high";
-  reasoning: string;
-  marketContext: string;
-  riskFactors: string[];
-  priceChange: number;
-  priceChangePercent: number;
-};
-
-function isWisdomRecommendation(recommendation: Recommendation): boolean {
-  const factors = recommendation.factors;
-  return (
-    factors !== null &&
-    typeof factors === "object" &&
-    !Array.isArray(factors) &&
-    (factors as { source?: unknown }).source === "path-of-wisdom"
-  );
-}
-
-function wisdomConfidenceScore(confidence: WisdomRecommendationInput["confidence"]): number {
-  if (confidence === "high") return 0.9;
-  if (confidence === "medium") return 0.65;
-  return 0.4;
-}
-
 export const recommendationService = {
-  /** Persist the latest Path of Wisdom recommendation for each product. */
-  async upsertWisdomRecommendations(
-    userId: string,
-    wisdomRecommendations: WisdomRecommendationInput[]
-  ): Promise<void> {
-    if (wisdomRecommendations.length === 0) return;
-
-    const database = await requireDb();
-    await database.transaction(async tx => {
-      const productIds = Array.from(
-        new Set(wisdomRecommendations.map(recommendation => recommendation.productId))
-      );
-      const existing = await tx
-        .select()
-        .from(recommendations)
-        .where(
-          and(
-            eq(recommendations.userId, userId),
-            eq(recommendations.status, "pending"),
-            inArray(recommendations.productId, productIds)
-          )
-        );
-      const now = new Date();
-
-      for (const recommendation of wisdomRecommendations) {
-        const factors = {
-          source: "path-of-wisdom",
-          marketContext: recommendation.marketContext,
-          riskFactors: recommendation.riskFactors,
-          priceChange: recommendation.priceChange,
-          priceChangePercent: recommendation.priceChangePercent,
-        };
-        const values = {
-          currentPrice: String(round(recommendation.currentPrice)),
-          recommendedPrice: String(round(recommendation.recommendedPrice)),
-          priceChange: String(round(recommendation.priceChange)),
-          priceChangePercent: String(round(recommendation.priceChangePercent)),
-          confidenceScore: wisdomConfidenceScore(recommendation.confidence),
-          reason: recommendation.reasoning,
-          factors,
-          status: "pending" as const,
-          implementedAt: null,
-          dismissedAt: null,
-          marginProtectionApplied: false,
-          updatedAt: now,
-        };
-        const previous = existing.find(
-          candidate =>
-            candidate.productId === recommendation.productId &&
-            isWisdomRecommendation(candidate)
-        );
-
-        if (previous) {
-          await tx
-            .update(recommendations)
-            .set(values)
-            .where(
-              and(
-                eq(recommendations.id, previous.id),
-                eq(recommendations.userId, userId)
-              )
-            );
-        } else {
-          await tx.insert(recommendations).values({
-            userId,
-            productId: recommendation.productId,
-            ...values,
-          });
-        }
-      }
-    });
-  },
-
   async getAll(options?: {
     status?: string;
     limit?: number;

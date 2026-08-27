@@ -6,7 +6,6 @@ import {
   competitorProducts,
   competitors,
   priceChanges,
-  priceRadarSources,
   products,
   recommendations,
   subscriptions,
@@ -83,7 +82,6 @@ export const usageService = {
       alertCount,
       aiRunCount,
       matchCount,
-      radarSourceCount,
       monthlyChangeCount,
     ] = await Promise.all([
       countRows(
@@ -138,17 +136,6 @@ export const usageService = {
       countRows(
         database
           .select({ count: sql<number>`count(*)::int` })
-          .from(priceRadarSources)
-          .where(
-            and(
-              eq(priceRadarSources.userId, userId),
-              eq(priceRadarSources.isActive, true)
-            )
-          )
-      ),
-      countRows(
-        database
-          .select({ count: sql<number>`count(*)::int` })
           .from(priceChanges)
           .innerJoin(
             competitorProducts,
@@ -173,7 +160,6 @@ export const usageService = {
       products: productCount,
       competitors: competitorCount,
       competitorMatches: matchCount,
-      radarSources: radarSourceCount,
       monthlyChanges: monthlyChangeCount,
       alertsMonthly: alertCount,
       aiRunsMonthly: aiRunCount,
@@ -181,7 +167,6 @@ export const usageService = {
     const limits = {
       products: plan.limits.products,
       competitors: plan.limits.competitors,
-      radarSources: plan.limits.radarSources,
       monthlyChanges: plan.limits.monthlyChanges,
       alertsMonthly: plan.limits.alertsMonthly,
       aiRunsMonthly: plan.limits.aiRunsMonthly,
@@ -202,9 +187,6 @@ export const usageService = {
         products: limits.products ? productCount / limits.products : 0,
         competitors: limits.competitors
           ? competitorCount / limits.competitors
-          : 0,
-        radarSources: limits.radarSources
-          ? radarSourceCount / limits.radarSources
           : 0,
         monthlyChanges: limits.monthlyChanges
           ? monthlyChangeCount / limits.monthlyChanges

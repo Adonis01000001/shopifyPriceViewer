@@ -1,40 +1,18 @@
 import { z } from "zod";
-import { eq, and, sql } from "drizzle-orm";
+import { eq, and } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 import { protectedProcedure, router } from "../_core/trpc";
 import { competitorService } from "../services/competitor.service";
 import { productService } from "../services/product.service";
 import { scrapingService } from "../services/scraping.service";
-import { persistScoopCatalogImport } from "../services/scoop.service";
 import {
   competitorProducts,
-  products,
   priceHistory,
   competitors,
-  activityLogs,
-  priceRadarProducts,
-  scoopCompetitorProducts,
 } from "../../drizzle/schema";
 import { requireDb } from "../_core/db-assert";
 import { entitlementService } from "../services/entitlement.service";
 
-const competitorFeedProductIdSchema = z.string().refine(
-  value => {
-    if (z.string().uuid().safeParse(value).success) return true;
-
-    const separator = value.indexOf(":");
-    if (separator <= 0 || separator === value.length - 1) return false;
-    if (value.indexOf(":", separator + 1) !== -1) return false;
-
-    const source = value.slice(0, separator);
-    const productId = value.slice(separator + 1);
-    return (
-      (source === "price-radar" || source === "scoop") &&
-      z.string().uuid().safeParse(productId).success
-    );
-  },
-  { message: "Invalid competitor product ID" }
-);
 
 export const competitorRouter = router({
   list: protectedProcedure
@@ -86,7 +64,9 @@ export const competitorRouter = router({
         status: "active",
         productsTracked: 0,
         avgPriceDiff: "0.00",
-        priceIndex: "100.00",
+        // No index until a scrape produces real prices. Seeding "100.00"
+        // made brand-new competitors look like measured, on-par rivals.
+        priceIndex: null,
         scrapeStatus: "pending",
       });
       if (!competitor)
@@ -137,41 +117,6 @@ export const competitorRouter = router({
       return { imported: result.length };
     }),
 
-  importCatalog: protectedProcedure
-    .input(
-      z.object({
-        sourceName: z.string().trim().min(1).max(255),
-        products: z
-          .array(
-            z.object({
-              productName: z.string().trim().min(1).max(500),
-              brand: z.string().trim().max(255).nullable(),
-              model: z.string().trim().max(255).nullable(),
-              price: z.string().trim().max(64).nullable(),
-              currency: z.string().trim().max(10).nullable(),
-              rating: z.number().min(0).max(5).nullable(),
-              reviewCount: z.number().int().min(0).nullable(),
-              availability: z.string().trim().max(64).nullable(),
-              seller: z.string().trim().max(255).nullable(),
-              condition: z.enum(["new", "refurbished", "used"]).nullable(),
-              shipping: z.string().trim().max(500).nullable(),
-              productUrl: z.string().url().max(2_000),
-              imageUrl: z.string().url().max(2_000).nullable(),
-              retrievedAt: z.string().datetime(),
-              publishedDate: z.string().max(64).nullable(),
-              confidenceScore: z.number().min(0).max(1),
-              extractionMethod: z.string().trim().min(1).max(64),
-              discoveredBy: z.array(z.string().max(128)).max(20),
-            })
-          )
-          .min(1)
-          .max(2_000),
-      })
-    )
-    .mutation(async ({ ctx, input }) => {
-      return persistScoopCatalogImport(ctx.user!.id, input);
-    }),
-
   update: protectedProcedure
     .input(
       z.object({
@@ -199,27 +144,6 @@ export const competitorRouter = router({
     .mutation(async ({ ctx, input }) => {
       await competitorService.delete(ctx.user!.id, input.id);
       return { success: true };
-    }),
-
-  moveScoopProduct: protectedProcedure
-    .input(
-      z.object({
-        scoopProductId: z.string().uuid(),
-        targetCompetitorId: z.string().uuid(),
-      })
-    )
-    .mutation(async ({ ctx, input }) => {
-      const moved = await competitorService.moveScoopProduct(
-        ctx.user!.id,
-        input.scoopProductId,
-        input.targetCompetitorId
-      );
-      if (!moved)
-        throw new TRPCError({
-          code: "NOT_FOUND",
-          message: "Scoop product or target competitor not found",
-        });
-      return moved;
     }),
 
   feed: protectedProcedure
@@ -370,107 +294,12 @@ export const competitorRouter = router({
   updateProductPrice: protectedProcedure
     .input(
       z.object({
-        competitorProductId: competitorFeedProductIdSchema,
+        competitorProductId: z.string().uuid(),
         price: z.string().regex(/^\d+(\.\d{1,2})?$/),
       })
     )
     .mutation(async ({ ctx, input }) => {
       const database = await requireDb();
-      const [source, rawProductId] = input.competitorProductId.split(":", 2);
-
-      // Price Radar and Scoop products are virtual feed rows. They are not
-      // stored in competitor_products, so update their owning source table
-      // after validating the authenticated user's ownership.
-      if (source === "price-radar" || source === "scoop") {
-        const parsedId = z.string().uuid().safeParse(rawProductId);
-        if (!parsedId.success) {
-          throw new TRPCError({
-            code: "NOT_FOUND",
-            message: "Product not found",
-          });
-        }
-
-        const now = new Date();
-        if (source === "price-radar") {
-          const [radarProduct] = await database
-            .select({
-              id: priceRadarProducts.id,
-              price: priceRadarProducts.price,
-            })
-            .from(priceRadarProducts)
-            .where(
-              and(
-                eq(priceRadarProducts.id, parsedId.data),
-                eq(priceRadarProducts.userId, ctx.user!.id)
-              )
-            )
-            .limit(1);
-          if (!radarProduct) {
-            throw new TRPCError({
-              code: "NOT_FOUND",
-              message: "Product not found",
-            });
-          }
-
-          await database
-            .update(priceRadarProducts)
-            .set({
-              previousPrice: radarProduct.price,
-              price: input.price,
-              lastSeenAt: now,
-              updatedAt: now,
-            })
-            .where(
-              and(
-                eq(priceRadarProducts.id, parsedId.data),
-                eq(priceRadarProducts.userId, ctx.user!.id)
-              )
-            );
-
-          return {
-            success: true,
-            previousPrice: radarProduct.price,
-            newPrice: input.price,
-          };
-        }
-
-        const [scoopProduct] = await database
-          .select({
-            id: scoopCompetitorProducts.id,
-            price: scoopCompetitorProducts.price,
-          })
-          .from(scoopCompetitorProducts)
-          .where(
-            and(
-              eq(scoopCompetitorProducts.id, parsedId.data),
-              eq(scoopCompetitorProducts.userId, ctx.user!.id)
-            )
-          )
-          .limit(1);
-        if (!scoopProduct) {
-          throw new TRPCError({
-            code: "NOT_FOUND",
-            message: "Product not found",
-          });
-        }
-
-        await database
-          .update(scoopCompetitorProducts)
-          .set({ price: input.price, lastSeenAt: now })
-          .where(
-            and(
-              eq(scoopCompetitorProducts.id, parsedId.data),
-              eq(scoopCompetitorProducts.userId, ctx.user!.id)
-            )
-          );
-
-        return {
-          success: true,
-          previousPrice: scoopProduct.price,
-          newPrice: input.price,
-        };
-      }
-
       const cp = await database
         .select({
           cp: competitorProducts,

@@ -3,7 +3,6 @@ export type FeatureKey =
   | "emailAlerts"
   | "advancedAnalytics"
   | "aiRecommendations"
-  | "priceRadar"
   | "dailyReports"
   | "teamAccess"
   | "anomalyDetection";
@@ -11,7 +10,6 @@ export type FeatureKey =
 export type UsageKey =
   | "products"
   | "competitors"
-  | "radarSources"
   | "monthlyChanges"
   | "alertsMonthly"
   | "aiRunsMonthly";
@@ -23,7 +21,6 @@ export type PlanDefinition = {
   limits: {
     products: number | null;
     competitors: number | null;
-    radarSources: number | null;
     monthlyChanges: number | null;
     alertsMonthly: number | null;
     aiRunsMonthly: number | null;
@@ -36,7 +33,6 @@ const noPremiumFeatures: Readonly<Record<FeatureKey, boolean>> = {
   emailAlerts: false,
   advancedAnalytics: false,
   aiRecommendations: false,
-  priceRadar: false,
   dailyReports: false,
   teamAccess: false,
   anomalyDetection: false,
@@ -50,7 +46,6 @@ export const PLAN_CATALOG: Record<PlanId, PlanDefinition> = {
     limits: {
       products: 25,
       competitors: 2,
-      radarSources: 1,
       monthlyChanges: 100,
       alertsMonthly: 25,
       aiRunsMonthly: 0,
@@ -69,7 +64,6 @@ export const PLAN_CATALOG: Record<PlanId, PlanDefinition> = {
     limits: {
       products: 250,
       competitors: 10,
-      radarSources: 5,
       monthlyChanges: 1_000,
       alertsMonthly: 250,
       aiRunsMonthly: 0,
@@ -88,7 +82,6 @@ export const PLAN_CATALOG: Record<PlanId, PlanDefinition> = {
     limits: {
       products: 2_000,
       competitors: 50,
-      radarSources: 25,
       monthlyChanges: 10_000,
       alertsMonthly: 2_500,
       aiRunsMonthly: 100,
@@ -98,13 +91,12 @@ export const PLAN_CATALOG: Record<PlanId, PlanDefinition> = {
       emailAlerts: true,
       advancedAnalytics: true,
       aiRecommendations: true,
-      priceRadar: true,
       dailyReports: true,
       anomalyDetection: true,
     },
     features: [
       "Advanced market intelligence",
-      "Price Radar",
+      "Automatic competitor discovery",
       "Priority monitoring",
     ],
   },
@@ -115,7 +107,6 @@ export const PLAN_CATALOG: Record<PlanId, PlanDefinition> = {
     limits: {
       products: null,
       competitors: null,
-      radarSources: null,
       monthlyChanges: null,
       alertsMonthly: null,
       aiRunsMonthly: null,
@@ -124,7 +115,6 @@ export const PLAN_CATALOG: Record<PlanId, PlanDefinition> = {
       emailAlerts: true,
       advancedAnalytics: true,
       aiRecommendations: true,
-      priceRadar: true,
       dailyReports: true,
       teamAccess: true,
       anomalyDetection: true,
