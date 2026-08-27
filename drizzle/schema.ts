@@ -235,9 +235,9 @@ export const billingEvents = pgTable(
 export type BillingEvent = typeof billingEvents.$inferSelect;
 export type InsertBillingEvent = typeof billingEvents.$inferInsert;
 
-// Stores the latest successfully completed Path of Wisdom result per user.
 // The unique user key makes replacement atomic and prevents duplicate result
 // rows when a user runs the analysis from multiple sessions.
+
 
 
 export const reportRuns = pgTable(
@@ -550,10 +550,6 @@ export const competitors = pgTable(
       "100.00"
     ),
     lastScrapedAt: timestamp("last_scraped_at", { withTimezone: true }),
-    scoopSearchCount: integer("scoop_search_count").default(0).notNull(),
-    lastScoopSearchAt: timestamp("last_scoop_search_at", {
-      withTimezone: true,
-    }),
     scrapeStatus: scrapeStatusEnum("scrape_status").default("pending"),
     scrapeError: text("scrape_error"),
     createdAt: timestamp("created_at", { withTimezone: true })
@@ -665,9 +661,9 @@ export const competitorProducts = pgTable(
 export type CompetitorProduct = typeof competitorProducts.$inferSelect;
 export type InsertCompetitorProduct = typeof competitorProducts.$inferInsert;
 
-// Automatic Price Radar/Scoop matches dismissed by the merchant.
 // The source product remains in its source catalog so future price updates
 // stay available without recreating a deleted match in the UI.
+
 
 
 // =============================================================================
@@ -1116,7 +1112,6 @@ export type InsertCronRun = typeof cronRuns.$inferInsert;
 
 // Cross-worker lease preventing overlapping discovery runs for one product.
 
-
 // =============================================================================
 // Scrape Logs (detailed per-URL scrape attempts)
 // =============================================================================
@@ -1167,14 +1162,12 @@ export type InsertScrapeLog = typeof scrapeLogs.$inferInsert;
 
 
 // =============================================================================
-// Scoop search history (autonomous product discovery searches)
 // =============================================================================
 
 
-// =============================================================================
-// Price Radar — independent competitor web data collection engine
-// =============================================================================
 
+// =============================================================================
+// =============================================================================
 
 /**
  * First-party product analytics. Keep this table intentionally small and
