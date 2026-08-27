@@ -1,0 +1,1 @@
+DROP TABLE "path_of_wisdom_results" CASCADE;

@@ -238,32 +238,7 @@ export type InsertBillingEvent = typeof billingEvents.$inferInsert;
 // Stores the latest successfully completed Path of Wisdom result per user.
 // The unique user key makes replacement atomic and prevents duplicate result
 // rows when a user runs the analysis from multiple sessions.
-export const pathOfWisdomResults = pgTable(
-  "path_of_wisdom_results",
-  {
-    id: uuid("id").defaultRandom().primaryKey(),
-    userId: uuid("user_id")
-      .notNull()
-      .references(() => users.id, { onDelete: "cascade" }),
-    output: jsonb("output").notNull(),
-    productCount: integer("product_count").notNull(),
-    createdAt: timestamp("created_at", { withTimezone: true })
-      .defaultNow()
-      .notNull(),
-    updatedAt: timestamp("updated_at", { withTimezone: true })
-      .defaultNow()
-      .notNull(),
-  },
-  t => ({
-    userIdIdx: uniqueIndex("path_of_wisdom_results_user_id_idx").on(t.userId),
-    updatedAtIdx: index("path_of_wisdom_results_updated_at_idx").on(
-      t.updatedAt
-    ),
-  })
-);
 
-export type PathOfWisdomResult = typeof pathOfWisdomResults.$inferSelect;
-export type InsertPathOfWisdomResult = typeof pathOfWisdomResults.$inferInsert;
 
 export const reportRuns = pgTable(
   "report_runs",

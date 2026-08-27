@@ -11,7 +11,6 @@ import { activityRouter } from "./routers/activity.router";
 import { authRouter } from "./routers/auth.router";
 import { intelligenceRouter } from "./routers/intelligence.router";
 import { pricingEngineRouter } from "./routers/pricing-engine.router";
-import { wisdomRouter } from "./routers/wisdom.router";
 import { notificationRouter } from "./routers/notification.router";
 import { accountRouter } from "./routers/account.router";
 import { billingRouter } from "./routers/billing.router";
@@ -39,7 +38,6 @@ export const appRouter = router({
   activity: activityRouter,
   intelligence: intelligenceRouter,
   pricingEngine: pricingEngineRouter,
-  wisdom: wisdomRouter,
   notifications: notificationRouter,
   account: accountRouter,
   billing: billingRouter,
