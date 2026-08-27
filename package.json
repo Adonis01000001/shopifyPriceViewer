@@ -4,11 +4,11 @@
   "type": "module",
   "license": "MIT",
   "scripts": {
-    "dev": "cross-env NODE_ENV=development node --import tsx server/_core/index.ts",
+    "dev": "cross-env NODE_ENV=development tsx watch --clear-screen=false server/_core/index.ts",
     "build": "vite build && esbuild server/_core/index.ts --platform=node --packages=external --bundle --format=esm --outdir=dist && pnpm run build:worker",
     "build:worker": "esbuild server/workers/index.ts --platform=node --packages=external --bundle --format=esm --outfile=dist/worker.js",
     "build:all": "npm run build",
-    "start": "cross-env NODE_ENV=production node dist/index.js",
+    "start": "bash scripts/start.sh",
     "worker": "cross-env NODE_ENV=production tsx server/workers/index.ts",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
@@ -22,7 +22,13 @@
     "lint": "eslint .",
     "test": "vitest run",
     "db:seed": "tsx server/seed.ts",
-    "db:seed:electronics": "tsx server/seed-electronics.ts"
+    "db:seed:electronics": "tsx server/seed-electronics.ts",
+    "tunnel": "cloudflared tunnel --config ~/.cloudflared/priceintel.yml run priceintel",
+    "tunnel:setup": "bash scripts/tunnel-setup.sh",
+    "reset": "bash scripts/reset.sh",
+    "demo:save": "bash scripts/demo.sh save",
+    "demo:load": "bash scripts/demo.sh load",
+    "demo:list": "bash scripts/demo.sh list"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.693.0",

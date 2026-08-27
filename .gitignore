@@ -55,3 +55,4 @@ memory/
 # Prettier config (local)
 .prettierignore
 .prettierrc
+.demo-snapshots/
