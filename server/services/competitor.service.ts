@@ -25,6 +25,77 @@ import {
   type InsertCompetitorProduct,
 } from "../../drizzle/schema";
 
+/**
+ * How a competitor's prices compare with the merchant's own, measured from the
+ * matches themselves.
+ *
+ * `price_index` and `avg_price_diff` exist as columns but nothing has ever
+ * written to them past the row's creation, so every competitor read back as
+ * "+0.0%" — a number that looked measured and was not. Deriving it here means
+ * the figure is always as current as the matches behind it.
+ */
+async function getPriceComparison(
+  competitorIds: string[]
+): Promise<
+  Map<
+    string,
+    { priceIndex: string; avgPriceDiff: string; lastScrapedAt: Date | null }
+  >
+> {
+  const comparison = new Map<
+    string,
+    { priceIndex: string; avgPriceDiff: string; lastScrapedAt: Date | null }
+  >();
+  if (competitorIds.length === 0) return comparison;
+
+  const database = await requireDb();
+  const pairs = await database
+    .select({
+      competitorId: competitorProducts.competitorId,
+      theirPrice: competitorProducts.price,
+      ourPrice: products.price,
+      scrapedAt: competitorProducts.lastScrapedAt,
+    })
+    .from(competitorProducts)
+    .innerJoin(products, eq(products.id, competitorProducts.productId))
+    .where(
+      and(
+        inArray(competitorProducts.competitorId, competitorIds),
+        eq(competitorProducts.isActive, true)
+      )
+    );
+
+  const ratios = new Map<string, number[]>();
+  // `competitors.last_scraped_at` is never written either, so "Never" showed
+  // beside prices we had just read. The matches carry the real timestamp.
+  const seenAt = new Map<string, Date>();
+  for (const pair of pairs) {
+    if (pair.scrapedAt) {
+      const previous = seenAt.get(pair.competitorId);
+      if (!previous || pair.scrapedAt > previous) {
+        seenAt.set(pair.competitorId, pair.scrapedAt);
+      }
+    }
+    const ours = Number(pair.ourPrice);
+    const theirs = Number(pair.theirPrice);
+    if (!(ours > 0) || !(theirs > 0)) continue;
+    const list = ratios.get(pair.competitorId) ?? [];
+    list.push(theirs / ours);
+    ratios.set(pair.competitorId, list);
+  }
+
+  for (const [competitorId, list] of Array.from(ratios.entries())) {
+    const mean =
+      list.reduce((sum: number, r: number) => sum + r, 0) / list.length;
+    comparison.set(competitorId, {
+      priceIndex: (mean * 100).toFixed(2),
+      avgPriceDiff: ((mean - 1) * 100).toFixed(2),
+      lastScrapedAt: seenAt.get(competitorId) ?? null,
+    });
+  }
+  return comparison;
+}
+
 async function getMergedProductCounts(
   userId: string,
   competitorRows: Array<Pick<Competitor, "id" | "domain">>
@@ -135,10 +206,17 @@ export const competitorService = {
       .offset(offset);
     const visibleRows = await filterSyntheticOnlyCompetitors(userId, rows);
     const counts = await getMergedProductCounts(userId, visibleRows);
-    return visibleRows.map(competitor => ({
-      ...competitor,
-      productsTracked: counts.get(competitor.id) ?? competitor.productsTracked,
-    }));
+    const comparison = await getPriceComparison(visibleRows.map(r => r.id));
+    return visibleRows.map(competitor => {
+      const measured = comparison.get(competitor.id);
+      return {
+        ...competitor,
+        productsTracked: counts.get(competitor.id) ?? competitor.productsTracked,
+        priceIndex: measured?.priceIndex ?? null,
+        avgPriceDiff: measured?.avgPriceDiff ?? null,
+        lastScrapedAt: measured?.lastScrapedAt ?? competitor.lastScrapedAt,
+      };
+    });
   },
 
   async countByUserId(userId: string): Promise<number> {

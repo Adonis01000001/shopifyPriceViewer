@@ -30,6 +30,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { trpc } from "@/lib/trpc";
+import { usePipelineRun } from "@/hooks/usePipelineRun";
 import {
   Empty,
   EmptyHeader,
@@ -41,7 +42,6 @@ import {
 import {
   AlertCircle,
   ArrowRight,
-  ArrowRightLeft,
   CheckCircle2,
   Globe,
   Plus,
@@ -54,7 +54,6 @@ import {
   Clock,
   Package,
   Gauge,
-  X,
   Search,
   Loader2,
   ExternalLink,
@@ -69,22 +68,6 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import Papa from "papaparse";
 import { toast } from "sonner";
-
-const statusConfig: Record<string, { label: string; className: string }> = {
-  active: {
-    label: "ACTIVE",
-    className: "bg-primary/[0.1] text-primary border border-primary/20",
-  },
-  inactive: {
-    label: "INACTIVE",
-    className: "bg-muted text-muted-foreground border border-outline-variant",
-  },
-  error: {
-    label: "ERROR",
-    className:
-      "bg-[var(--destructive)]/20 text-[var(--destructive)] border border-[var(--destructive)]/30",
-  },
-};
 
 const competitorSchema = z.object({
   name: z.string().min(1).max(255),
@@ -118,200 +101,6 @@ interface ParsedRow {
   rowNumber: number;
 }
 
-interface JsonCatalogProduct {
-  productName: string;
-  brand: string | null;
-  model: string | null;
-  price: string | null;
-  currency: string | null;
-  rating: number | null;
-  reviewCount: number | null;
-  availability: string | null;
-  seller: string | null;
-  condition: "new" | "refurbished" | "used" | null;
-  shipping: string | null;
-  productUrl: string;
-  imageUrl: string | null;
-  retrievedAt: string;
-  publishedDate: string | null;
-  confidenceScore: number;
-  extractionMethod: string;
-  discoveredBy: string[];
-}
-
-interface JsonImportPreview {
-  sourceName: string;
-  products: JsonCatalogProduct[];
-}
-
-type JsonRecord = Record<string, unknown>;
-
-function asJsonRecord(value: unknown): JsonRecord | null {
-  return value !== null && typeof value === "object" && !Array.isArray(value)
-    ? (value as JsonRecord)
-    : null;
-}
-
-function stringFromJson(record: JsonRecord, keys: string[]): string | null {
-  for (const key of keys) {
-    const value = record[key];
-    if (typeof value === "string" || typeof value === "number") {
-      const normalized = String(value).trim();
-      if (normalized) return normalized;
-    }
-  }
-  return null;
-}
-
-function numberFromJson(record: JsonRecord, keys: string[]): number | null {
-  for (const key of keys) {
-    const value = record[key];
-    const number = typeof value === "number" ? value : Number(value);
-    if (Number.isFinite(number)) return number;
-  }
-  return null;
-}
-
-function urlFromJson(
-  record: JsonRecord,
-  keys: string[],
-  baseUrl?: string
-): string | null {
-  const value = stringFromJson(record, keys);
-  if (!value) return null;
-  try {
-    return new URL(value, baseUrl).toString();
-  } catch {
-    return null;
-  }
-}
-
-function isoDateFromJson(
-  record: JsonRecord,
-  keys: string[],
-  fallback: string
-): string {
-  const value = stringFromJson(record, keys);
-  if (!value) return fallback;
-  const parsed = new Date(value);
-  return Number.isNaN(parsed.getTime()) ? fallback : parsed.toISOString();
-}
-
-function conditionFromJson(
-  value: string | null
-): JsonCatalogProduct["condition"] {
-  const normalized = value?.toLowerCase() ?? "";
-  if (normalized.includes("refurb")) return "refurbished";
-  if (normalized.includes("used")) return "used";
-  if (normalized.includes("new")) return "new";
-  return null;
-}
-
-function productFromJson(
-  value: unknown,
-  brandOverride: string | null,
-  retrievedAt: string
-): JsonCatalogProduct | null {
-  const record = asJsonRecord(value);
-  if (!record) return null;
-  const productName = stringFromJson(record, ["productName", "title", "name"]);
-  const productUrl = urlFromJson(record, ["productUrl", "url", "link"]);
-  if (!productName || !productUrl) return null;
-
-  const rating = numberFromJson(record, ["rating", "stars"]);
-  const reviewCount = numberFromJson(record, ["reviewCount", "reviews"]);
-  const confidenceScore = numberFromJson(record, ["confidenceScore"]);
-  const discoveredByValue = record.discoveredBy;
-
-  return {
-    productName,
-    brand:
-      brandOverride ??
-      stringFromJson(record, ["competitorName", "competitor", "brand"]),
-    model: stringFromJson(record, ["model", "modelNumber"]),
-    price: stringFromJson(record, ["price", "currentPrice", "amount"]),
-    currency:
-      stringFromJson(record, ["currency", "priceCurrency"])?.toUpperCase() ??
-      null,
-    rating: rating !== null && rating >= 0 && rating <= 5 ? rating : null,
-    reviewCount:
-      reviewCount !== null && reviewCount >= 0 ? Math.trunc(reviewCount) : null,
-    availability: stringFromJson(record, ["availability", "stock"]),
-    seller: stringFromJson(record, ["seller", "retailer", "merchant"]),
-    condition: conditionFromJson(stringFromJson(record, ["condition"])),
-    shipping: stringFromJson(record, ["shipping", "shippingInformation"]),
-    productUrl,
-    imageUrl: urlFromJson(
-      record,
-      ["imageUrl", "image", "thumbnail"],
-      productUrl
-    ),
-    retrievedAt: isoDateFromJson(
-      record,
-      ["retrievedAt", "dateRetrieved"],
-      retrievedAt
-    ),
-    publishedDate: stringFromJson(record, ["publishedDate", "datePublished"]),
-    confidenceScore:
-      confidenceScore !== null && confidenceScore >= 0 && confidenceScore <= 1
-        ? confidenceScore
-        : 0.5,
-    extractionMethod: "json-import",
-    discoveredBy:
-      Array.isArray(discoveredByValue) &&
-      discoveredByValue.every(item => typeof item === "string")
-        ? discoveredByValue
-            .map(item => item.trim())
-            .filter(Boolean)
-            .slice(0, 20)
-        : ["JSON import"],
-  };
-}
-
-function parseJsonCatalog(value: unknown): JsonCatalogProduct[] {
-  const root = asJsonRecord(value);
-  const rootBrand = root
-    ? stringFromJson(root, ["brand", "competitorName", "competitor"])
-    : null;
-  const entries = Array.isArray(value)
-    ? value
-    : root && Array.isArray(root.competitors)
-      ? root.competitors
-      : root && Array.isArray(root.productsFound)
-        ? root.productsFound
-        : root && Array.isArray(root.products)
-          ? root.products
-          : root
-            ? [root]
-            : [];
-  const retrievedAt = new Date().toISOString();
-  const products: JsonCatalogProduct[] = [];
-
-  for (const entry of entries) {
-    const record = asJsonRecord(entry);
-    if (!record) continue;
-    const parentBrand =
-      stringFromJson(record, [
-        "brand",
-        "competitorName",
-        "competitor",
-        "name",
-      ]) ?? rootBrand;
-    const nestedProducts = record.products;
-    if (Array.isArray(nestedProducts)) {
-      for (const nestedProduct of nestedProducts) {
-        const parsed = productFromJson(nestedProduct, parentBrand, retrievedAt);
-        if (parsed) products.push(parsed);
-      }
-      continue;
-    }
-    const parsed = productFromJson(entry, rootBrand, retrievedAt);
-    if (parsed) products.push(parsed);
-  }
-
-  return products;
-}
-
 // ─── Scrape tab content ──────────────────────────────────────────────────────
 
 function ScrapeTab({
@@ -340,7 +129,7 @@ function ScrapeTab({
   if (scrapedProducts.length > 0) {
     return (
       <div className="space-y-2">
-        <p className="text-[11px] text-muted-foreground">
+        <p className="text-[13px] text-muted-foreground">
           Found {scrapedProducts.length} products on {competitorDomain}
           {lastScrapeQuery ? ` for "${lastScrapeQuery}"` : ""}
         </p>
@@ -375,10 +164,10 @@ function ScrapeTab({
         <div className="flex justify-center">
           <Loader2 className="h-8 w-8 text-primary animate-spin" />
         </div>
-        <p className="text-center text-[12px] text-muted-foreground">
+        <p className="text-center text-[13px] text-muted-foreground">
           Scraping {competitorDomain}...
           <br />
-          <span className="text-[10px]">This may take up to 30 seconds</span>
+          <span className="text-[12px]">This may take up to 30 seconds</span>
         </p>
       </div>
     );
@@ -387,8 +176,8 @@ function ScrapeTab({
   return (
     <div className="text-center py-8 text-muted-foreground">
       <Globe className="h-10 w-10 mx-auto mb-3 opacity-30" />
-      <p className="text-[13px] font-medium">No products scraped yet</p>
-      <p className="text-[11px] mt-1">
+      <p className="text-[14px] font-medium">No products scraped yet</p>
+      <p className="text-[13px] mt-1">
         Enter a search query or leave empty to scrape all products
       </p>
     </div>
@@ -416,7 +205,7 @@ function ScrapedProductRow({
             />
           )}
           <div className="min-w-0">
-            <p className="text-[12px] font-medium truncate max-w-[280px]">
+            <p className="text-[13px] font-medium truncate max-w-[280px]">
               {item.title}
             </p>
             {item.productUrl && (
@@ -424,7 +213,7 @@ function ScrapedProductRow({
                 href={item.productUrl}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="text-[10px] text-primary hover:underline flex items-center gap-0.5"
+                className="text-[12px] text-primary hover:underline flex items-center gap-0.5"
               >
                 View <ExternalLink className="h-2.5 w-2.5" />
               </a>
@@ -432,14 +221,14 @@ function ScrapedProductRow({
           </div>
         </div>
       </td>
-      <td className="py-2 text-right font-mono text-[12px] font-medium">
+      <td className="py-2 text-right font-mono text-[13px] font-medium">
         ${Number(item.price).toFixed(2)}
       </td>
       <td className="py-2 pr-3 text-center">
         <Button
           size="sm"
           variant="ghost"
-          className="h-6 px-2 text-[10px] text-primary hover:text-primary/80 hover:bg-primary/10"
+          className="h-6 px-2 text-[12px] text-primary hover:text-primary/80 hover:bg-primary/10"
           onClick={() => onAdd(item)}
           disabled={adding}
         >
@@ -479,8 +268,8 @@ function SearchTab({
     return (
       <div className="text-center py-8 text-muted-foreground">
         <Search className="h-10 w-10 mx-auto mb-3 opacity-30" />
-        <p className="text-[13px] font-medium">Type to search</p>
-        <p className="text-[11px] mt-1">
+        <p className="text-[14px] font-medium">Type to search</p>
+        <p className="text-[13px] mt-1">
           Search your existing products by name, SKU or category
         </p>
       </div>
@@ -490,7 +279,7 @@ function SearchTab({
   if (searchResults && searchResults.length > 0) {
     return (
       <div className="space-y-2">
-        <p className="text-[11px] text-muted-foreground">
+        <p className="text-[13px] text-muted-foreground">
           {searchResults.length} products found
         </p>
         {searchResults.map(product => (
@@ -508,8 +297,8 @@ function SearchTab({
   return (
     <div className="text-center py-8 text-muted-foreground">
       <Package className="h-10 w-10 mx-auto mb-3 opacity-30" />
-      <p className="text-[13px] font-medium">No products found</p>
-      <p className="text-[11px] mt-1">Try a different search term</p>
+      <p className="text-[14px] font-medium">No products found</p>
+      <p className="text-[13px] mt-1">Try a different search term</p>
     </div>
   );
 }
@@ -526,25 +315,25 @@ function ProductResultRow({
   return (
     <div className="bg-surface-container-lowest rounded border border-outline-variant/10 p-3 flex items-center justify-between gap-3">
       <div className="flex items-center gap-3 min-w-0">
-        <div className="w-8 h-8 rounded bg-surface-container-highest border border-outline-variant flex items-center justify-center text-[10px] font-bold text-muted-foreground shrink-0">
+        <div className="w-8 h-8 rounded bg-surface-container-highest border border-outline-variant flex items-center justify-center text-[12px] font-bold text-muted-foreground shrink-0">
           {product.title.charAt(0)}
         </div>
         <div className="min-w-0">
-          <p className="text-[12px] font-medium truncate">{product.title}</p>
-          <p className="text-[10px] text-muted-foreground">
+          <p className="text-[13px] font-medium truncate">{product.title}</p>
+          <p className="text-[12px] text-muted-foreground">
             {product.sku && `SKU: ${product.sku} · `}
             {product.category || "No category"}
           </p>
         </div>
       </div>
       <div className="flex items-center gap-3 shrink-0">
-        <span className="font-mono text-[12px] font-medium">
+        <span className="font-mono text-[13px] font-medium">
           ${Number(product.price).toFixed(2)}
         </span>
         <Button
           size="sm"
           variant="ghost"
-          className="h-7 px-2.5 text-[11px] text-primary hover:text-primary/80 hover:bg-primary/10 border border-primary/20"
+          className="h-7 px-2.5 text-[13px] text-primary hover:text-primary/80 hover:bg-primary/10 border border-primary/20"
           onClick={() => onLink(product)}
           disabled={linking}
         >
@@ -671,7 +460,7 @@ function AddProductDialog({
           <button
             type="button"
             className={cn(
-              "flex-1 flex items-center justify-center gap-2 py-2 px-3 rounded-md text-[12px] font-medium transition-all",
+              "flex-1 flex items-center justify-center gap-2 py-2 px-3 rounded-md text-[13px] font-medium transition-all",
               tab === "search"
                 ? "bg-primary text-primary-foreground"
                 : "text-muted-foreground hover:text-foreground"
@@ -684,7 +473,7 @@ function AddProductDialog({
           <button
             type="button"
             className={cn(
-              "flex-1 flex items-center justify-center gap-2 py-2 px-3 rounded-md text-[12px] font-medium transition-all",
+              "flex-1 flex items-center justify-center gap-2 py-2 px-3 rounded-md text-[13px] font-medium transition-all",
               tab === "scrape"
                 ? "bg-primary text-primary-foreground"
                 : "text-muted-foreground hover:text-foreground"
@@ -739,10 +528,10 @@ function AddProductDialog({
               <div className="rounded border border-[var(--destructive)]/20 bg-[var(--destructive)]/10 p-3 flex items-start gap-2">
                 <AlertCircle className="h-4 w-4 text-[var(--destructive)] shrink-0 mt-0.5" />
                 <div>
-                  <p className="text-[12px] text-[var(--destructive)] font-medium">
+                  <p className="text-[13px] text-[var(--destructive)] font-medium">
                     Scraping failed
                   </p>
-                  <p className="text-[11px] text-muted-foreground mt-0.5">
+                  <p className="text-[13px] text-muted-foreground mt-0.5">
                     {scrapeError}
                   </p>
                 </div>
@@ -804,13 +593,13 @@ function AddProductDialog({
 function CompetitorFeed({
   competitorId,
   competitorName,
-  availableCompetitors,
-  onClose,
+  competitorCount,
+  onNext,
 }: {
   competitorId: string;
   competitorName: string;
-  availableCompetitors: Array<{ id: string; name: string }>;
-  onClose: () => void;
+  competitorCount: number;
+  onNext?: () => void;
 }) {
   const {
     data: feed,
@@ -832,13 +621,8 @@ function CompetitorFeed({
 
   const [editingPrice, setEditingPrice] = useState<string | null>(null);
   const [editValue, setEditValue] = useState("");
-  const [moveTarget, setMoveTarget] = useState<{
-    id: string;
-    title: string;
-  } | null>(null);
-  const [moveDestinationId, setMoveDestinationId] = useState("");
   const updatePriceMutation = trpc.competitors.updateProductPrice.useMutation({
-    onSuccess: (data, vars) => {
+    onSuccess: data => {
       utils.competitors.feed.invalidate();
       setEditingPrice(null);
       toast.success(
@@ -847,32 +631,10 @@ function CompetitorFeed({
     },
     onError: err => toast.error(err.message || "Failed to update price"),
   });
-  const moveScoopProductMutation =
-    trpc.competitors.moveScoopProduct.useMutation({
-      onSuccess: result => {
-        utils.competitors.feed.invalidate();
-        utils.competitors.list.invalidate();
-        utils.competitors.stats.invalidate();
-        setMoveTarget(null);
-        setMoveDestinationId("");
-        toast.success(
-          result.merged
-            ? "Product moved and merged with the existing listing"
-            : "Product moved to the competitor"
-        );
-      },
-      onError: err => toast.error(err.message || "Failed to move product"),
-    });
-
   const priceHistory = feed?.priceHistory ?? [];
   const scrapeJobs = feed?.scrapeJobs ?? [];
   const activityLog = feed?.activityLog ?? [];
-  const scoopSearchHistory = feed?.scoopSearchHistory ?? [];
-  const scoopProductHistory = feed?.scoopProductHistory ?? [];
   const products = feed?.products ?? [];
-  const otherCompetitors = availableCompetitors.filter(
-    competitor => competitor.id !== competitorId
-  );
 
   // Price change detection
   const prevPricesRef = useRef<Record<string, string>>({});
@@ -922,10 +684,10 @@ function CompetitorFeed({
           <div className="flex items-start gap-2">
             <TrendingDown className="h-3.5 w-3.5 text-primary mt-0.5 shrink-0" />
             <div>
-              <span className="text-[11px] text-muted-foreground">
+              <span className="text-[13px] text-muted-foreground">
                 Price recorded
               </span>
-              <p className="text-[12px] font-mono font-medium">
+              <p className="text-[13px] font-mono font-medium">
                 ${Number(ph.price).toFixed(2)}
               </p>
             </div>
@@ -950,10 +712,10 @@ function CompetitorFeed({
               )}
             />
             <div>
-              <span className="text-[11px] text-muted-foreground">
+              <span className="text-[13px] text-muted-foreground">
                 Scrape {sj.status}
               </span>
-              <p className="text-[12px]">
+              <p className="text-[13px]">
                 {sj.productsScraped != null
                   ? `${sj.productsScraped} scraped`
                   : "Started"}
@@ -982,50 +744,10 @@ function CompetitorFeed({
           <div className="flex items-start gap-2">
             <Activity className="h-3.5 w-3.5 text-muted-foreground mt-0.5 shrink-0" />
             <div>
-              <span className="text-[11px] text-muted-foreground">
+              <span className="text-[13px] text-muted-foreground">
                 {al.action}
               </span>
-              {al.detail && <p className="text-[12px]">{al.detail}</p>}
-            </div>
-          </div>
-        ),
-      });
-    }
-    for (const search of scoopSearchHistory) {
-      items.push({
-        type: "scoop",
-        date: new Date(search.retrievedAt),
-        content: (
-          <div className="flex items-start gap-2">
-            <Search className="h-3.5 w-3.5 text-primary mt-0.5 shrink-0" />
-            <div>
-              <span className="text-[11px] text-muted-foreground">
-                Scoop search · {search.status}
-              </span>
-              <p className="text-[12px] truncate">{search.query}</p>
-            </div>
-          </div>
-        ),
-      });
-    }
-    for (const product of scoopProductHistory) {
-      items.push({
-        type: "scoop-product",
-        date: new Date(product.retrievedAt),
-        content: (
-          <div className="flex items-start gap-2">
-            <Package className="h-3.5 w-3.5 text-muted-foreground mt-0.5 shrink-0" />
-            <div className="min-w-0">
-              <span className="text-[11px] text-muted-foreground">
-                Scoop product snapshot
-              </span>
-              <p className="text-[12px] truncate">{product.productName}</p>
-              <p className="text-[10px] text-muted-foreground">
-                {product.price
-                  ? `${product.currency ?? "USD"} ${product.price}`
-                  : "Price unavailable"}
-                {product.marketplace ? ` · ${product.marketplace}` : ""}
-              </p>
+              {al.detail && <p className="text-[13px]">{al.detail}</p>}
             </div>
           </div>
         ),
@@ -1033,13 +755,7 @@ function CompetitorFeed({
     }
     items.sort((a, b) => b.date.getTime() - a.date.getTime());
     return items;
-  }, [
-    priceHistory,
-    scrapeJobs,
-    activityLog,
-    scoopSearchHistory,
-    scoopProductHistory,
-  ]);
+  }, [priceHistory, scrapeJobs, activityLog]);
 
   const [removeTarget, setRemoveTarget] = useState<string | null>(null);
 
@@ -1049,21 +765,24 @@ function CompetitorFeed({
         <div>
           <h3 className="text-[15px] font-semibold flex items-center gap-2">
             <Activity className="h-4 w-4 text-primary" />
-            {competitorName} — Live Feed
+            What {competitorName} is doing right now
           </h3>
-          <p className="text-[11px] text-muted-foreground mt-0.5">
+          <p className="text-[13px] text-muted-foreground mt-0.5">
             {timeline.length} events · {products.length} products · updates{" "}
             {liveText}
           </p>
         </div>
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={onClose}
-          className="h-7 w-7 p-0"
-        >
-          <X className="h-4 w-4" />
-        </Button>
+        {onNext && (
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={onNext}
+            className="h-9 whitespace-nowrap text-[13px]"
+          >
+            Show another of the {competitorCount}
+            <ArrowRight className="ml-1.5 h-3.5 w-3.5" />
+          </Button>
+        )}
       </div>
 
       {/* Price Summary Bar */}
@@ -1071,7 +790,7 @@ function CompetitorFeed({
         <div className="flex flex-wrap items-center gap-3 bg-surface-container/30 px-5 py-3">
           <div className="flex items-center gap-2 px-2.5 py-1 bg-surface-container-highest rounded-full border border-outline-variant shrink-0">
             <Wifi className="h-3 w-3 text-primary" />
-            <span className="label-caps text-[9px] text-muted-foreground">
+            <span className="label-caps text-[12px] text-muted-foreground">
               LIVE
             </span>
           </div>
@@ -1079,12 +798,12 @@ function CompetitorFeed({
             const change = priceChanges[cp.id];
             return (
               <div key={cp.id} className="flex items-center gap-1.5 shrink-0">
-                <span className="text-[10px] text-muted-foreground truncate max-w-[100px]">
+                <span className="text-[12px] text-muted-foreground truncate max-w-[100px]">
                   {cp.competitorProductTitle || "Untitled"}
                 </span>
                 <span
                   className={cn(
-                    "font-mono text-[11px] font-medium",
+                    "font-mono text-[13px] font-medium",
                     change === "up"
                       ? "text-[var(--destructive)]"
                       : change === "down"
@@ -1110,7 +829,7 @@ function CompetitorFeed({
 
       <div className="grid grid-cols-1 lg:grid-cols-3 divide-y lg:divide-y-0 lg:divide-x divide-outline-variant/20">
         <div className="p-4">
-          <h4 className="label-caps text-[10px] text-muted-foreground mb-3 flex items-center gap-1.5">
+          <h4 className="label-caps text-[12px] text-muted-foreground mb-3 flex items-center gap-1.5">
             <Package className="h-3 w-3" /> Products ({products.length})
           </h4>
           {isLoading ? (
@@ -1126,20 +845,6 @@ function CompetitorFeed({
             <div className="space-y-1.5 max-h-[360px] overflow-y-auto">
               {products.map(cp => {
                 const change = priceChanges[cp.id];
-                const isRadarProduct = cp.source === "price-radar";
-                const isScoopProduct = cp.source === "scoop";
-                const isReadOnlyProduct = isRadarProduct || isScoopProduct;
-                const scoopProductId =
-                  isScoopProduct && cp.id.startsWith("scoop:")
-                    ? cp.id.slice("scoop:".length)
-                    : null;
-                const scoopInfo = cp as {
-                  imageUrl?: string | null;
-                  rating?: number | null;
-                  reviewCount?: number | null;
-                  marketplace?: string | null;
-                  seller?: string | null;
-                };
                 return (
                   <div
                     key={cp.id}
@@ -1154,80 +859,33 @@ function CompetitorFeed({
                   >
                     <div className="flex justify-between items-start">
                       <div className="flex min-w-0 flex-1 items-start gap-2 mr-2">
-                        {scoopInfo.imageUrl && (
-                          <img
-                            src={scoopInfo.imageUrl}
-                            alt=""
-                            className="h-8 w-8 shrink-0 rounded object-contain bg-surface-container"
-                          />
-                        )}
                         <div className="min-w-0">
-                          <p className="text-[11px] font-medium truncate">
+                          <p className="text-[13px] font-medium truncate">
                             {cp.competitorProductTitle || "Untitled"}
                           </p>
-                          {isScoopProduct && (
-                            <p className="mt-0.5 text-[9px] text-muted-foreground">
-                              {scoopInfo.marketplace ??
-                                scoopInfo.seller ??
-                                "Scoop"}
-                              {scoopInfo.rating != null
-                                ? ` · ${scoopInfo.rating.toFixed(1)}★`
-                                : ""}
-                              {scoopInfo.reviewCount != null
-                                ? ` · ${scoopInfo.reviewCount.toLocaleString()} reviews`
-                                : ""}
-                            </p>
-                          )}
                         </div>
                       </div>
                       <div className="flex items-center gap-1 shrink-0">
-                        {isScoopProduct && scoopProductId && (
-                          <button
-                            type="button"
-                            className="text-muted-foreground/50 hover:text-primary transition-colors disabled:cursor-not-allowed disabled:opacity-30"
-                            onClick={() => {
-                              setMoveTarget({
-                                id: scoopProductId,
-                                title:
-                                  cp.competitorProductTitle || "this product",
-                              });
-                              setMoveDestinationId(
-                                otherCompetitors[0]?.id ?? ""
-                              );
-                            }}
-                            disabled={otherCompetitors.length === 0}
-                            title={
-                              otherCompetitors.length === 0
-                                ? "Add another competitor before moving"
-                                : "Move to another competitor"
-                            }
-                            aria-label={`Move ${cp.competitorProductTitle || "product"} to another competitor`}
-                          >
-                            <ArrowRightLeft className="h-3 w-3" />
-                          </button>
-                        )}
-                        {!isReadOnlyProduct && (
-                          <button
-                            type="button"
-                            className="text-muted-foreground/40 hover:text-[var(--destructive)] transition-colors"
-                            onClick={() => setRemoveTarget(cp.id)}
-                            title="Remove"
-                          >
-                            <Trash2 className="h-3 w-3" />
-                          </button>
-                        )}
+                        <button
+                          type="button"
+                          className="text-muted-foreground/40 hover:text-[var(--destructive)] transition-colors"
+                          onClick={() => setRemoveTarget(cp.id)}
+                          title="Remove"
+                        >
+                          <Trash2 className="h-3 w-3" />
+                        </button>
                       </div>
                     </div>
                     <div className="flex justify-between items-center mt-1.5">
                       <div className="flex items-center gap-1">
                         {editingPrice === cp.id ? (
                           <div className="flex items-center gap-1">
-                            <span className="text-[9px] text-muted-foreground">
+                            <span className="text-[12px] text-muted-foreground">
                               $
                             </span>
                             <input
                               type="text"
-                              className="w-20 h-6 rounded border border-outline-variant bg-surface-container px-1.5 text-[11px] font-mono font-medium outline-none focus:border-primary"
+                              className="w-20 h-6 rounded border border-outline-variant bg-surface-container px-1.5 text-[13px] font-mono font-medium outline-none focus:border-primary"
                               value={editValue}
                               onChange={e => setEditValue(e.target.value)}
                               onKeyDown={e => {
@@ -1272,7 +930,7 @@ function CompetitorFeed({
                           <>
                             <span
                               className={cn(
-                                "font-mono text-[11px] font-medium transition-colors",
+                                "font-mono text-[13px] font-medium transition-colors",
                                 change === "up"
                                   ? "text-[var(--destructive)]"
                                   : change === "down"
@@ -1304,12 +962,8 @@ function CompetitorFeed({
                           </>
                         )}
                       </div>
-                      <span className="text-[9px] label-caps text-muted-foreground">
-                        {isRadarProduct
-                          ? "PRICE RADAR"
-                          : isScoopProduct
-                            ? "SCOOP"
-                            : `${Math.round((cp.matchScore ?? 0) * 100)}% match`}
+                      <span className="text-[12px] label-caps text-muted-foreground">
+                        {`${Math.round((cp.matchScore ?? 0) * 100)}% sure it is the same product`}
                       </span>
                     </div>
                     {cp.competitorProductUrl && (
@@ -1317,7 +971,7 @@ function CompetitorFeed({
                         href={cp.competitorProductUrl}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="text-[9px] text-primary hover:underline mt-1 flex items-center gap-0.5"
+                        className="text-[12px] text-primary hover:underline mt-1 flex items-center gap-0.5"
                       >
                         View product <ExternalLink className="h-2 w-2" />
                       </a>
@@ -1327,14 +981,14 @@ function CompetitorFeed({
               })}
             </div>
           ) : (
-            <p className="text-[11px] text-muted-foreground text-center py-4">
+            <p className="text-[13px] text-muted-foreground text-center py-4">
               No products
             </p>
           )}
         </div>
 
         <div className="lg:col-span-2 p-4">
-          <h4 className="label-caps text-[10px] text-muted-foreground mb-3 flex items-center gap-1.5">
+          <h4 className="label-caps text-[12px] text-muted-foreground mb-3 flex items-center gap-1.5">
             <Clock className="h-3 w-3" /> Activity Timeline
           </h4>
           {isLoading ? (
@@ -1369,7 +1023,7 @@ function CompetitorFeed({
                     <div className="bg-surface-container-lowest rounded p-2.5 border border-outline-variant/10">
                       {item.content}
                     </div>
-                    <p className="text-[9px] text-muted-foreground mt-1 ml-1">
+                    <p className="text-[12px] text-muted-foreground mt-1 ml-1">
                       {item.date.toLocaleString("en-US", {
                         month: "short",
                         day: "numeric",
@@ -1385,7 +1039,7 @@ function CompetitorFeed({
             <div className="text-center py-8 text-muted-foreground">
               <Clock className="h-8 w-8 mx-auto mb-2 opacity-30" />
               <p className="text-xs">No activity yet</p>
-              <p className="text-[10px]">
+              <p className="text-[12px]">
                 Events will appear here as they happen
               </p>
             </div>
@@ -1428,74 +1082,6 @@ function CompetitorFeed({
         </AlertDialogContent>
       </AlertDialog>
 
-      <Dialog
-        open={!!moveTarget}
-        onOpenChange={open => {
-          if (!open && !moveScoopProductMutation.isPending) {
-            setMoveTarget(null);
-            setMoveDestinationId("");
-          }
-        }}
-      >
-        <DialogContent className="sm:max-w-[460px]">
-          <DialogHeader>
-            <DialogTitle>Move Scoop product</DialogTitle>
-            <DialogDescription>
-              Move <strong>{moveTarget?.title}</strong> to another competitor.
-              Product history and the latest price will stay attached to it.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-2 py-2">
-            <Label htmlFor="move-scoop-destination">
-              Destination competitor
-            </Label>
-            <select
-              id="move-scoop-destination"
-              value={moveDestinationId}
-              onChange={event => setMoveDestinationId(event.target.value)}
-              className="h-10 w-full rounded-md border border-outline-variant bg-surface-container-lowest px-3 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/40"
-              disabled={moveScoopProductMutation.isPending}
-            >
-              <option value="">Select a competitor</option>
-              {otherCompetitors.map(competitor => (
-                <option key={competitor.id} value={competitor.id}>
-                  {competitor.name}
-                </option>
-              ))}
-            </select>
-          </div>
-          <DialogFooter>
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => {
-                setMoveTarget(null);
-                setMoveDestinationId("");
-              }}
-              disabled={moveScoopProductMutation.isPending}
-            >
-              Cancel
-            </Button>
-            <Button
-              type="button"
-              onClick={() => {
-                if (!moveTarget || !moveDestinationId) return;
-                moveScoopProductMutation.mutate({
-                  scoopProductId: moveTarget.id,
-                  targetCompetitorId: moveDestinationId,
-                });
-              }}
-              disabled={
-                !moveDestinationId || moveScoopProductMutation.isPending
-              }
-            >
-              {moveScoopProductMutation.isPending
-                ? "Moving..."
-                : "Move product"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
     </div>
   );
 }
@@ -1511,13 +1097,6 @@ export default function Competitors() {
     imported: number;
     skipped: number;
   } | null>(null);
-  const [jsonImportPreview, setJsonImportPreview] =
-    useState<JsonImportPreview | null>(null);
-  const [jsonImporting, setJsonImporting] = useState(false);
-  const [jsonImportResult, setJsonImportResult] = useState<{
-    competitors: number;
-    products: number;
-  } | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<{
     id: string;
     name: string;
@@ -1532,10 +1111,9 @@ export default function Competitors() {
     domain: string;
   } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const jsonFileInputRef = useRef<HTMLInputElement>(null);
 
+  const run = usePipelineRun();
   const { data: competitors } = trpc.competitors.list.useQuery();
-  const { data: stats } = trpc.competitors.stats.useQuery();
   const utils = trpc.useUtils();
 
   const createMutation = trpc.competitors.create.useMutation({
@@ -1571,25 +1149,11 @@ export default function Competitors() {
     onSettled: () => setImporting(false),
   });
 
-  const importCatalogMutation = trpc.competitors.importCatalog.useMutation({
-    onSuccess: result => {
-      utils.competitors.list.invalidate();
-      utils.competitors.stats.invalidate();
-      setJsonImportResult(result);
-      toast.success(
-        `Imported ${result.products} products across ${result.competitors} competitors`
-      );
-    },
-    onError: error =>
-      toast.error(error.message || "JSON catalog import failed"),
-    onSettled: () => setJsonImporting(false),
-  });
-
   const form = useForm<CompetitorFormData>({
     resolver: zodResolver(competitorSchema),
     defaultValues: { name: "", domain: "", description: "", logoUrl: "" },
   });
-  const allCompetitors = competitors ?? [];
+  const allCompetitors = useMemo(() => competitors ?? [], [competitors]);
   const visibleCompetitors = useMemo(() => {
     const query = competitorQuery.trim().toLocaleLowerCase();
     if (!query) return allCompetitors;
@@ -1598,18 +1162,9 @@ export default function Competitors() {
     );
   }, [allCompetitors, competitorQuery]);
 
-  const chartData = useMemo(
-    () =>
-      allCompetitors
-        .filter(c => c.status === "active")
-        .slice(0, 6)
-        .map(c => ({
-          name: c.name.length > 10 ? c.name.slice(0, 10) + "…" : c.name,
-          priceIndex: Number(c.priceIndex),
-          avgDiff: Number(c.avgPriceDiff),
-        })),
-    [allCompetitors]
-  );
+  // The feed is a permanent section, not something to open. Without a choice
+  // it shows the first competitor rather than an empty frame.
+  const shownCompetitor = feedCompetitor ?? visibleCompetitors[0] ?? null;
 
   const handleAddCompetitor = form.handleSubmit(data => {
     setDialogOpen(false);
@@ -1699,55 +1254,16 @@ export default function Competitors() {
     });
   };
 
-  const handleJsonFileSelect = async (
-    e: React.ChangeEvent<HTMLInputElement>
-  ) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    if (file.size > 900_000) {
-      toast.error("JSON catalog files must be smaller than 900 KB");
-      if (jsonFileInputRef.current) jsonFileInputRef.current.value = "";
-      return;
-    }
-    setJsonImportResult(null);
-    try {
-      const products = parseJsonCatalog(JSON.parse(await file.text()));
-      if (products.length === 0) {
-        toast.error(
-          "No valid products found. Each product needs a name and product URL."
-        );
-        return;
-      }
-      if (products.length > 500) {
-        toast.error(
-          "JSON catalog imports are limited to 500 products per file"
-        );
-        return;
-      }
-      setJsonImportPreview({ sourceName: file.name, products });
-    } catch {
-      toast.error("Invalid JSON file");
-    } finally {
-      if (jsonFileInputRef.current) jsonFileInputRef.current.value = "";
-    }
-  };
-
-  const handleConfirmJsonImport = () => {
-    if (!jsonImportPreview) return;
-    setJsonImporting(true);
-    setJsonImportResult(null);
-    importCatalogMutation.mutate(jsonImportPreview);
-  };
-
   return (
     <div className="space-y-8">
       <PageHeader
-        eyebrow="Market landscape"
+        eyebrow="Who else sells this"
         title="Competitors"
         description={
           <>
-            Real-time intelligence across {allCompetitors.length} tracked
-            competitors.
+            The {allCompetitors.length} shops we found selling what you sell.
+            You don&apos;t have to add these — we look for them after every
+            sync.
           </>
         }
       >
@@ -1762,207 +1278,79 @@ export default function Competitors() {
               className="h-9 border-outline-variant bg-surface-container pl-9"
             />
           </div>
-          <Button
-            variant="outline"
-            size="sm"
-            className="border-primary/40 text-primary hover:bg-primary/10"
-            onClick={() => jsonFileInputRef.current?.click()}
-          >
-            <Package className="mr-1.5 h-3.5 w-3.5" />
-            Import JSON Catalog
-          </Button>
-          <span className="text-[11px] text-muted-foreground">
-            Upload competitor products and prices
-          </span>
         </div>
       </PageHeader>
 
-      {/* Bento Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        {visibleCompetitors.length > 0 ? (
-          visibleCompetitors.map((comp, i) => (
-            <div
-              key={comp.id}
-              className={cn(
-                "glass-card p-5",
-                i === 0 &&
-                  "md:col-span-2 border-l-4 border-l-[var(--destructive)]"
-              )}
-            >
-              <div className="flex justify-between items-start mb-4">
-                <div className="flex items-center gap-3">
-                  <div className="flex h-10 w-10 items-center justify-center overflow-hidden rounded bg-surface-container-highest border border-outline-variant">
-                    {comp.logoUrl ? (
-                      <img
-                        src={comp.logoUrl}
-                        alt={`${comp.name} logo`}
-                        className="h-full w-full object-contain"
-                      />
-                    ) : (
-                      <span className="label-caps text-muted-foreground">
-                        {comp.name.charAt(0)}
-                      </span>
-                    )}
-                  </div>
-                  <div>
-                    <h3 className="text-[14px] font-semibold">{comp.name}</h3>
-                    <p className="text-[10px] label-caps text-muted-foreground">
-                      {comp.domain}
-                    </p>
-                  </div>
-                </div>
-                <span
-                  className={cn(
-                    "label-caps text-[9px] px-2 py-0.5 rounded",
-                    i === 0
-                      ? "bg-[var(--destructive)]/20 text-[var(--destructive)] border border-[var(--destructive)]/30"
-                      : "bg-muted text-muted-foreground"
-                  )}
-                >
-                  {i === 0 ? "CRITICAL" : "MONITORING"}
-                </span>
-              </div>
-              {i === 0 && (
-                <div className="grid grid-cols-3 gap-3 mb-4">
-                  <div className="bg-surface-container-lowest p-2 rounded">
-                    <p className="text-[8px] label-caps text-muted-foreground">
-                      OVERLAP
-                    </p>
-                    <p className="font-mono text-[13px] font-bold">
-                      {comp.productsTracked} SKUs
-                    </p>
-                  </div>
-                  <div className="bg-surface-container-lowest p-2 rounded">
-                    <p className="text-[8px] label-caps text-muted-foreground">
-                      PRICE INDEX
-                    </p>
-                    <p className="font-mono text-[13px] font-bold text-[var(--success)]">
-                      {Number(comp.priceIndex).toFixed(1)}
-                    </p>
-                  </div>
-                  <div className="bg-surface-container-lowest p-2 rounded">
-                    <p className="text-[8px] label-caps text-muted-foreground">
-                      AVG DELTA
-                    </p>
-                    <p
-                      className={cn(
-                        "font-mono text-[13px] font-bold",
-                        Number(comp.avgPriceDiff) < 0
-                          ? "text-[var(--destructive)]"
-                          : "text-primary"
-                      )}
-                    >
-                      {Number(comp.avgPriceDiff).toFixed(1)}%
-                    </p>
-                  </div>
-                </div>
-              )}
-              <div className="flex justify-between items-center text-[11px] text-muted-foreground pt-3 border-t border-outline-variant/30">
-                <div className="flex flex-col gap-0.5">
-                  <span>Products: {comp.productsTracked}</span>
-                  <span className="text-[9px] text-muted-foreground">
-                    Scoop searches: {comp.scoopSearchCount ?? 0}
-                  </span>
-                  <span className="text-[9px] text-muted-foreground">
-                    Updated:{" "}
-                    {comp.lastScoopSearchAt
-                      ? new Date(comp.lastScoopSearchAt).toLocaleDateString()
-                      : comp.lastScrapedAt
-                        ? new Date(comp.lastScrapedAt).toLocaleDateString()
-                        : "Never"}
-                  </span>
-                </div>
-                <div className="flex items-center gap-1.5">
-                  <button
-                    type="button"
-                    className="text-primary label-caps hover:underline flex items-center gap-1"
-                    onClick={() =>
-                      setFeedCompetitor({ id: comp.id, name: comp.name })
-                    }
-                  >
-                    VIEW FEED <ArrowRight className="h-3 w-3" />
-                  </button>
-                  <button
-                    type="button"
-                    className="text-primary/70 hover:text-primary transition-colors p-1"
-                    onClick={() =>
-                      setAddProductTarget({
-                        id: comp.id,
-                        name: comp.name,
-                        domain: comp.domain,
-                      })
-                    }
-                    title="Add product"
-                  >
-                    <Plus className="h-3.5 w-3.5" />
-                  </button>
-                  <button
-                    type="button"
-                    className="text-[var(--destructive)]/60 hover:text-[var(--destructive)] transition-colors p-1"
-                    onClick={() =>
-                      setDeleteTarget({ id: comp.id, name: comp.name })
-                    }
-                    title="Delete competitor"
-                  >
-                    <Trash2 className="h-3.5 w-3.5" />
-                  </button>
-                </div>
-              </div>
-            </div>
-          ))
-        ) : (
-          <div className="col-span-4">
-            <Empty>
-              <EmptyMedia variant="icon">
-                <Globe className="h-6 w-6" />
-              </EmptyMedia>
-              <EmptyHeader>
-                <EmptyTitle>
-                  {allCompetitors.length > 0
-                    ? "No competitors match your search"
-                    : "No competitors yet"}
-                </EmptyTitle>
-                <EmptyDescription>
-                  {allCompetitors.length > 0
-                    ? "Try a different brand name."
-                    : "Add your first competitor to start comparing prices and discovering market insights."}
-                </EmptyDescription>
-              </EmptyHeader>
-              <EmptyContent>
-                <Button
-                  size="sm"
-                  className="bg-primary text-primary-foreground text-xs"
-                  onClick={() => setDialogOpen(true)}
-                >
-                  <Plus className="h-3.5 w-3.5 mr-1.5" />
-                  Add Competitor
-                </Button>
-              </EmptyContent>
-            </Empty>
-          </div>
-        )}
-      </div>
-
-      {/* Feed Panel */}
-      {feedCompetitor && (
+      {/* What is happening right now, before anything that needs reading */}
+      {shownCompetitor && (
         <CompetitorFeed
-          competitorId={feedCompetitor.id}
-          competitorName={feedCompetitor.name}
-          availableCompetitors={allCompetitors}
-          onClose={() => setFeedCompetitor(null)}
+          competitorId={shownCompetitor.id}
+          competitorName={shownCompetitor.name}
+          competitorCount={visibleCompetitors.length}
+          onNext={
+            visibleCompetitors.length > 1
+              ? () => {
+                  const at = visibleCompetitors.findIndex(
+                    c => c.id === shownCompetitor.id
+                  );
+                  const next =
+                    visibleCompetitors[(at + 1) % visibleCompetitors.length];
+                  setFeedCompetitor({ id: next.id, name: next.name });
+                }
+              : undefined
+          }
         />
+      )}
+
+      {visibleCompetitors.length === 0 && (
+        <Empty>
+          <EmptyMedia variant="icon">
+            <Globe className="h-6 w-6" />
+          </EmptyMedia>
+          <EmptyHeader>
+            <EmptyTitle>
+              {allCompetitors.length > 0
+                ? "No competitors match your search"
+                : run.running
+                  ? "Looking for competitors now"
+                  : "No competitors found yet"}
+            </EmptyTitle>
+            <EmptyDescription>
+              {allCompetitors.length > 0
+                ? "Try a different brand name."
+                : run.running
+                  ? `${run.progressLabel}. Shops appear here as we find them — you don't have to do anything.`
+                  : "We search for these after every sync. Sync your store, or add one yourself if you already know who to watch."}
+            </EmptyDescription>
+          </EmptyHeader>
+          <EmptyContent>
+            <Button
+              size="sm"
+              className="bg-primary text-primary-foreground text-xs"
+              onClick={() => setDialogOpen(true)}
+            >
+              <Plus className="h-3.5 w-3.5 mr-1.5" />
+              Add a competitor
+            </Button>
+          </EmptyContent>
+        </Empty>
       )}
 
       {/* Comparison Table */}
       {allCompetitors.length > 0 && (
         <div className="glass-panel rounded-lg overflow-hidden">
           <div className="px-5 py-4 bg-surface-container/50 flex justify-between items-center">
-            <h3 className="text-[15px] font-semibold">
-              Competitor Price Comparison
-            </h3>
+            <div>
+              <h3 className="text-[15px] font-semibold">
+                How each shop prices against you
+              </h3>
+              <p className="mt-0.5 text-[13px] text-muted-foreground">
+                Worked out from the products we found on both sites.
+              </p>
+            </div>
             <div className="flex items-center gap-2 px-3 py-1 bg-surface-container-highest rounded-full border border-outline-variant">
               <div className="w-2 h-2 rounded-full bg-primary animate-pulse" />
-              <span className="label-caps text-[10px] text-muted-foreground">
+              <span className="label-caps text-[12px] text-muted-foreground">
                 Live
               </span>
             </div>
@@ -1975,28 +1363,21 @@ export default function Competitors() {
                     Competitor
                   </TableHead>
                   <TableHead className="px-5 py-3 font-normal text-right">
-                    Products
+                    Products in common
                   </TableHead>
                   <TableHead className="px-5 py-3 font-normal text-right">
-                    Price Index
+                    Their price vs yours
                   </TableHead>
                   <TableHead className="px-5 py-3 font-normal text-right">
-                    Avg Diff
-                  </TableHead>
-                  <TableHead className="px-5 py-3 font-normal">
-                    Status
+                    Last checked
                   </TableHead>
                   <TableHead className="px-5 py-3 font-normal text-right">
-                    Last Scraped
-                  </TableHead>
-                  <TableHead className="px-5 py-3 font-normal text-right">
-                    Actions
+                    &nbsp;
                   </TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody className="divide-y divide-outline-variant/20">
                 {visibleCompetitors.map(comp => {
-                  const s = statusConfig[comp.status] ?? statusConfig.active;
                   return (
                     <TableRow
                       key={comp.id}
@@ -2016,78 +1397,71 @@ export default function Competitors() {
                             )}
                           </div>
                           <div>
-                            <p className="text-[13px] font-medium">
+                            <p className="text-[14px] font-medium">
                               {comp.name}
                             </p>
-                            <p className="text-[10px] text-muted-foreground">
+                            <p className="text-[12px] text-muted-foreground">
                               {comp.domain}
                             </p>
                           </div>
                         </div>
                       </TableCell>
-                      <TableCell className="px-5 py-3 font-mono text-[13px] font-medium text-right">
+                      <TableCell className="px-5 py-3 font-mono text-[14px] font-medium text-right">
                         {comp.productsTracked.toLocaleString()}
                       </TableCell>
                       <TableCell className="px-5 py-3 text-right">
-                        <span
-                          className={cn(
-                            "font-mono text-[13px] font-medium",
-                            Number(comp.priceIndex) < 95
-                              ? "text-primary"
-                              : Number(comp.priceIndex) > 105
-                                ? "text-[var(--destructive)]"
-                                : ""
-                          )}
-                        >
-                          {Number(comp.priceIndex).toFixed(1)}
-                        </span>
+                        {comp.avgPriceDiff == null ? (
+                          <span className="text-[13px] text-muted-foreground">
+                            No shared product yet
+                          </span>
+                        ) : (
+                          (() => {
+                            const diff = Number(comp.avgPriceDiff);
+                            const dearer = diff > 0;
+                            return (
+                              <span
+                                title="Average of their price divided by yours, across the products we found on both sites"
+                                className={cn(
+                                  "inline-flex items-center gap-1 whitespace-nowrap text-[14px] font-medium",
+                                  Math.abs(diff) < 1
+                                    ? "text-muted-foreground"
+                                    : dearer
+                                      ? "text-[var(--success)]"
+                                      : "text-[var(--destructive)]"
+                                )}
+                              >
+                                {dearer ? (
+                                  <TrendingUp className="h-3.5 w-3.5" />
+                                ) : (
+                                  <TrendingDown className="h-3.5 w-3.5" />
+                                )}
+                                {Math.abs(diff) < 1
+                                  ? "About the same"
+                                  : `${Math.abs(diff).toFixed(0)}% ${dearer ? "dearer" : "cheaper"} than you`}
+                              </span>
+                            );
+                          })()
+                        )}
                       </TableCell>
-                      <TableCell className="px-5 py-3 text-right">
-                        <span
-                          className={cn(
-                            "inline-flex items-center gap-1 font-mono text-[13px] font-medium",
-                            Number(comp.avgPriceDiff) < 0
-                              ? "text-primary"
-                              : "text-[var(--destructive)]"
-                          )}
-                        >
-                          {Number(comp.avgPriceDiff) < 0 ? (
-                            <TrendingDown className="h-3 w-3" />
-                          ) : (
-                            <TrendingUp className="h-3 w-3" />
-                          )}
-                          {Number(comp.avgPriceDiff) > 0 ? "+" : ""}
-                          {Number(comp.avgPriceDiff).toFixed(1)}%
-                        </span>
-                      </TableCell>
-                      <TableCell className="px-5 py-3">
-                        <span
-                          className={cn(
-                            "inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-bold label-caps",
-                            s.className
-                          )}
-                        >
-                          {s.label}
-                        </span>
-                      </TableCell>
-                      <TableCell className="px-5 py-3 text-[11px] text-muted-foreground text-right">
-                        {(comp.lastScoopSearchAt ?? comp.lastScrapedAt)
-                          ? new Date(
-                              comp.lastScoopSearchAt ?? comp.lastScrapedAt!
-                            ).toLocaleString("en-US", {
-                              month: "short",
-                              day: "numeric",
-                              hour: "2-digit",
-                              minute: "2-digit",
-                            })
-                          : "Never"}
+                      <TableCell className="px-5 py-3 text-[13px] text-muted-foreground text-right">
+                        {comp.lastScrapedAt
+                          ? new Date(comp.lastScrapedAt).toLocaleString(
+                              "en-US",
+                              {
+                                month: "short",
+                                day: "numeric",
+                                hour: "2-digit",
+                                minute: "2-digit",
+                              }
+                            )
+                          : "Not yet"}
                       </TableCell>
                       <TableCell className="px-5 py-3 text-right">
                         <div className="flex items-center justify-end gap-1">
                           <Button
                             variant="ghost"
                             size="sm"
-                            className="h-7 px-2 text-[11px] text-primary hover:text-primary/80"
+                            className="h-7 px-2 text-[13px] text-primary hover:text-primary/80"
                             onClick={() =>
                               setAddProductTarget({
                                 id: comp.id,
@@ -2097,12 +1471,12 @@ export default function Competitors() {
                             }
                           >
                             <Plus className="h-3 w-3 mr-1" />
-                            Add
+                            Add one of their products
                           </Button>
                           <Button
                             variant="ghost"
                             size="sm"
-                            className="h-7 px-2 text-[11px] text-primary hover:text-primary/80"
+                            className="h-7 px-2 text-[13px] text-primary hover:text-primary/80"
                             onClick={() =>
                               setFeedCompetitor({
                                 id: comp.id,
@@ -2111,7 +1485,7 @@ export default function Competitors() {
                             }
                           >
                             <Activity className="h-3 w-3 mr-1" />
-                            Feed
+                            Show at top
                           </Button>
                           <Button
                             variant="ghost"
@@ -2152,13 +1526,6 @@ export default function Competitors() {
           <Upload className="mr-1.5 h-3.5 w-3.5" />
           Import CSV
         </Button>
-        <input
-          ref={jsonFileInputRef}
-          type="file"
-          accept=".json,application/json"
-          className="hidden"
-          onChange={handleJsonFileSelect}
-        />
         <Dialog
           open={dialogOpen}
           onOpenChange={o => {
@@ -2328,126 +1695,6 @@ export default function Competitors() {
                       </>
                     ) : (
                       `Import ${importPreview.filter(r => r.valid).length}`
-                    )}
-                  </Button>
-                </DialogFooter>
-              </>
-            )
-          )}
-        </DialogContent>
-      </Dialog>
-
-      {/* JSON product catalog preview */}
-      <Dialog
-        open={!!jsonImportPreview}
-        onOpenChange={open => {
-          if (!open) {
-            setJsonImportPreview(null);
-            setJsonImportResult(null);
-          }
-        }}
-      >
-        <DialogContent className="sm:max-w-[720px]">
-          <DialogHeader>
-            <DialogTitle>Import competitor product catalog</DialogTitle>
-            <DialogDescription>
-              {jsonImportResult
-                ? "Catalog imported successfully. Scoop and imported products now share the same competitor feed."
-                : `${jsonImportPreview?.products.length ?? 0} valid products found in ${jsonImportPreview?.sourceName ?? "the JSON file"}.`}
-            </DialogDescription>
-          </DialogHeader>
-          {jsonImportResult ? (
-            <div className="py-4">
-              <div className="flex items-center gap-3 rounded border border-primary/20 bg-primary/5 p-4">
-                <CheckCircle2 className="h-8 w-8 text-primary shrink-0" />
-                <div>
-                  <p className="font-medium text-primary">
-                    Imported {jsonImportResult.products} products
-                  </p>
-                  <p className="text-xs text-muted-foreground">
-                    Updated {jsonImportResult.competitors} competitor brands.
-                  </p>
-                </div>
-              </div>
-            </div>
-          ) : (
-            jsonImportPreview && (
-              <>
-                <p className="text-xs text-muted-foreground">
-                  Accepted formats: a flat product array or an object with
-                  grouped competitors and their products. Products need a name
-                  and product URL; missing values remain empty.
-                </p>
-                <div className="max-h-[360px] overflow-auto rounded border border-outline-variant">
-                  <Table>
-                    <TableHeader>
-                      <TableRow className="label-caps text-muted-foreground">
-                        <TableHead className="w-12">Image</TableHead>
-                        <TableHead>Product</TableHead>
-                        <TableHead>Competitor</TableHead>
-                        <TableHead className="text-right">Price</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody className="divide-y divide-outline-variant/20">
-                      {jsonImportPreview.products
-                        .slice(0, 100)
-                        .map((product, index) => (
-                          <tr key={`${product.productUrl}-${index}`}>
-                            <td className="w-12">
-                              {product.imageUrl ? (
-                                <img
-                                  src={product.imageUrl}
-                                  alt=""
-                                  loading="lazy"
-                                  className="h-8 w-8 rounded object-contain bg-surface-container"
-                                />
-                              ) : (
-                                <span className="text-xs text-muted-foreground">
-                                  —
-                                </span>
-                              )}
-                            </td>
-                            <td className="max-w-[280px] truncate text-sm font-medium">
-                              {product.productName}
-                            </td>
-                            <td className="text-sm text-muted-foreground">
-                              {product.brand ?? "Detected from source"}
-                            </td>
-                            <td className="text-right font-mono text-sm">
-                              {product.price
-                                ? `${product.currency ? `${product.currency} ` : ""}${product.price}`
-                                : "—"}
-                            </td>
-                          </tr>
-                        ))}
-                    </TableBody>
-                  </Table>
-                </div>
-                {jsonImportPreview.products.length > 100 && (
-                  <p className="text-xs text-muted-foreground">
-                    Showing the first 100 products. All valid products will be
-                    imported.
-                  </p>
-                )}
-                <DialogFooter className="gap-2">
-                  <Button
-                    variant="outline"
-                    onClick={() => setJsonImportPreview(null)}
-                    disabled={jsonImporting}
-                  >
-                    Cancel
-                  </Button>
-                  <Button
-                    onClick={handleConfirmJsonImport}
-                    disabled={jsonImporting}
-                  >
-                    {jsonImporting ? (
-                      <>
-                        <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
-                        Importing...
-                      </>
-                    ) : (
-                      `Import ${jsonImportPreview.products.length} products`
                     )}
                   </Button>
                 </DialogFooter>
