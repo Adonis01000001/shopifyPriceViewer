@@ -1,0 +1,1 @@
+DROP TABLE "competitor_product_dismissals" CASCADE;

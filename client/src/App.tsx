@@ -14,9 +14,7 @@ const Products = lazy(() => import("./pages/dashboard/Products"));
 const ProductDetail = lazy(() => import("./pages/dashboard/ProductDetail"));
 const Alerts = lazy(() => import("./pages/dashboard/Alerts"));
 const Competitors = lazy(() => import("./pages/dashboard/Competitors"));
-const PriceScout = lazy(() => import("./pages/dashboard/PriceScout"));
 const PathOfWisdom = lazy(() => import("./pages/dashboard/PathOfWisdom"));
-const PriceRadar = lazy(() => import("./pages/dashboard/PriceRadar"));
 const Settings = lazy(() => import("./pages/dashboard/Settings"));
 
 function DashboardPageFallback() {
@@ -89,9 +87,7 @@ function App() {
                       <Route path="/" component={Overview} />
                       <Route path="/products" component={Products} />
                       <Route path="/products/:id" component={ProductDetail} />
-                      <Route path="/scout" component={PriceScout} />
                       <Route path="/wisdom" component={PathOfWisdom} />
-                      <Route path="/price-radar" component={PriceRadar} />
                       <Route path="/alerts" component={Alerts} />
                       <Route path="/competitors" component={Competitors} />
                       <Route path="/settings" component={Settings} />

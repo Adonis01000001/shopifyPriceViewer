@@ -17,9 +17,6 @@ import {
   recommendations,
   scrapeJobs,
   activityLogs,
-  scoopSearches,
-  scoopSearchResults,
-  scoopCompetitorProducts,
 } from "./schema";
 
 export const usersRelations = relations(users, ({ many, one }) => ({
@@ -34,9 +31,6 @@ export const usersRelations = relations(users, ({ many, one }) => ({
   alerts: many(alerts),
   recommendations: many(recommendations),
   activityLogs: many(activityLogs),
-  scoopSearches: many(scoopSearches),
-  scoopSearchResults: many(scoopSearchResults),
-  scoopCompetitorProducts: many(scoopCompetitorProducts),
 }));
 
 export const subscriptionsRelations = relations(subscriptions, ({ one }) => ({
@@ -130,8 +124,6 @@ export const competitorsRelations = relations(competitors, ({ one, many }) => ({
     references: [users.id],
   }),
   competitorProducts: many(competitorProducts),
-  scoopSearchResults: many(scoopSearchResults),
-  scoopCompetitorProducts: many(scoopCompetitorProducts),
   scrapeJobs: many(scrapeJobs),
 }));
 
@@ -205,52 +197,8 @@ export const activityLogsRelations = relations(activityLogs, ({ one }) => ({
   }),
 }));
 
-export const scoopSearchesRelations = relations(
-  scoopSearches,
-  ({ one, many }) => ({
-    user: one(users, {
-      fields: [scoopSearches.userId],
-      references: [users.id],
-    }),
-    results: many(scoopSearchResults),
-  })
-);
 
-export const scoopSearchResultsRelations = relations(
-  scoopSearchResults,
-  ({ one }) => ({
-    search: one(scoopSearches, {
-      fields: [scoopSearchResults.searchId],
-      references: [scoopSearches.id],
-    }),
-    competitor: one(competitors, {
-      fields: [scoopSearchResults.competitorId],
-      references: [competitors.id],
-    }),
-    user: one(users, {
-      fields: [scoopSearchResults.userId],
-      references: [users.id],
-    }),
-  })
-);
 
-export const scoopCompetitorProductsRelations = relations(
-  scoopCompetitorProducts,
-  ({ one }) => ({
-    competitor: one(competitors, {
-      fields: [scoopCompetitorProducts.competitorId],
-      references: [competitors.id],
-    }),
-    user: one(users, {
-      fields: [scoopCompetitorProducts.userId],
-      references: [users.id],
-    }),
-    latestSearch: one(scoopSearches, {
-      fields: [scoopCompetitorProducts.latestSearchId],
-      references: [scoopSearches.id],
-    }),
-  })
-);
 
 // Aggregate relations object passed to drizzle() so the relational query
 // builder (db.query.<table>) is typed. Table keys must match the table
@@ -273,7 +221,4 @@ export const dbRelations = {
   recommendations: recommendationsRelations,
   scrapeJobs: scrapeJobsRelations,
   activityLogs: activityLogsRelations,
-  scoopSearches: scoopSearchesRelations,
-  scoopSearchResults: scoopSearchResultsRelations,
-  scoopCompetitorProducts: scoopCompetitorProductsRelations,
 } as const;
