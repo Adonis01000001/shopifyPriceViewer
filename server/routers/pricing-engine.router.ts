@@ -2,6 +2,7 @@ import { z } from "zod";
 import { AUTO_GENERATED_COMPETITOR_MATCH_METHOD } from "@shared/const";
 import { protectedProcedure, router } from "../_core/trpc";
 import { pricingEngine } from "../services/pricing-engine.service";
+import { pricingRulesService } from "../services/pricing-rules.service";
 import { recommendationService } from "../services/recommendation.service";
 import { productService } from "../services/product.service";
 import { getAiRecommendation } from "../services/ai-recommendation.service";
@@ -67,6 +68,7 @@ export const pricingEngineRouter = router({
         merchantPrice,
         costPrice,
         competitorPrices: prices,
+        rules: await pricingRulesService.forUser(ctx.user!.id),
       });
 
       return {
@@ -132,6 +134,7 @@ export const pricingEngineRouter = router({
         merchantPrice,
         costPrice,
         competitorPrices: prices,
+        rules: await pricingRulesService.forUser(ctx.user!.id),
       });
 
       const aiResult = await getAiRecommendation({
@@ -222,27 +225,16 @@ export const pricingEngineRouter = router({
         merchantPrice,
         costPrice,
         competitorPrices: prices,
+        rules: await pricingRulesService.forUser(ctx.user!.id),
       });
 
-      const aiResult = await getAiRecommendation({
-        productTitle: product[0].title,
-        productCategory: product[0].category,
-        merchantPrice,
-        costPrice,
-        competitorCount: prices.length,
-        competitorPrices: compRows.map(c => ({
-          name: c.name,
-          price: Number(c.price),
-        })),
-        marketPosition: analysis.position.status,
-        avgCompetitorPrice: analysis.marketSnapshot.avgCompetitorPrice,
-      });
-
+      // This used to ask a language model for a second opinion and show its
+      // number beside the calculated one. Two different prices on one screen
+      // is not advice, and it billed a model call on every page view.
       return {
         productId: product[0].id,
         productTitle: product[0].title,
         ...analysis,
-        aiRecommendation: aiResult ?? null,
         competitors: compRows.map(c => ({
           name: c.name,
           price: Number(c.price),
@@ -287,6 +279,7 @@ export const pricingEngineRouter = router({
       };
     }[] = [];
 
+    const rules = await pricingRulesService.forUser(ctx.user!.id);
     for (const product of tracked) {
       const compPrices = await productService.getCompetitorPrices(
         ctx.user!.id,
@@ -301,6 +294,7 @@ export const pricingEngineRouter = router({
         merchantPrice,
         costPrice,
         competitorPrices: prices,
+        rules,
       });
 
       results.push({
@@ -412,6 +406,7 @@ export const pricingEngineRouter = router({
       total: tracked.length,
     };
 
+    const rules = await pricingRulesService.forUser(ctx.user!.id);
     for (const product of tracked) {
       const compPrices = await productService.getCompetitorPrices(
         ctx.user!.id,
@@ -426,6 +421,7 @@ export const pricingEngineRouter = router({
         merchantPrice,
         costPrice,
         competitorPrices: prices,
+        rules,
       });
 
       switch (analysis.position.status) {

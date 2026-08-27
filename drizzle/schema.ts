@@ -115,6 +115,15 @@ export const users = pgTable(
     loginMethod: varchar("login_method", { length: 64 }),
     role: userRoleEnum("role").default("user").notNull(),
     avatarUrl: text("avatar_url"),
+    // The two rules every suggested price is built from: aim this far under
+    // the competitor average, but never below cost plus this margin. Stored
+    // as percentages because that is how they are set and explained.
+    undercutPercent: decimal("undercut_percent", { precision: 5, scale: 2 })
+      .default("5.00")
+      .notNull(),
+    minMarginPercent: decimal("min_margin_percent", { precision: 5, scale: 2 })
+      .default("10.00")
+      .notNull(),
     createdAt: timestamp("created_at", { withTimezone: true })
       .defaultNow()
       .notNull(),

@@ -10,6 +10,7 @@ import {
   type InsertRecommendation,
 } from "../../drizzle/schema";
 import { pricingEngine } from "./pricing-engine.service";
+import { pricingRulesService } from "./pricing-rules.service";
 
 function round(n: number): number {
   return Math.round(n * 100) / 100;
@@ -205,6 +206,8 @@ export const recommendationService = {
       | import("./pricing-engine.service").PricingRecommendation
       | null = null;
     let confidenceScore = 0.6; // default confidence when no competitor data
+    const rules = await pricingRulesService.forUser(userId);
+    const minMarginPercent = Math.round((1 - 1 / rules.marginFactor) * 100);
 
     if (compPrices.length > 0) {
       prices = compPrices.map((c: { price: string }) => Number(c.price));
@@ -213,6 +216,7 @@ export const recommendationService = {
         merchantPrice,
         costPrice,
         competitorPrices: prices,
+        rules,
       });
       recommendation = analysis.recommendation;
       confidenceScore = Math.min(0.5 + compPrices.length * 0.1, 0.95);
@@ -221,9 +225,11 @@ export const recommendationService = {
     // Fallback: if no competitor data or engine returned no recommendation,
     // generate a default recommendation based on cost price or a modest increase
     if (!recommendation) {
-      const floorPrice = costPrice ? costPrice * 1.1 : merchantPrice * 0.9;
+      const floorPrice = costPrice
+        ? costPrice * rules.marginFactor
+        : merchantPrice * 0.9;
       const recommendedPrice = costPrice
-        ? Math.max(costPrice * 1.1, merchantPrice * 1.02)
+        ? Math.max(costPrice * rules.marginFactor, merchantPrice * 1.02)
         : merchantPrice * 1.05;
       const finalPrice = Math.max(recommendedPrice, floorPrice);
 
@@ -234,7 +240,7 @@ export const recommendationService = {
           minimumAllowedPrice: round(floorPrice),
           marginProtectionApplied: costPrice != null,
           explanation: costPrice
-            ? `No competitor data available. Suggested price ensures ${(pricingEngine.MARGIN_FACTOR * 100 - 100).toFixed(0)}% margin above cost ($${costPrice.toFixed(2)}).`
+            ? `No competitor data available. Suggested price ensures ${minMarginPercent}% margin above cost ($${costPrice.toFixed(2)}).`
             : "No competitor data available. Suggested 5% price increase to test market positioning.",
         };
       recommendation = fallback;
@@ -261,6 +267,7 @@ export const recommendationService = {
               merchantPrice,
               costPrice,
               competitorPrices: prices,
+              rules,
             }).position.status
           : "INSUFFICIENT_DATA",
       priceDiffFromAvg: null,

@@ -1,0 +1,2 @@
+ALTER TABLE "users" ADD COLUMN "undercut_percent" numeric(5, 2) DEFAULT '5.00' NOT NULL;--> statement-breakpoint
+ALTER TABLE "users" ADD COLUMN "min_margin_percent" numeric(5, 2) DEFAULT '10.00' NOT NULL;

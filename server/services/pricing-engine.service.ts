@@ -51,12 +51,44 @@ export interface AnalyzeProductInput {
   merchantPrice: number;
   costPrice: number | null;
   competitorPrices: number[];
+  /** The merchant's own rules. Omitted, the defaults apply. */
+  rules?: PricingRules;
 }
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
 export const UNDERCUT_FACTOR = 0.95; // 5% below average
 export const MARGIN_FACTOR = 1.1; // 10% minimum margin above cost
+
+/** The two rules a merchant can change, as factors rather than percentages. */
+export interface PricingRules {
+  undercutFactor: number;
+  marginFactor: number;
+}
+
+export const DEFAULT_PRICING_RULES: PricingRules = {
+  undercutFactor: UNDERCUT_FACTOR,
+  marginFactor: MARGIN_FACTOR,
+};
+
+/** Percentages are what a merchant sets; factors are what the maths wants. */
+export function rulesFromPercents(input: {
+  undercutPercent?: string | number | null;
+  minMarginPercent?: string | number | null;
+}): PricingRules {
+  const undercut = Number(input.undercutPercent);
+  const margin = Number(input.minMarginPercent);
+  return {
+    undercutFactor:
+      Number.isFinite(undercut) && undercut >= 0 && undercut < 100
+        ? 1 - undercut / 100
+        : UNDERCUT_FACTOR,
+    marginFactor:
+      Number.isFinite(margin) && margin >= 0 && margin < 100
+        ? 1 / (1 - margin / 100)
+        : MARGIN_FACTOR,
+  };
+}
 export const COMPETITIVE_THRESHOLD = 0.03; // ±3% band
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -94,10 +126,12 @@ export function calculateAverageCompetitorPrice(
 
 export function calculateRecommendedPrice(
   avgCompetitorPrice: number,
-  costPrice: number | null
+  costPrice: number | null,
+  rules: PricingRules = DEFAULT_PRICING_RULES
 ): PricingRecommendation {
+  const undercutPercent = Math.round((1 - rules.undercutFactor) * 100);
   const undercutPrice = roundToTwoDecimals(
-    avgCompetitorPrice * UNDERCUT_FACTOR
+    avgCompetitorPrice * rules.undercutFactor
   );
 
   // If no cost data, no margin floor
@@ -109,13 +143,13 @@ export function calculateRecommendedPrice(
       marginProtectionApplied: false,
       explanation: `$${undercutPrice.toFixed(
         2
-      )} — 5% below competitor market average of $${avgCompetitorPrice.toFixed(
+      )} — ${undercutPercent}% below competitor market average of $${avgCompetitorPrice.toFixed(
         2
       )}.`,
     };
   }
 
-  const minimumAllowedPrice = roundToTwoDecimals(costPrice * MARGIN_FACTOR);
+  const minimumAllowedPrice = roundToTwoDecimals(costPrice * rules.marginFactor);
 
   if (undercutPrice >= minimumAllowedPrice) {
     return {
@@ -125,7 +159,7 @@ export function calculateRecommendedPrice(
       marginProtectionApplied: false,
       explanation: `$${undercutPrice.toFixed(
         2
-      )} — 5% below competitor market average of $${avgCompetitorPrice.toFixed(
+      )} — ${undercutPercent}% below competitor market average of $${avgCompetitorPrice.toFixed(
         2
       )} while maintaining margin protection.`,
     };
@@ -205,6 +239,7 @@ export function classifyMarketPosition(
 
 export function analyzeProduct(input: AnalyzeProductInput): ProductAnalysis {
   const { merchantPrice, costPrice, competitorPrices } = input;
+  const rules = input.rules ?? DEFAULT_PRICING_RULES;
 
   const validPrices = filterValidPrices(competitorPrices);
   const avgPrice = calculateAverageCompetitorPrice(validPrices);
@@ -222,7 +257,7 @@ export function analyzeProduct(input: AnalyzeProductInput): ProductAnalysis {
   let recommendation: PricingRecommendation | null = null;
 
   if (avgPrice !== null) {
-    recommendation = calculateRecommendedPrice(avgPrice, costPrice);
+    recommendation = calculateRecommendedPrice(avgPrice, costPrice, rules);
   }
 
   const position = classifyMarketPosition(merchantPrice, avgPrice);
@@ -237,6 +272,8 @@ export const pricingEngine = {
   calculateRecommendedPrice,
   classifyMarketPosition,
   analyzeProduct,
+  rulesFromPercents,
+  DEFAULT_PRICING_RULES,
   UNDERCUT_FACTOR,
   MARGIN_FACTOR,
   COMPETITIVE_THRESHOLD,

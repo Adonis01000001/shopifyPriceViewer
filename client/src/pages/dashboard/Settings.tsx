@@ -28,9 +28,10 @@ import {
   LogOut,
   Globe,
   Trash2,
+  Calculator,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { toast } from "sonner";
 
 export default function Settings() {
@@ -59,6 +60,29 @@ export default function Settings() {
     onError: err => toast.error(err.message || "Failed to disconnect"),
   });
 
+  const { data: pricingRules } = trpc.account.pricingRules.useQuery();
+  const [undercut, setUndercut] = useState("");
+  const [minMargin, setMinMargin] = useState("");
+  // The saved values arrive after first paint; fill the boxes once they do,
+  // and never again, so typing is not overwritten by a refetch.
+  useEffect(() => {
+    if (!pricingRules) return;
+    setUndercut(prev => (prev === "" ? String(pricingRules.undercutPercent) : prev));
+    setMinMargin(prev =>
+      prev === "" ? String(pricingRules.minMarginPercent) : prev
+    );
+  }, [pricingRules]);
+
+  const updatePricingRules = trpc.account.updatePricingRules.useMutation({
+    onSuccess: () => {
+      utils.account.pricingRules.invalidate();
+      utils.recommendations.list.invalidate();
+      utils.pricingEngine.analyze.invalidate();
+      toast.success("Saved. New suggestions will use these rules.");
+    },
+    onError: err => toast.error(err.message || "Could not save"),
+  });
+
   const [name, setName] = useState(user?.name ?? "");
   const [email, setEmail] = useState(user?.email ?? "");
 
@@ -66,7 +90,7 @@ export default function Settings() {
   return (
     <div className="space-y-8 max-w-3xl">
       <PageHeader
-        eyebrow="Workspace configuration"
+        eyebrow="Settings"
         title="Settings"
         description="Manage your account, connected stores, and preferences."
       />
@@ -133,9 +157,104 @@ export default function Settings() {
               Sign Out
             </Button>
           </div>
-          <p className="text-[10px] text-muted-foreground/60">
+          <p className="text-[12px] text-muted-foreground/60">
             Profile updates and password changes coming soon.
           </p>
+        </CardContent>
+      </Card>
+
+      {/* How prices are worked out */}
+      <Card className="border-outline-variant/30">
+        <CardHeader>
+          <div className="flex items-center gap-2">
+            <Calculator className="h-4 w-4 text-primary" />
+            <CardTitle className="text-base">
+              How we work out a suggested price
+            </CardTitle>
+          </div>
+          <CardDescription>
+            Every suggestion follows these two rules, in this order.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-5">
+          <div className="grid gap-5 sm:grid-cols-2">
+            <div className="space-y-1.5">
+              <Label htmlFor="undercut" className="text-sm">
+                Aim this far below what other shops charge
+              </Label>
+              <div className="flex items-center gap-2">
+                <Input
+                  id="undercut"
+                  type="number"
+                  step="0.5"
+                  className="h-11 w-28 text-right font-mono"
+                  value={undercut}
+                  onChange={e => setUndercut(e.target.value)}
+                />
+                <span className="text-sm text-muted-foreground">
+                  % under their average
+                </span>
+              </div>
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="min-margin" className="text-sm">
+                Never leave less margin than this
+              </Label>
+              <div className="flex items-center gap-2">
+                <Input
+                  id="min-margin"
+                  type="number"
+                  step="0.5"
+                  className="h-11 w-28 text-right font-mono"
+                  value={minMargin}
+                  onChange={e => setMinMargin(e.target.value)}
+                />
+                <span className="text-sm text-muted-foreground">
+                  % of the selling price
+                </span>
+              </div>
+            </div>
+          </div>
+
+          <p className="rounded-lg bg-surface-container px-4 py-3 text-[14px] leading-relaxed text-muted-foreground">
+            On a product costing $10 that rivals sell for $20 on average, we
+            would suggest{" "}
+            <span className="font-mono font-medium text-foreground">
+              ${(20 * (1 - (Number(undercut) || 0) / 100)).toFixed(2)}
+            </span>
+            . We would never go below{" "}
+            <span className="font-mono font-medium text-foreground">
+              ${(10 / (1 - Math.min(Number(minMargin) || 0, 90) / 100)).toFixed(2)}
+            </span>
+            , which is what $10 of cost has to sell for to leave{" "}
+            {Number(minMargin) || 0}% margin.
+          </p>
+
+          <div className="flex items-center gap-3">
+            <Button
+              size="sm"
+              className="h-11"
+              disabled={updatePricingRules.isPending}
+              onClick={() =>
+                updatePricingRules.mutate({
+                  undercutPercent: Number(undercut),
+                  minMarginPercent: Number(minMargin),
+                })
+              }
+            >
+              {updatePricingRules.isPending ? "Saving..." : "Save these rules"}
+            </Button>
+            <button
+              type="button"
+              className="text-[13px] text-muted-foreground underline-offset-4 hover:underline"
+              onClick={() => {
+                setUndercut("5");
+                setMinMargin("10");
+              }}
+            >
+              Back to 5% and 10%
+            </button>
+          </div>
         </CardContent>
       </Card>
 
@@ -178,12 +297,12 @@ export default function Settings() {
                       {store.shopDomain?.charAt(0).toUpperCase() || "S"}
                     </div>
                     <div className="min-w-0">
-                      <p className="text-[13px] font-medium truncate">
+                      <p className="text-[14px] font-medium truncate">
                         {store.shopDomain || "Unknown store"}
                       </p>
                       <p
                         className={cn(
-                          "text-[10px] label-caps",
+                          "text-[12px] label-caps",
                           store.isActive
                             ? "text-primary"
                             : "text-muted-foreground"
@@ -304,7 +423,7 @@ export default function Settings() {
               </SelectContent>
             </Select>
           </div>
-          <p className="text-[10px] text-muted-foreground/60 mt-1">
+          <p className="text-[12px] text-muted-foreground/60 mt-1">
             In-app alerts are active now. SMTP-backed email delivery is staged
             for the notification worker rollout.
           </p>
