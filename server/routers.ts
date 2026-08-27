@@ -8,6 +8,7 @@ import { priceRouter } from "./routers/price.router";
 import { alertRouter } from "./routers/alert.router";
 import { recommendationRouter } from "./routers/recommendation.router";
 import { activityRouter } from "./routers/activity.router";
+import { pipelineRouter } from "./routers/pipeline.router";
 import { authRouter } from "./routers/auth.router";
 import { intelligenceRouter } from "./routers/intelligence.router";
 import { pricingEngineRouter } from "./routers/pricing-engine.router";
@@ -36,6 +37,7 @@ export const appRouter = router({
   alerts: alertRouter,
   recommendations: recommendationRouter,
   activity: activityRouter,
+  pipeline: pipelineRouter,
   intelligence: intelligenceRouter,
   pricingEngine: pricingEngineRouter,
   notifications: notificationRouter,
@@ -215,7 +217,10 @@ export const appRouter = router({
 
         // 3. Fetch ALL products from Shopify Admin API (cursor-based pagination)
         const shopDomain = store.shopDomain;
-        const baseUrl = `https://${shopDomain}/admin/api/2025-01/products.json?limit=250`;
+        // Only products the shop is actually selling. Drafts and archived
+        // items are not on sale, so monitoring competitors for them wastes
+        // searches and puts things a merchant has retired on their dashboard.
+        const baseUrl = `https://${shopDomain}/admin/api/2025-01/products.json?limit=250&status=active`;
         const allShopifyProducts: any[] = [];
         let nextUrl: string | null = baseUrl;
         const fetchOpts = {
@@ -252,6 +257,42 @@ export const appRouter = router({
           nextUrl = nextMatch ? nextMatch[1] : null;
         }
 
+        // 3b. Fetch unit cost per variant. Shopify keeps cost on InventoryItem,
+        // not on the product payload, so it needs a second call. Without it
+        // costPrice stays null and the pricing engine silently skips the
+        // margin floor.
+        const inventoryItemIds: string[] = allShopifyProducts
+          .map((sp: any) => sp.variants?.[0]?.inventory_item_id)
+          .filter(Boolean)
+          .map((id: any) => String(id));
+        const costByInventoryItemId = new Map<string, string>();
+
+        for (let i = 0; i < inventoryItemIds.length; i += 100) {
+          const batch = inventoryItemIds.slice(i, i + 100);
+          const costResp: Response = await fetch(
+            `https://${shopDomain}/admin/api/2025-01/inventory_items.json?ids=${batch.join(",")}&limit=100`,
+            { ...fetchOpts, signal: AbortSignal.timeout(30000) }
+          );
+          if (!costResp.ok) {
+            logger.warn(
+              { status: costResp.status },
+              "Shopify inventory cost fetch failed; margin protection will be unavailable for this sync"
+            );
+            break;
+          }
+          const costData: any = await costResp.json();
+          for (const item of costData.inventory_items || []) {
+            if (item?.cost != null && item.cost !== "") {
+              costByInventoryItemId.set(String(item.id), String(item.cost));
+            }
+          }
+        }
+
+        logger.info(
+          { withCost: costByInventoryItemId.size, total: inventoryItemIds.length },
+          "Shopify sync: unit costs resolved"
+        );
+
         if (allShopifyProducts.length === 0) {
           await database
             .update(shopifyStores)
@@ -278,6 +319,9 @@ export const appRouter = router({
             tags: sp.tags || null,
             price: variant?.price || "0.00",
             compareAtPrice: variant?.compare_at_price || null,
+            costPrice: variant?.inventory_item_id
+              ? (costByInventoryItemId.get(String(variant.inventory_item_id)) ?? null)
+              : null,
             currency: store.currency || "USD",
             imageUrl: sp.images?.[0]?.src || null,
             status: "optimal" as const,
@@ -296,9 +340,20 @@ export const appRouter = router({
           .set({ lastSyncedAt: new Date(), updatedAt: new Date() })
           .where(eq(shopifyStores.id, input.storeId));
 
+        // 7. Import is the trigger. The whole chain -- discover competitors,
+        // read their pages, validate with one AI call, price -- runs from here
+        // without the merchant pressing anything. Fire and forget so the sync
+        // response is not held open for the length of the pipeline.
+        const pipelineUserId = ctx.user!.id;
+        void import("./services/pipeline.service")
+          .then(({ pipelineService }) => pipelineService.runForUser(pipelineUserId))
+          .catch((err: unknown) =>
+            logger.error({ err }, "Post-sync pipeline failed")
+          );
+
         return {
           synced: count,
-          message: `Synced ${count} products from Shopify`,
+          message: `Synced ${count} products from Shopify. Finding competitor prices now.`,
         };
       }),
 

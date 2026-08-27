@@ -253,6 +253,83 @@ async function handleGoogleCallback(req: Request, res: Response): Promise<void> 
   }
 }
 
+/**
+ * Connect failures used to return raw JSON on a blank page, which is what the
+ * merchant saw as the very first thing the product ever showed them. This
+ * renders the same information as a page they can act on.
+ */
+function sendConnectError(
+  res: Response,
+  status: number,
+  heading: string,
+  detail: string
+) {
+  res.setHeader("Content-Type", "text/html; charset=utf-8");
+  res.status(status).send(`<!DOCTYPE html>
+<html lang="en"><head><meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Connect your Shopify store</title>
+<style>
+ *{box-sizing:border-box} body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;
+ font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;background:#0f0b2e;color:#e0e0e0}
+ .card{background:#1a1145;border-radius:12px;padding:36px;max-width:460px;width:100%;box-shadow:0 4px 24px rgba(0,0,0,.3)}
+ h1{font-size:19px;margin:0 0 10px;color:#fff} p{font-size:14px;line-height:1.6;color:#b6b6d0;margin:0 0 22px}
+ a{display:inline-block;padding:10px 18px;border-radius:8px;background:#818cf8;color:#fff;text-decoration:none;font-size:14px}
+ a:hover{background:#6d78e8}
+</style></head>
+<body><div class="card">
+ <h1>${heading}</h1>
+ <p>${detail}</p>
+ <a href="/api/shopify/login">Try again</a>
+</div></body></html>`);
+}
+
+const SHOPIFY_API_VERSION = "2025-01";
+
+/**
+ * Shopify only sends webhooks a shop is subscribed to. Without this the
+ * uninstall handler never fires, so an app removed from a store leaves us
+ * holding a dead token and a permanent claim on that shop domain.
+ *
+ * Failures are logged rather than thrown: a merchant who has just approved
+ * the permissions should end up connected even if this call does not land.
+ */
+async function registerShopifyWebhooks(shop: string, accessToken: string) {
+  const address = `${ENV.appUrl.replace(/\/$/, "")}/api/shopify/webhooks`;
+  const topics = [
+    "app/uninstalled",
+    "customers/data_request",
+    "customers/redact",
+    "shop/redact",
+  ];
+
+  for (const topic of topics) {
+    try {
+      const response = await fetch(
+        `https://${shop}/admin/api/${SHOPIFY_API_VERSION}/webhooks.json`,
+        {
+          method: "POST",
+          headers: {
+            "X-Shopify-Access-Token": accessToken,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ webhook: { topic, address, format: "json" } }),
+          signal: AbortSignal.timeout(15000),
+        }
+      );
+      // 422 is Shopify's "already subscribed", which is success for us.
+      if (!response.ok && response.status !== 422) {
+        logger.warn(
+          { shop, topic, status: response.status },
+          "Shopify webhook subscription rejected"
+        );
+      }
+    } catch (err) {
+      logger.warn({ shop, topic, err }, "Shopify webhook subscription failed");
+    }
+  }
+}
+
 export function registerOAuthRoutes(app: Express) {
   app.get("/api/oauth/google/start", (req: Request, res: Response) => {
     if (!ENV.googleClientId || !ENV.googleClientSecret) {
@@ -370,17 +447,32 @@ export function registerOAuthRoutes(app: Express) {
    * The /api/shopify/connect alias remains for backwards compatibility with
    * existing clients and integrations.
    */
+  /**
+   * The connect form accepts either the store handle on its own
+   * ("my-store") or the full domain ("my-store.myshopify.com").
+   */
+  const normalizeShopDomain = (value: string | undefined) => {
+    const trimmed = value?.trim().toLowerCase().replace(/\/+$/, "");
+    if (!trimmed) return trimmed;
+    const withoutScheme = trimmed.replace(/^https?:\/\//, "");
+    if (withoutScheme.includes(".")) return withoutScheme;
+    return `${withoutScheme}.myshopify.com`;
+  };
+
   const handleShopifyConnect = async (
     req: Request,
     res: Response,
     interactive = false
   ) => {
-    const shop = getQueryParam(req, "shop");
+    const shop = normalizeShopDomain(getQueryParam(req, "shop"));
 
     if (!shop || !isValidShopDomain(shop)) {
-      res
-        .status(400)
-        .json({ error: "Valid shop parameter required (*.myshopify.com)" });
+      sendConnectError(
+        res,
+        400,
+        "That does not look like a Shopify store address",
+        "Enter the full address of your store, ending in .myshopify.com &mdash; for example <strong>my-store.myshopify.com</strong>."
+      );
       return;
     }
 
@@ -559,36 +651,55 @@ export function registerOAuthRoutes(app: Express) {
         return;
       }
 
+      await registerShopifyWebhooks(shop, accessToken);
+
       // Encrypt token before storing
       const encryptedToken = encryptToken(accessToken);
 
       // Store in database
       const database = await db.getDb();
-      if (database) {
+      if (!database) {
+        // Redirecting to a success page without having saved anything left the
+        // app claiming a store it did not have, and the only symptom was an
+        // onboarding step that never ticked off.
+        sendConnectError(
+          res,
+          503,
+          "Could not save the connection",
+          "Your store authorised the app, but we could not record it. Try connecting again in a moment."
+        );
+        return;
+      }
+      {
         // Check if store already exists for this user
         const existing = await database.query.shopifyStores.findFirst({
           where: eq(shopifyStores.shopDomain, shop),
         });
 
         if (existing) {
-          if (existing.userId !== userId) {
-            res.status(403).json({ error: "Shopify store belongs to another user" });
+          // A store whose app was uninstalled (or disconnected here) holds no
+          // token, so nobody is really using it. Whoever reinstalls next takes
+          // it over; otherwise an uninstall would lock the domain forever.
+          const claimIsLive = existing.isActive && !!existing.accessToken;
+          if (existing.userId !== userId && claimIsLive) {
+            sendConnectError(
+              res,
+              403,
+              "This store is already connected to another account",
+              "Each Shopify store can currently be connected to one PriceIntel account at a time. Sign in with the account that connected it and disconnect it there, or remove the app from your Shopify admin, then try again."
+            );
             return;
           }
           await database
             .update(shopifyStores)
             .set({
+              userId,
               accessToken: encryptedToken,
               scopes: ENV.shopifyScopes,
               isActive: true,
               updatedAt: new Date(),
             })
-            .where(
-              and(
-                eq(shopifyStores.id, existing.id),
-                eq(shopifyStores.userId, userId)
-              )
-            );
+            .where(eq(shopifyStores.id, existing.id));
         } else {
           await database.insert(shopifyStores).values({
             userId,

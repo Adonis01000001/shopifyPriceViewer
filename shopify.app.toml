@@ -1,26 +1,21 @@
 # Learn more about configuring your app at https://shopify.dev/docs/apps/tools/cli/configuration
 
-client_id = "099318d458d823b2fc34f0f458a8cd8a"
-application_url = "http://localhost:3000"
+client_id = "8fd0ebc852bbbfd639d5d4c61490f0e6"
+application_url = "https://pv.haddi.me"
 embedded = false
-name = "PriceVision Local Sync"
+name = "Price Intelligence"
 
 [access_scopes]
 # Learn more at https://shopify.dev/docs/apps/tools/cli/configuration#access_scopes
-scopes = "read_products"
+scopes = "read_products,write_products,read_orders,read_inventory,write_inventory"
 optional_scopes = [ ]
 use_legacy_install_flow = true
 
 [auth]
-redirect_urls = [ "http://localhost:3000/api/shopify/callback" ]
+redirect_urls = [ "https://pv.haddi.me/api/shopify/callback" ]
 
 [webhooks]
 api_version = "2026-07"
 
-[[webhooks.subscriptions]]
-topics = [ "app/uninstalled" ]
-uri = "/api/shopify/webhooks"
-
-[[webhooks.subscriptions]]
-compliance_topics = [ "customers/data_request", "customers/redact", "shop/redact" ]
-uri = "/api/shopify/webhooks"
+# The app registers webhooks per shop at install time and uses the legacy
+# install flow, which is incompatible with app-specific subscriptions here.
