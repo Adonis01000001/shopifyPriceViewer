@@ -97,7 +97,7 @@ export function RecentActivity() {
                   </div>
                   <Badge
                     variant="secondary"
-                    className="shrink-0 text-[10px] font-normal"
+                    className="shrink-0 text-[12px] font-normal"
                   >
                     {item.createdAt ? timeAgo(item.createdAt) : ""}
                   </Badge>

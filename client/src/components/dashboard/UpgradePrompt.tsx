@@ -36,19 +36,19 @@ export function UpgradePrompt({
             <Sparkles className="h-4 w-4" aria-hidden="true" />
           </div>
           <div>
-            <p className="label-caps text-[10px] text-primary">UNLOCK {plan}</p>
+            <p className="label-caps text-[12px] text-primary">UNLOCK {plan}</p>
             <h3 className="mt-1 text-sm font-semibold">{title}</h3>
             <p className="mt-1 max-w-2xl text-xs text-muted-foreground">
               {description}
             </p>
             {metric && (
-              <p className="mt-2 text-[11px] font-medium text-primary">{metric}</p>
+              <p className="mt-2 text-[13px] font-medium text-primary">{metric}</p>
             )}
           </div>
         </div>
         <button
           type="button"
-          className="inline-flex shrink-0 items-center justify-center gap-1.5 rounded-md bg-primary px-3 py-2 text-[11px] font-bold text-primary-foreground transition hover:brightness-110"
+          className="inline-flex shrink-0 items-center justify-center gap-1.5 rounded-md bg-primary px-3 py-2 text-[13px] font-bold text-primary-foreground transition hover:brightness-110"
           onClick={() => {
             track("plan_selected", { plan, source: "contextual_upgrade_prompt", feature });
             setLocation("/settings#billing");

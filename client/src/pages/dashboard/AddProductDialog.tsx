@@ -335,7 +335,7 @@ export default function AddProductDialog({ onSuccess }: Props) {
                     placeholder="e.g. ABC-123"
                     maxLength={100}
                   />
-                  <p className="text-[10px] text-muted-foreground mt-1">
+                  <p className="text-[12px] text-muted-foreground mt-1">
                     Optional. Recommended for accurate competitor matching.
                   </p>
                 </div>

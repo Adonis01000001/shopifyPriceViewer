@@ -123,6 +123,12 @@
 }
 
 @theme inline {
+  /* The low end of the default scale was too small for numbers a merchant is
+     meant to act on. Nothing renders below 12px. */
+  --text-xs: 0.8125rem;
+  --text-xs--line-height: 1.15rem;
+  --text-sm: 0.9rem;
+  --text-sm--line-height: 1.3rem;
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --color-card: var(--card);
@@ -312,7 +318,7 @@
   margin-top: 0.1rem;
   color: var(--muted-foreground);
   font-family: var(--font-mono);
-  font-size: 0.56rem;
+  font-size: 0.75rem;
   font-weight: 600;
   letter-spacing: 0.13em;
   line-height: 1;
@@ -347,7 +353,7 @@
 .app-workspace-label {
   color: rgba(255, 255, 255, 0.62);
   font-family: var(--font-mono);
-  font-size: 0.52rem;
+  font-size: 0.75rem;
   letter-spacing: 0.1em;
   text-transform: uppercase;
 }
@@ -356,7 +362,7 @@
   overflow: hidden;
   margin-top: 0.18rem;
   color: #fff;
-  font-size: 0.72rem;
+  font-size: 0.85rem;
   font-weight: 600;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -376,7 +382,7 @@
   padding: 0.45rem 0.65rem 0.25rem;
   color: var(--muted-foreground);
   font-family: var(--font-mono);
-  font-size: 0.55rem;
+  font-size: 0.75rem;
   font-weight: 600;
   letter-spacing: 0.13em;
   text-transform: uppercase;
@@ -478,7 +484,7 @@
   background: var(--accent);
   color: var(--accent-foreground);
   font-family: var(--font-mono);
-  font-size: 0.68rem;
+  font-size: 0.81rem;
   font-weight: 700;
 }
 .app-account-name,
@@ -496,7 +502,7 @@
 .app-account-role {
   margin-top: 0.1rem;
   color: var(--muted-foreground);
-  font-size: 0.62rem;
+  font-size: 0.75rem;
 }
 .app-main {
   min-width: 0;
@@ -528,7 +534,7 @@
 .app-topbar-eyebrow {
   color: var(--muted-foreground);
   font-family: var(--font-mono);
-  font-size: 0.54rem;
+  font-size: 0.75rem;
   font-weight: 600;
   letter-spacing: 0.12em;
   text-transform: uppercase;
@@ -584,7 +590,7 @@
   color: var(--muted-foreground);
   padding: 0.18rem 0.38rem;
   font-family: var(--font-mono);
-  font-size: 0.55rem;
+  font-size: 0.75rem;
   white-space: nowrap;
 }
 .app-search-popover,
@@ -608,7 +614,7 @@
   padding: 0.65rem 0.65rem 0.35rem;
   color: var(--muted-foreground);
   font-family: var(--font-mono);
-  font-size: 0.55rem;
+  font-size: 0.75rem;
   font-weight: 600;
   letter-spacing: 0.1em;
   text-transform: uppercase;
@@ -656,7 +662,7 @@
   margin-top: 0.15rem;
   color: var(--muted-foreground);
   font-family: var(--font-mono);
-  font-size: 0.58rem;
+  font-size: 0.75rem;
 }
 .app-topbar-button,
 .app-icon-button,
@@ -673,7 +679,7 @@
   box-shadow: var(--shadow-card);
   color: var(--foreground);
   padding: 0 0.8rem;
-  font-size: 0.72rem;
+  font-size: 0.85rem;
   font-weight: 700;
 }
 .app-topbar-button:hover,
@@ -718,7 +724,7 @@
   background: var(--brand-signal);
   color: #342000;
   font-family: var(--font-mono);
-  font-size: 0.5rem;
+  font-size: 0.75rem;
   font-weight: 700;
 }
 .app-notification-popover {
@@ -744,7 +750,7 @@
   background: transparent;
   color: var(--primary);
   padding: 0.35rem;
-  font-size: 0.68rem;
+  font-size: 0.81rem;
   font-weight: 700;
 }
 .app-notification-list {
@@ -794,20 +800,20 @@
   display: block;
 }
 .app-notification-title {
-  font-size: 0.72rem;
+  font-size: 0.85rem;
   font-weight: 700;
 }
 .app-notification-message {
   margin-top: 0.16rem;
   color: var(--muted-foreground);
-  font-size: 0.66rem;
+  font-size: 0.79rem;
   line-height: 1.45;
 }
 .app-notification-time {
   margin-top: 0.32rem;
   color: var(--muted-foreground);
   font-family: var(--font-mono);
-  font-size: 0.52rem;
+  font-size: 0.75rem;
 }
 .app-content {
   width: 100%;
@@ -860,7 +866,7 @@
 .label-caps {
   color: var(--primary);
   font-family: var(--font-mono);
-  font-size: 0.6rem;
+  font-size: 0.75rem;
   font-weight: 600;
   letter-spacing: 0.12em;
   text-transform: uppercase;
@@ -1117,4 +1123,155 @@
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
   }
+}
+
+/* ─── Background pipeline activity ──────────────────────────────────────── */
+.app-pipeline-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+.app-pipeline-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  height: 2rem;
+  padding: 0 0.6rem;
+  border: 1px solid var(--outline-variant);
+  border-radius: 0.55rem;
+  background: var(--surface-container);
+  color: var(--muted-foreground);
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.app-pipeline-chip:hover {
+  color: var(--foreground);
+  border-color: var(--muted-foreground);
+}
+.app-pipeline-chip.is-running {
+  color: var(--primary);
+  border-color: color-mix(in srgb, var(--primary) 45%, transparent);
+  background: color-mix(in srgb, var(--primary) 10%, transparent);
+}
+@media (max-width: 900px) {
+  .app-pipeline-chip-label {
+    display: none;
+  }
+}
+.app-pipeline-popover {
+  position: absolute;
+  top: calc(100% + 0.55rem);
+  right: 0;
+  z-index: 80;
+  width: min(24rem, calc(100vw - 2rem));
+  border-radius: 0.9rem;
+  background: var(--popover);
+  box-shadow: var(--shadow-popover);
+  overflow: hidden;
+}
+.app-pipeline-percent {
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  color: var(--primary);
+}
+.app-pipeline-progress-block {
+  padding: 0.75rem 0.9rem 0.2rem;
+}
+.app-pipeline-bar {
+  height: 4px;
+  border-radius: 999px;
+  background: var(--surface-container-high);
+  overflow: hidden;
+}
+.app-pipeline-bar span {
+  display: block;
+  height: 100%;
+  background: var(--primary);
+  transition: width 0.4s ease;
+}
+@media (prefers-reduced-motion: reduce) {
+  .app-pipeline-bar span {
+    transition: none;
+  }
+}
+.app-pipeline-current {
+  margin: 0.55rem 0 0;
+  padding: 0 0.9rem 0.75rem;
+  font-size: 0.85rem;
+  line-height: 1.5;
+  color: var(--muted-foreground);
+}
+.app-pipeline-progress-block + .app-pipeline-events,
+.app-pipeline-current + .app-pipeline-events {
+  border-top: 1px solid var(--outline-variant);
+}
+.app-pipeline-events {
+  margin: 0;
+  padding: 0.35rem 0;
+  list-style: none;
+  max-height: 15rem;
+  overflow-y: auto;
+}
+.app-pipeline-events li {
+  display: grid;
+  grid-template-columns: 1rem minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.32rem 0.9rem;
+  font-size: 0.85rem;
+}
+.app-pipeline-event-icon {
+  display: grid;
+  place-items: center;
+}
+.app-pipeline-event-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.app-pipeline-event-detail {
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  color: var(--muted-foreground);
+  white-space: nowrap;
+}
+.app-pipeline-footer {
+  padding: 0.6rem 0.9rem;
+  border-top: 1px solid var(--outline-variant);
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  line-height: 1.6;
+  color: var(--muted-foreground);
+}
+
+/* The running log inside the activity panel. Newest first, fading back, so a
+   glance shows what is happening now without hiding what just happened. */
+.app-pipeline-steps {
+  margin: 0.5rem 0 0;
+  padding: 0;
+  list-style: none;
+  max-height: 9rem;
+  overflow-y: auto;
+}
+.app-pipeline-steps li {
+  padding: 0.15rem 0;
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  line-height: 1.5;
+  color: var(--muted-foreground);
+  opacity: 0.75;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.app-pipeline-steps li.is-latest {
+  color: var(--foreground);
+  opacity: 1;
+}
+.app-pipeline-steps li.is-latest::before {
+  content: "› ";
+  color: var(--primary);
 }

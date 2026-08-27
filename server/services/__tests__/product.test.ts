@@ -235,11 +235,11 @@ describe("ProductService SKU workflow", () => {
   // ── Search ──────────────────────────────────────────────────────────────
 
   describe("tracking", () => {
-    it("persists the Price Radar monitoring state", async () => {
+    it("persists the monitoring state", async () => {
       const product = await productService.create({
         userId,
         storeId,
-        title: "Radar Tracking Test",
+        title: "Tracking Test",
         price: "10.00",
       });
 

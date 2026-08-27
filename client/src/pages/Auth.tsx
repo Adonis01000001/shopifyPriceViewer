@@ -175,7 +175,7 @@ export default function Auth() {
             </span>
             <span>
               <span className="auth-brand-name">PriceIntel</span>
-              <span className="auth-brand-caption">Decision studio</span>
+              <span className="auth-brand-caption">Competitor pricing</span>
             </span>
           </div>
 

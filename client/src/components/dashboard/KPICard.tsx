@@ -47,7 +47,7 @@ export function KPICard({
       <CardContent className="p-4">
         <div className="flex items-start justify-between gap-3">
           <div className="space-y-1.5 min-w-0">
-            <p className="text-[11px] uppercase tracking-wider font-medium text-muted-foreground/70">
+            <p className="text-[13px] uppercase tracking-wider font-medium text-muted-foreground/70">
               {title}
             </p>
             <p className="text-2xl font-semibold data-value tracking-tight leading-none">
@@ -75,7 +75,7 @@ export function KPICard({
               </div>
             )}
             {description && (
-              <p className="text-[11px] text-muted-foreground/60 leading-tight">
+              <p className="text-[13px] text-muted-foreground/60 leading-tight">
                 {description}
               </p>
             )}
