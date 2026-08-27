@@ -1,31 +1,17 @@
 import { useMemo, useEffect } from "react";
+import { useLocation } from "wouter";
 import { trpc } from "@/lib/trpc";
 import { cn } from "@/lib/utils";
 import {
   TrendingDown,
   TrendingUp,
   Shield,
-  AlertTriangle,
   DollarSign,
   Target,
   BarChart3,
-  Sparkles,
-  Brain,
 } from "lucide-react";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
-
-type MarketPositionStatus =
-  | "LEADING"
-  | "COMPETITIVE"
-  | "OVERPRICED"
-  | "INSUFFICIENT_DATA";
-
-interface PositionBadgeProps {
-  status: MarketPositionStatus | undefined;
-  label: string | undefined;
-  priceDiffPercent: number | null | undefined;
-}
 
 interface DashboardStats {
   leading: number;
@@ -34,83 +20,6 @@ interface DashboardStats {
   insufficientData: number;
   marginProtection: number;
   total: number;
-}
-
-// ─── Market Position Badge ───────────────────────────────────────────────────
-
-const STATUS_STYLES: Record<
-  MarketPositionStatus,
-  { bg: string; text: string; border: string }
-> = {
-  LEADING: {
-    bg: "bg-[var(--success)]/10",
-    text: "text-[var(--success)]",
-    border: "border-[var(--success)]/30",
-  },
-  COMPETITIVE: {
-    bg: "bg-blue-500/10",
-    text: "text-blue-400",
-    border: "border-blue-500/30",
-  },
-  OVERPRICED: {
-    bg: "bg-[var(--destructive)]/15",
-    text: "text-[var(--destructive)]",
-    border: "border-[var(--destructive)]/30",
-  },
-  INSUFFICIENT_DATA: {
-    bg: "bg-gray-500/10",
-    text: "text-gray-400",
-    border: "border-gray-500/30",
-  },
-};
-
-const STATUS_LABELS: Record<MarketPositionStatus, string> = {
-  LEADING: "LEAD",
-  COMPETITIVE: "COMP",
-  OVERPRICED: "OVER",
-  INSUFFICIENT_DATA: "N/A",
-};
-
-function PositionBadge({
-  status,
-  label,
-  priceDiffPercent,
-}: PositionBadgeProps) {
-  const style = status
-    ? STATUS_STYLES[status]
-    : STATUS_STYLES.INSUFFICIENT_DATA;
-  const displayLabel = label ?? (status ? STATUS_LABELS[status] : "N/A");
-
-  return (
-    <div className="flex items-center gap-2">
-      <span
-        className={cn(
-          "inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-bold label-caps",
-          style.bg,
-          style.text,
-          "border",
-          style.border
-        )}
-      >
-        {displayLabel}
-      </span>
-      {priceDiffPercent != null && (
-        <span
-          className={cn(
-            "text-[10px] font-mono font-medium",
-            priceDiffPercent > 0
-              ? "text-[var(--destructive)]"
-              : priceDiffPercent < 0
-                ? "text-[var(--success)]"
-                : "text-muted-foreground"
-          )}
-        >
-          {priceDiffPercent > 0 ? "+" : ""}
-          {priceDiffPercent.toFixed(1)}%
-        </span>
-      )}
-    </div>
-  );
 }
 
 // ─── Pricing Recommendation Widget (per-product) ─────────────────────────────
@@ -141,7 +50,6 @@ export function PricingRecommendationWidget({
   const snapshot = result?.marketSnapshot ?? null;
   const recommendation = result?.recommendation ?? null;
   const position = result?.position ?? null;
-  const aiResult = result?.aiRecommendation ?? null;
 
   const stats = useMemo(() => {
     if (!snapshot) return null;
@@ -190,273 +98,158 @@ export function PricingRecommendationWidget({
     );
   }
 
+  const suggested = recommendation?.recommendedPrice ?? null;
+  const yours = snapshot?.merchantPrice ?? 0;
+  const floor = recommendation?.minimumAllowedPrice ?? 0;
+  const direction =
+    suggested == null || Math.abs(suggested - yours) < 0.01
+      ? "hold"
+      : suggested < yours
+        ? "cut"
+        : "rise";
+
   return (
     <div className="space-y-4">
-      {/* Market Snapshot */}
-      <div className="glass-panel rounded-lg overflow-hidden">
-        <div className="px-5 py-3 bg-surface-container/50 flex items-center gap-2">
+      {/* What you charge, and what everyone else does */}
+      <div className="glass-panel overflow-hidden rounded-lg">
+        <div className="flex items-center gap-2 bg-surface-container/50 px-5 py-3">
           <BarChart3 className="h-4 w-4 text-primary" />
-          <h3 className="text-[14px] font-semibold">Market Snapshot</h3>
+          <h3 className="text-[15px] font-semibold">The prices we found</h3>
         </div>
-        <div className="p-4 grid grid-cols-2 gap-3">
-          <div className="glass-card p-3 rounded">
-            <p className="label-caps text-muted-foreground/60 text-[10px]">
-              Merchant Price
-            </p>
-            <p className="text-lg font-bold font-mono mt-1">
-              ${snapshot?.merchantPrice.toFixed(2)}
+        <div className="grid grid-cols-2 gap-3 p-4">
+          <div className="glass-card rounded p-3">
+            <p className="text-[13px] text-muted-foreground">You charge</p>
+            <p className="mt-1 font-mono text-lg font-bold">
+              ${yours.toFixed(2)}
             </p>
           </div>
-          <div className="glass-card p-3 rounded">
-            <p className="label-caps text-muted-foreground/60 text-[10px]">
-              Avg. Competitor
+          <div className="glass-card rounded p-3">
+            <p className="text-[13px] text-muted-foreground">
+              They charge, on average
             </p>
-            <p className="text-lg font-bold font-mono mt-1">
+            <p className="mt-1 font-mono text-lg font-bold">
               {stats?.avgCompetitor}
             </p>
           </div>
-          <div className="glass-card p-3 rounded">
-            <p className="label-caps text-muted-foreground/60 text-[10px]">
-              Lowest Competitor
-            </p>
-            <p className="text-sm font-mono mt-1 text-[var(--success)]">
-              {stats?.lowestCompetitor}
-            </p>
-          </div>
-          <div className="glass-card p-3 rounded">
-            <p className="label-caps text-muted-foreground/60 text-[10px]">
-              Highest Competitor
-            </p>
-            <p className="text-sm font-mono mt-1 text-[var(--destructive)]">
-              {stats?.highestCompetitor}
-            </p>
-          </div>
+          {stats != null && stats.competitorCount > 1 && (
+            <>
+              <div className="glass-card rounded p-3">
+                <p className="text-[13px] text-muted-foreground">
+                  Cheapest of them
+                </p>
+                <p className="mt-1 font-mono text-[14px] text-[var(--success)]">
+                  {stats.lowestCompetitor}
+                </p>
+              </div>
+              <div className="glass-card rounded p-3">
+                <p className="text-[13px] text-muted-foreground">
+                  Dearest of them
+                </p>
+                <p className="mt-1 font-mono text-[14px] text-[var(--destructive)]">
+                  {stats.highestCompetitor}
+                </p>
+              </div>
+            </>
+          )}
         </div>
         <div className="px-4 pb-3">
-          <p className="text-[11px] text-muted-foreground">
-            Based on{" "}
-            <span className="font-mono font-medium text-muted-foreground">
-              {stats?.competitorCount}
-            </span>{" "}
-            competitor price{stats?.competitorCount !== 1 ? "s" : ""}
+          <p className="text-[13px] text-muted-foreground">
+            {stats?.competitorCount === 0
+              ? "No shop has been confirmed as selling this."
+              : stats?.competitorCount === 1
+                ? "From one shop, so treat it carefully. The full list is below."
+                : `From ${stats?.competitorCount} shops. The full list is below.`}
           </p>
         </div>
       </div>
 
-      {/* Recommendation Card */}
-      <div className="glass-panel rounded-lg overflow-hidden">
-        <div className="px-5 py-3 bg-surface-container/50 flex items-center gap-2">
+      {/* What to do about it */}
+      <div className="glass-panel overflow-hidden rounded-lg">
+        <div className="flex items-center gap-2 bg-surface-container/50 px-5 py-3">
           <Target className="h-4 w-4 text-primary" />
-          <h3 className="text-[14px] font-semibold">Recommendation</h3>
+          <h3 className="text-[15px] font-semibold">What we suggest</h3>
         </div>
-        <div className="p-4 space-y-3">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="label-caps text-muted-foreground/60 text-[10px]">
-                Recommended Price
-              </p>
-              <p className="text-2xl font-bold font-mono text-primary">
-                ${recommendation?.recommendedPrice.toFixed(2)}
-              </p>
-            </div>
-            <div className="text-right">
-              <p className="label-caps text-muted-foreground/60 text-[10px]">
-                Floor Price
-              </p>
-              <p className="text-sm font-mono text-muted-foreground">
-                $
-                {recommendation?.minimumAllowedPrice != null &&
-                recommendation.minimumAllowedPrice > 0
-                  ? recommendation.minimumAllowedPrice.toFixed(2)
-                  : "—"}
-              </p>
-            </div>
-          </div>
-          <p className="text-[12px] text-muted-foreground leading-relaxed">
-            {recommendation?.explanation ?? "Pricing analysis in progress."}
+        <div className="space-y-3 p-4">
+          <p className="font-mono text-2xl font-bold text-primary">
+            {suggested != null ? `$${suggested.toFixed(2)}` : "—"}
           </p>
+          <p className="text-[14px] leading-relaxed text-muted-foreground">
+            {suggested == null ? (
+              "Nothing to suggest until we find a shop selling this."
+            ) : recommendation?.marginProtectionApplied ? (
+              <>
+                Your cost sets this one, not the market. Following the shops
+                above would take you under the margin you asked us to keep, so
+                this is the lowest we will go.
+              </>
+            ) : direction === "hold" ? (
+              <>Your price already sits where the market is.</>
+            ) : direction === "cut" ? (
+              <>
+                Slightly under what the shops above charge, which is where your
+                rules aim.
+              </>
+            ) : (
+              <>
+                You are under the market here. This moves you closer to what
+                other shops charge without going over them.
+              </>
+            )}
+          </p>
+          {floor > 0 && (
+            <p className="text-[13px] text-muted-foreground">
+              We will never suggest below{" "}
+              <span className="font-mono">${floor.toFixed(2)}</span> for this
+              product — that is your cost plus the margin you set.
+            </p>
+          )}
+          {position && (
+            <p className="border-t border-outline-variant/20 pt-3 text-[14px] text-muted-foreground">
+              As things stand,{" "}
+              {position.status === "LEADING"
+                ? "you undercut them"
+                : position.status === "OVERPRICED"
+                  ? "you are the dearer option"
+                  : position.status === "COMPETITIVE"
+                    ? "you are priced much like them"
+                    : "there is not enough to compare against"}
+              {position.priceDiff != null && (
+                <>
+                  {" "}
+                  by{" "}
+                  <span className="font-mono">
+                    ${Math.abs(position.priceDiff).toFixed(2)}
+                  </span>
+                </>
+              )}
+              .
+            </p>
+          )}
           <button
             type="button"
-            className="w-full px-4 py-2 bg-primary text-primary-foreground text-[11px] font-bold label-caps rounded hover:brightness-110 transition-all disabled:opacity-50"
+            className="w-full rounded bg-primary px-4 py-2.5 text-[14px] font-semibold text-primary-foreground transition-all hover:brightness-110 disabled:opacity-50"
             onClick={() => generateMutation.mutate({ productId })}
-            disabled={generateMutation.isPending}
+            disabled={generateMutation.isPending || suggested == null}
           >
             {generateMutation.isPending
-              ? "Generating..."
-              : "Save Recommendation"}
+              ? "Adding..."
+              : "Put this on my to-do list"}
           </button>
+          <p className="text-center text-[12px] text-muted-foreground">
+            This adds it to your Overview. Your shop is not changed.
+          </p>
           {generateMutation.isSuccess && (
-            <p className="text-[11px] text-[var(--success)] font-medium text-center">
-              Recommendation saved successfully.
+            <p className="text-center text-[13px] font-medium text-[var(--success)]">
+              Added. You will find it on your Overview.
             </p>
           )}
           {generateMutation.isError && (
-            <p className="text-[11px] text-[var(--destructive)] font-medium text-center">
-              Failed to save recommendation.
+            <p className="text-center text-[13px] font-medium text-[var(--destructive)]">
+              Could not add it. Try again in a moment.
             </p>
           )}
         </div>
       </div>
-
-      {/* Position Indicator */}
-      <div className="glass-panel rounded-lg overflow-hidden">
-        <div className="px-5 py-3 bg-surface-container/50 flex items-center gap-2">
-          <DollarSign className="h-4 w-4 text-primary" />
-          <h3 className="text-[14px] font-semibold">Market Position</h3>
-        </div>
-        <div className="p-4 space-y-3">
-          <div className="flex items-center justify-between">
-            <PositionBadge
-              status={position?.status}
-              label={position?.label}
-              priceDiffPercent={position?.priceDiffPercent}
-            />
-          </div>
-          {position && (
-            <p className="text-[12px] text-muted-foreground">
-              {position.meaning}
-            </p>
-          )}
-          {position?.priceDiff != null && (
-            <div className="flex items-center gap-2">
-              {position.priceDiff > 0 ? (
-                <TrendingUp className="h-3.5 w-3.5 text-[var(--destructive)]" />
-              ) : position.priceDiff < 0 ? (
-                <TrendingDown className="h-3.5 w-3.5 text-[var(--success)]" />
-              ) : (
-                <DollarSign className="h-3.5 w-3.5 text-muted-foreground" />
-              )}
-              <span className="text-[11px] font-mono text-muted-foreground">
-                {position.priceDiff > 0 ? "+" : ""}$
-                {position.priceDiff.toFixed(2)} vs avg competitor
-              </span>
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* AI Pricing Analysis */}
-      <div className="glass-panel rounded-lg overflow-hidden border border-primary/10">
-        <div className="px-5 py-3 bg-surface-container/50 flex items-center gap-2">
-          <Brain className="h-4 w-4 text-primary" />
-          <h3 className="text-[14px] font-semibold">AI Pricing Analysis</h3>
-          <Sparkles className="h-3 w-3 text-primary/60 ml-auto" />
-        </div>
-        {aiResult ? (
-          <div className="p-4 space-y-3">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="label-caps text-muted-foreground/60 text-[10px]">
-                  AI Recommended Price
-                </p>
-                <p className="text-2xl font-bold font-mono text-primary">
-                  ${aiResult.recommendedPrice.toFixed(2)}
-                </p>
-              </div>
-              <div className="text-right">
-                <p className="label-caps text-muted-foreground/60 text-[10px]">
-                  Confidence
-                </p>
-                <p
-                  className={cn(
-                    "text-sm font-bold label-caps",
-                    aiResult.confidence === "high"
-                      ? "text-[var(--success)]"
-                      : aiResult.confidence === "medium"
-                        ? "text-yellow-400"
-                        : "text-muted-foreground"
-                  )}
-                >
-                  {aiResult.confidence.toUpperCase()}
-                </p>
-              </div>
-            </div>
-            <p className="text-[12px] text-muted-foreground leading-relaxed">
-              {aiResult.reasoning}
-            </p>
-            {aiResult.marketContext && (
-              <div className="bg-surface-container-highest/50 rounded p-3">
-                <p className="text-[11px] text-muted-foreground leading-relaxed">
-                  {aiResult.marketContext}
-                </p>
-              </div>
-            )}
-            {aiResult.riskFactors.length > 0 && (
-              <div className="space-y-1.5">
-                <p className="text-[10px] font-bold label-caps text-muted-foreground/60">
-                  Risk Factors
-                </p>
-                {aiResult.riskFactors.map((risk, i) => (
-                  <div key={i} className="flex items-start gap-2">
-                    <AlertTriangle className="h-3 w-3 text-yellow-500 mt-0.5 shrink-0" />
-                    <p className="text-[11px] text-muted-foreground">{risk}</p>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        ) : (
-          <div className="p-4 space-y-3">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="label-caps text-muted-foreground/60 text-[10px]">
-                  AI Recommended Price
-                </p>
-                <p className="text-2xl font-bold font-mono text-primary">
-                  ${recommendation?.recommendedPrice.toFixed(2)}
-                </p>
-              </div>
-              <div className="text-right">
-                <p className="label-caps text-muted-foreground/60 text-[10px]">
-                  Confidence
-                </p>
-                <p className="text-sm font-bold label-caps text-muted-foreground">
-                  CALCULATED
-                </p>
-              </div>
-            </div>
-            <p className="text-[12px] text-muted-foreground leading-relaxed">
-              {recommendation?.explanation ??
-                "Deterministic pricing analysis based on competitor comparison."}
-            </p>
-            {position && (
-              <p className="text-[11px] text-muted-foreground/60">
-                AI-powered analysis requires an LLM provider
-                (OpenRouter/Gemini). Showing calculated recommendation.
-              </p>
-            )}
-          </div>
-        )}
-      </div>
-
-      {/* Margin Protection Warning */}
-      {recommendation?.marginProtectionApplied && (
-        <div className="glass-panel rounded-lg overflow-hidden border border-[var(--destructive)]/30">
-          <div className="px-5 py-3 bg-[var(--destructive)]/10 flex items-center gap-2">
-            <Shield className="h-4 w-4 text-[var(--destructive)]" />
-            <h3 className="text-[14px] font-semibold text-[var(--destructive)]">
-              Margin Protection Active
-            </h3>
-          </div>
-          <div className="p-4 space-y-2">
-            <div className="flex items-start gap-2">
-              <AlertTriangle className="h-3.5 w-3.5 text-[var(--destructive)] mt-0.5 shrink-0" />
-              <p className="text-[12px] text-[var(--destructive)]/80 leading-relaxed">
-                The 5% undercut price is below your minimum profit margin floor.
-                The recommended price has been adjusted to maintain at least 10%
-                margin above cost price.
-              </p>
-            </div>
-            <p className="text-[11px] font-mono text-muted-foreground">
-              Floor:{" "}
-              <span className="text-[var(--destructive)]">
-                ${recommendation.minimumAllowedPrice.toFixed(2)}
-              </span>{" "}
-              (cost + 10%)
-            </p>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
@@ -464,6 +257,7 @@ export function PricingRecommendationWidget({
 // ─── Pricing Dashboard Summary (aggregate stats) ──────────────────────────────
 
 export function PricingDashboardSummary() {
+  const [, setLocation] = useLocation();
   const { data, isLoading } = trpc.pricingEngine.dashboardStats.useQuery();
 
   const stats: DashboardStats = data ?? {
@@ -477,7 +271,9 @@ export function PricingDashboardSummary() {
 
   const cards = [
     {
-      label: "Leading",
+      label: "Cheaper than them",
+      hint: "Your price is under the average of the shops we found",
+      stand: "LEADING",
       count: stats.leading,
       icon: TrendingDown,
       iconColor: "text-[var(--success)]",
@@ -486,7 +282,9 @@ export function PricingDashboardSummary() {
       textColor: "text-[var(--success)]",
     },
     {
-      label: "Competitive",
+      label: "About the same",
+      hint: "Your price is within 3% of their average",
+      stand: "COMPETITIVE",
       count: stats.competitive,
       icon: DollarSign,
       iconColor: "text-blue-400",
@@ -495,7 +293,9 @@ export function PricingDashboardSummary() {
       textColor: "text-blue-400",
     },
     {
-      label: "Overpriced",
+      label: "Dearer than them",
+      hint: "Your price is above their average — the usual place to look first",
+      stand: "OVERPRICED",
       count: stats.overpriced,
       icon: TrendingUp,
       iconColor: "text-[var(--destructive)]",
@@ -504,7 +304,9 @@ export function PricingDashboardSummary() {
       textColor: "text-[var(--destructive)]",
     },
     {
-      label: "No Data",
+      label: "Nothing to compare",
+      hint: "We have not found shops selling these yet",
+      stand: "INSUFFICIENT_DATA",
       count: stats.insufficientData,
       icon: BarChart3,
       iconColor: "text-gray-400",
@@ -519,15 +321,18 @@ export function PricingDashboardSummary() {
       <div className="px-5 py-3 bg-surface-container/50 flex items-center justify-between">
         <div className="flex items-center gap-2">
           <BarChart3 className="h-4 w-4 text-primary" />
-          <h3 className="text-[14px] font-semibold">
-            Pricing Position Summary
+          <h3 className="text-[15px] font-semibold">
+            Where your prices sit against the market
           </h3>
         </div>
         {stats.marginProtection > 0 && (
           <div className="flex items-center gap-1.5 bg-[var(--destructive)]/10 border border-[var(--destructive)]/20 rounded px-2 py-0.5">
             <Shield className="h-3 w-3 text-[var(--destructive)]" />
-            <span className="text-[10px] font-mono font-bold text-[var(--destructive)] label-caps">
-              {stats.marginProtection} Margin Protected
+            <span
+              className="text-[13px] font-medium text-[var(--destructive)]"
+              title="On these, your cost set the price rather than the market"
+            >
+              {stats.marginProtection} held up by your cost
             </span>
           </div>
         )}
@@ -545,15 +350,24 @@ export function PricingDashboardSummary() {
         ) : (
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
             {cards.map(card => (
-              <div
+              <button
+                type="button"
                 key={card.label}
+                onClick={() =>
+                  setLocation(
+                    card.count > 0 ? `/products?stand=${card.stand}` : "/products"
+                  )
+                }
                 className={cn(
-                  "glass-card p-4 rounded border transition-all hover:brightness-110",
+                  "glass-card rounded border p-4 text-left transition-all hover:brightness-110 focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/35",
                   card.borderColor
                 )}
               >
-                <div className="flex items-center justify-between mb-2">
-                  <span className="label-caps text-muted-foreground/60 text-[10px]">
+                <div className="flex items-start justify-between gap-2 mb-2">
+                  <span
+                    className="text-[13px] font-medium text-muted-foreground"
+                    title={card.hint}
+                  >
                     {card.label}
                   </span>
                   <div className={cn("p-1 rounded", card.bgColor)}>
@@ -569,11 +383,12 @@ export function PricingDashboardSummary() {
                   {card.count}
                 </p>
                 {stats.total > 0 && (
-                  <p className="text-[10px] text-muted-foreground/60 mt-1">
-                    {((card.count / stats.total) * 100).toFixed(0)}% of tracked
+                  <p className="mt-1 text-[12px] text-muted-foreground">
+                    {((card.count / stats.total) * 100).toFixed(0)}% of your{" "}
+                    {stats.total} products
                   </p>
                 )}
-              </div>
+              </button>
             ))}
           </div>
         )}

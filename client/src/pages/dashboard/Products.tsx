@@ -21,10 +21,8 @@ import {
   Search,
   Package,
   Database,
-  ExternalLink,
-  Zap,
   RotateCcw,
-  MoreHorizontal,
+  Upload,
 } from "lucide-react";
 import {
   Empty,
@@ -36,12 +34,6 @@ import {
 } from "@/components/ui/empty";
 import { PageSkeleton } from "@/components/dashboard/PageSkeleton";
 import AddProductDialog from "./AddProductDialog";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
 import { useMemo, useState, useCallback, useRef } from "react";
 import { useLocation } from "wouter";
@@ -85,10 +77,18 @@ const POSITION_STYLES: Record<
 };
 
 const POSITION_LABELS: Record<MarketPositionStatus, string> = {
-  LEADING: "LEAD",
-  COMPETITIVE: "COMP",
-  OVERPRICED: "OVER",
-  INSUFFICIENT_DATA: "N/A",
+  LEADING: "Cheaper than them",
+  COMPETITIVE: "About the same",
+  OVERPRICED: "Dearer than them",
+  INSUFFICIENT_DATA: "Not checked yet",
+};
+
+/** The badge is a verdict; this says what it is a verdict about. */
+const POSITION_TITLES: Record<MarketPositionStatus, string> = {
+  LEADING: "Your price is more than 3% below the average of the shops we found",
+  COMPETITIVE: "Your price is within 3% of the average of the shops we found",
+  OVERPRICED: "Your price is more than 3% above the average of the shops we found",
+  INSUFFICIENT_DATA: "We have not found enough shops to compare against",
 };
 
 function MarketPositionBadge({
@@ -100,16 +100,16 @@ function MarketPositionBadge({
 }) {
   if (isLoading) {
     return (
-      <span className="inline-flex min-h-6 items-center rounded-full border border-border bg-surface-container-highest px-2 py-0.5 text-[10px] font-bold label-caps text-muted-foreground">
-        ...
+      <span className="inline-flex min-h-6 items-center rounded-full border border-border bg-surface-container-highest px-2 py-0.5 text-[13px] text-muted-foreground">
+        Checking\u2026
       </span>
     );
   }
 
   if (!position) {
     return (
-      <span className="inline-flex min-h-6 items-center rounded-full border border-border bg-muted px-2 py-0.5 text-[10px] font-bold label-caps text-muted-foreground">
-        N/A
+      <span className="inline-flex min-h-6 items-center rounded-full border border-border bg-muted px-2 py-0.5 text-[13px] text-muted-foreground">
+        Not checked yet
       </span>
     );
   }
@@ -120,8 +120,9 @@ function MarketPositionBadge({
 
   return (
     <span
+      title={POSITION_TITLES[status] ?? POSITION_TITLES.INSUFFICIENT_DATA}
       className={cn(
-        "inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-bold label-caps border",
+        "inline-flex items-center whitespace-nowrap rounded px-2 py-0.5 text-[13px] font-semibold border",
         style.bg,
         style.text,
         style.border
@@ -132,18 +133,25 @@ function MarketPositionBadge({
   );
 }
 
-function MarketInsightCells({
-  productId,
-  status,
-}: {
-  productId: string;
-  status: { label: string; className: string };
-}) {
-  const { data, isLoading } = trpc.pricingEngine.analyze.useQuery(
-    { productId },
-    { enabled: !!productId, staleTime: 1000 * 60 * 2 }
-  );
+/** Why a product has no reading, in words rather than a dash. */
+const OUTCOME_REASONS: Record<string, string> = {
+  "no confident matches": "Nobody found selling the same thing",
+  "no candidates found": "No shops found for this",
+  "already priced about right": "Priced about right",
+};
 
+type ProductAnalysis = RouterOutputs["pricingEngine"]["analyzeAll"][number];
+
+function MarketInsightCells({
+  analysis,
+  isLoading,
+  outcome,
+}: {
+  analysis?: ProductAnalysis;
+  isLoading: boolean;
+  outcome?: { matched: number; skipped: string | null; failed: boolean };
+}) {
+  const data = analysis;
   const marketLow = data?.marketSnapshot.lowestCompetitorPrice;
   const delta = data?.position.priceDiff;
 
@@ -157,16 +165,6 @@ function MarketInsightCells({
           <span className="inline-block h-4 w-12 animate-pulse rounded bg-muted" />
         </TableCell>
         <TableCell className="py-3 text-center align-middle">
-          <span
-            className={cn(
-              "inline-flex min-h-6 items-center rounded-full border px-2 py-0.5 text-[10px] font-bold label-caps",
-              status.className
-            )}
-          >
-            {status.label.toUpperCase()}
-          </span>
-        </TableCell>
-        <TableCell className="py-3 text-center align-middle">
           <MarketPositionBadge isLoading />
         </TableCell>
       </>
@@ -175,7 +173,7 @@ function MarketInsightCells({
 
   return (
     <>
-      <TableCell className="hidden py-3 text-right font-mono text-[13px] text-muted-foreground sm:table-cell">
+      <TableCell className="hidden py-3 text-right font-mono text-[14px] text-muted-foreground sm:table-cell">
         {marketLow != null ? `$${marketLow.toFixed(2)}` : "—"}
       </TableCell>
       <TableCell
@@ -185,7 +183,7 @@ function MarketInsightCells({
         {delta != null ? (
           <span
             className={cn(
-              "font-mono text-[12px]",
+              "font-mono text-[13px]",
               delta > 0
                 ? "text-[var(--destructive)]"
                 : delta < 0
@@ -193,59 +191,54 @@ function MarketInsightCells({
                   : "text-muted-foreground"
             )}
           >
-            {delta > 0 ? "+" : ""}${delta.toFixed(2)}
+            {delta > 0 ? "+" : "-"}${Math.abs(delta).toFixed(2)}
           </span>
         ) : (
-          <span className="font-mono text-[12px] text-muted-foreground">—</span>
+          <span className="font-mono text-[13px] text-muted-foreground">—</span>
         )}
       </TableCell>
       <TableCell className="py-3 text-center align-middle">
-        <span
-          className={cn(
-            "inline-flex min-h-6 items-center rounded-full border px-2 py-0.5 text-[10px] font-bold label-caps",
-            status.className
-          )}
-        >
-          {status.label.toUpperCase()}
-        </span>
-      </TableCell>
-      <TableCell className="py-3 text-center align-middle">
-        <MarketPositionBadge position={data?.position} isLoading={false} />
+        {data?.position && data.position.status !== "INSUFFICIENT_DATA" ? (
+          <MarketPositionBadge position={data.position} isLoading={false} />
+        ) : (
+          <span className="text-[13px] text-muted-foreground">
+            {outcome?.failed
+              ? "Could not be checked"
+              : outcome?.skipped
+                ? (OUTCOME_REASONS[outcome.skipped] ?? outcome.skipped)
+                : "Not checked yet"}
+          </span>
+        )}
       </TableCell>
     </>
   );
 }
 
-const statusConfig: Record<string, { label: string; className: string }> = {
-  optimal: {
-    label: "Optimal",
-    className: "bg-primary/[0.1] text-primary border border-primary/20",
-  },
-  underpriced: {
-    label: "Underpriced",
-    className: "bg-secondary text-secondary-foreground border border-secondary",
-  },
-  overpriced: {
-    label: "Overpriced",
-    className:
-      "bg-[var(--destructive)]/15 text-[var(--destructive)] border border-[var(--destructive)]/30",
-  },
-  alert: {
-    label: "Alert",
-    className:
-      "bg-[var(--destructive)]/20 text-[var(--destructive)] border border-[var(--destructive)]/30",
-  },
-};
-
 export default function Products() {
   const [, navigate] = useLocation();
   const [searchQuery, setSearchQuery] = useState("");
   const [categoryFilter, setCategoryFilter] = useState("all");
-  const [statusFilter, setStatusFilter] = useState("all");
+  // The Overview's four counts link here rather than being dead ends.
+  const [standFilter, setStandFilter] = useState<string>(() => {
+    const stand = new URLSearchParams(window.location.search).get("stand");
+    return stand && stand in POSITION_LABELS ? stand : "all";
+  });
   const [editingPriceId, setEditingPriceId] = useState<string | null>(null);
   const [editingPriceVal, setEditingPriceVal] = useState("");
   const priceInputRef = useRef<HTMLInputElement>(null);
 
+  const utils = trpc.useUtils();
+  const { data: outcomes } = trpc.pipeline.productOutcomes.useQuery(undefined, {
+    staleTime: 1000 * 30,
+  });
+  const { data: analyses, isLoading: analysisLoading } =
+    trpc.pricingEngine.analyzeAll.useQuery(undefined, {
+      staleTime: 1000 * 60 * 2,
+    });
+  const analysisByProduct = useMemo(
+    () => new Map((analyses ?? []).map(a => [a.productId, a])),
+    [analyses]
+  );
   const {
     data: allProducts,
     isLoading,
@@ -254,15 +247,14 @@ export default function Products() {
   } = trpc.products.list.useQuery(undefined, {
     staleTime: 1000 * 60 * 5,
   });
-  const { data: stats } = trpc.products.stats.useQuery(undefined, {
-    staleTime: 1000 * 60 * 5,
-  });
 
   const updateProductMutation = trpc.products.update.useMutation({
     onSuccess: () => {
       toast.success("Price updated");
       setEditingPriceId(null);
       refetch();
+      // A CSV import starts a run too; nudge the indicator to notice now.
+      utils.pipeline.status.invalidate();
     },
     onError: () => {
       toast.error("Failed to update price");
@@ -306,10 +298,13 @@ export default function Products() {
         p.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
         (p.sku?.toLowerCase().includes(searchQuery.toLowerCase()) ?? false);
       const mc = categoryFilter === "all" || p.category === categoryFilter;
-      const mst = statusFilter === "all" || p.status === statusFilter;
-      return ms && mc && mst;
+      const stand =
+        standFilter === "all" ||
+        (analysisByProduct.get(p.id)?.position.status ?? "INSUFFICIENT_DATA") ===
+          standFilter;
+      return ms && mc && stand;
     });
-  }, [products, searchQuery, categoryFilter, statusFilter]);
+  }, [products, searchQuery, categoryFilter, standFilter, analysisByProduct]);
 
   const handleExport = useCallback(() => {
     if (!filtered.length) {
@@ -336,12 +331,39 @@ export default function Products() {
     toast.success(`Exported ${filtered.length} products`);
   }, [filtered]);
 
+  // ── CSV import ─────────────────────────────────────────────────────────────
+  const csvInputRef = useRef<HTMLInputElement>(null);
+  const [importing, setImporting] = useState(false);
+
+  const importCsv = trpc.products.importCsv.useMutation({
+    onSuccess: result => {
+      toast.success(result.message);
+      if (result.skipped > 0) {
+        toast.warning(
+          `${result.skipped} row(s) skipped. First problem: ${result.errors[0]?.reason ?? "unknown"}`
+        );
+      }
+      refetch();
+    },
+    onError: err => toast.error(err.message),
+    onSettled: () => setImporting(false),
+  });
+
+  const handleCsvFile = useCallback(
+    async (file: File) => {
+      setImporting(true);
+      const text = await file.text();
+      importCsv.mutate({ csv: text });
+    },
+    [importCsv]
+  );
+
   if (error) {
     return (
       <div className="space-y-8">
         <PageHeader
-          eyebrow="Catalog / merchandising"
-          title="Product inventory"
+          eyebrow="Your products"
+          title="Your products"
           description="Failed to load products. Please try again."
           icon={Package}
         />
@@ -361,19 +383,12 @@ export default function Products() {
 
   if (isLoading) return <PageSkeleton />;
 
-  const statusCounts = {
-    optimal: stats?.optimal ?? 0,
-    underpriced: stats?.underpriced ?? 0,
-    overpriced: stats?.overpriced ?? 0,
-    alert: stats?.alert ?? 0,
-  };
-
   if (products.length === 0) {
     return (
       <div className="space-y-8">
         <PageHeader
-          eyebrow="Catalog / merchandising"
-          title="Product inventory"
+          eyebrow="Your products"
+          title="Your products"
           description="No products tracked yet. Start by connecting your Shopify store."
           icon={Package}
         />
@@ -405,12 +420,12 @@ export default function Products() {
   return (
     <div className="space-y-8">
       <PageHeader
-        eyebrow="Catalog / merchandising"
-        title="Product inventory"
+        eyebrow="Your products"
+        title="Your products"
         description={
           <>
-            Manage {products.length} active listings and keep your pricing
-            position visible at a glance.
+            {products.length} products, and how each one&apos;s price compares
+            to the shops selling the same thing.
           </>
         }
         icon={Package}
@@ -420,40 +435,6 @@ export default function Products() {
           active listings
         </div>
       </PageHeader>
-
-      {/* Summary Cards */}
-      <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-        {(["optimal", "underpriced", "overpriced", "alert"] as const).map(
-          status => {
-            const count = statusCounts[status];
-            const config = statusConfig[status];
-            const total = products.length || 1;
-            return (
-              <div
-                key={status}
-                className="glass-card flex items-center justify-between p-5"
-              >
-                <div>
-                  <p className="data-value text-2xl font-bold tracking-tight">
-                    {count}
-                  </p>
-                  <p className="mt-1 label-caps text-muted-foreground">
-                    {config.label}
-                  </p>
-                </div>
-                <span
-                  className={cn(
-                    "inline-flex min-h-6 items-center rounded-full px-2.5 py-0.5 text-[10px] font-mono font-bold",
-                    config.className
-                  )}
-                >
-                  {((count / total) * 100).toFixed(0)}%
-                </span>
-              </div>
-            );
-          }
-        )}
-      </div>
 
       {/* Filter Bar */}
       <div className="surface-toolbar flex flex-wrap items-center gap-2.5 p-3">
@@ -481,18 +462,6 @@ export default function Products() {
             ))}
           </SelectContent>
         </Select>
-        <Select value={statusFilter} onValueChange={setStatusFilter}>
-          <SelectTrigger className="h-11 w-full bg-surface-container sm:w-[130px]">
-            <SelectValue placeholder="Status" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All Status</SelectItem>
-            <SelectItem value="optimal">Optimal</SelectItem>
-            <SelectItem value="underpriced">Underpriced</SelectItem>
-            <SelectItem value="overpriced">Overpriced</SelectItem>
-            <SelectItem value="alert">Alert</SelectItem>
-          </SelectContent>
-        </Select>
         <Button
           variant="outline"
           size="sm"
@@ -502,7 +471,38 @@ export default function Products() {
           <Download className="mr-1.5 h-3.5 w-3.5" />
           Export
         </Button>
+        <input
+          ref={csvInputRef}
+          type="file"
+          accept=".csv,text/csv"
+          className="hidden"
+          onChange={e => {
+            const file = e.target.files?.[0];
+            if (file) void handleCsvFile(file);
+            e.target.value = "";
+          }}
+        />
+        <Button
+          variant="outline"
+          size="sm"
+          className="h-11"
+          disabled={importing}
+          onClick={() => csvInputRef.current?.click()}
+        >
+          <Upload className="mr-1.5 h-3.5 w-3.5" />
+          {importing ? "Importing..." : "Import CSV"}
+        </Button>
         <AddProductDialog onSuccess={() => refetch()} />
+        {standFilter !== "all" && (
+          <button
+            type="button"
+            className="inline-flex h-11 items-center gap-2 rounded-lg border border-primary/30 bg-primary/10 px-3 text-[13px] font-medium text-primary"
+            onClick={() => setStandFilter("all")}
+          >
+            Showing only: {POSITION_LABELS[standFilter as MarketPositionStatus]}
+            <span aria-hidden="true">&times;</span>
+          </button>
+        )}
       </div>
 
       {/* Table */}
@@ -521,27 +521,22 @@ export default function Products() {
                   Price
                 </TableHead>
                 <TableHead className="hidden text-right label-caps font-normal text-muted-foreground sm:table-cell">
-                  Market Low
+                  Cheapest shop we found
                 </TableHead>
                 <TableHead className="hidden text-center label-caps font-normal text-muted-foreground sm:table-cell">
-                  Delta
+                  You vs. their average
                 </TableHead>
                 <TableHead className="text-center label-caps font-normal text-muted-foreground">
-                  Status
-                </TableHead>
-                <TableHead className="text-center label-caps font-normal text-muted-foreground">
-                  Position
+                  Where you stand
                 </TableHead>
                 <TableHead className="pr-5 text-right label-caps font-normal text-muted-foreground">
-                  Actions
+                  &nbsp;
                 </TableHead>
               </TableRow>
             </TableHeader>
             <TableBody className="divide-y divide-border/60">
               {filtered.length > 0 ? (
                 filtered.map(product => {
-                  const status =
-                    statusConfig[product.status] ?? statusConfig.optimal;
                   return (
                     <TableRow
                       key={product.id}
@@ -564,13 +559,13 @@ export default function Products() {
                             <p className="max-w-[240px] truncate text-sm font-semibold leading-5">
                               {product.title}
                             </p>
-                            <p className="mt-0.5 text-[10px] text-muted-foreground">
+                            <p className="mt-0.5 text-[12px] text-muted-foreground">
                               {product.category || "—"}
                             </p>
                           </div>
                         </div>
                       </TableCell>
-                      <TableCell className="py-3 text-left font-mono text-[12px] text-muted-foreground">
+                      <TableCell className="py-3 text-left font-mono text-[13px] text-muted-foreground">
                         {product.sku || "—"}
                       </TableCell>
                       <TableCell className="py-3 text-right align-middle">
@@ -588,13 +583,13 @@ export default function Products() {
                                 setEditingPriceId(null);
                               }
                             }}
-                            className="h-10 w-24 bg-surface-container text-right font-mono text-[13px]"
+                            className="h-10 w-24 bg-surface-container text-right font-mono text-[14px]"
                           />
                         ) : (
                           <button
                             type="button"
                             aria-label={"Edit price for " + product.title}
-                            className="inline-flex min-h-11 items-center rounded-lg px-2 font-mono text-[13px] font-medium transition-[background-color,color] hover:bg-primary/10 hover:text-primary focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/35 cursor-text"
+                            className="inline-flex min-h-11 items-center rounded-lg px-2 font-mono text-[14px] font-medium transition-[background-color,color] hover:bg-primary/10 hover:text-primary focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/35 cursor-text"
                             onClick={() =>
                               startEditing(product.id, product.price)
                             }
@@ -604,60 +599,19 @@ export default function Products() {
                         )}
                       </TableCell>
                       <MarketInsightCells
-                        productId={product.id}
-                        status={status}
+                        analysis={analysisByProduct.get(product.id)}
+                        isLoading={analysisLoading}
+                        outcome={outcomes?.[product.id]}
                       />
                       <TableCell className="py-3 pr-5 text-right align-middle">
-                        <div className="flex items-center justify-end gap-1 text-muted-foreground">
-                          <button
-                            type="button"
-                            aria-label={"Scout prices for " + product.title}
-                            className="flex size-11 items-center justify-center rounded-lg transition-[background-color,color] hover:bg-primary/10 hover:text-primary focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/35"
-                            title="Scout prices"
-                            onClick={() =>
-                              navigate(`/scout?productId=${product.id}`)
-                            }
-                          >
-                            <Zap className="h-3.5 w-3.5" />
-                          </button>
-                          <button
-                            type="button"
-                            aria-label={"View details for " + product.title}
-                            className="flex size-11 items-center justify-center rounded-lg transition-[background-color,color] hover:bg-primary/10 hover:text-primary focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/35"
-                            title="View details"
-                            onClick={() => navigate(`/products/${product.id}`)}
-                          >
-                            <ExternalLink className="h-3.5 w-3.5" />
-                          </button>
-                          <DropdownMenu>
-                            <DropdownMenuTrigger asChild>
-                              <button
-                                type="button"
-                                aria-label={"More actions for " + product.title}
-                                className="flex size-11 items-center justify-center rounded-lg transition-[background-color,color] hover:bg-primary/10 hover:text-primary focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/35"
-                              >
-                                <MoreHorizontal className="size-4" />
-                              </button>
-                            </DropdownMenuTrigger>
-                            <DropdownMenuContent align="end">
-                              <DropdownMenuItem
-                                onClick={() =>
-                                  navigate(`/scout?productId=${product.id}`)
-                                }
-                              >
-                                Scout Prices
-                              </DropdownMenuItem>
-                              <DropdownMenuItem
-                                onClick={() => {
-                                  navigator.clipboard.writeText(product.id);
-                                  toast.success("Product ID copied");
-                                }}
-                              >
-                                Copy Product ID
-                              </DropdownMenuItem>
-                            </DropdownMenuContent>
-                          </DropdownMenu>
-                        </div>
+                        <button
+                          type="button"
+                          className="inline-flex min-h-11 items-center whitespace-nowrap rounded-lg border border-outline-variant px-3 text-[13px] font-medium transition-colors hover:bg-surface-container-high focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/35"
+                          title="Every shop we looked at for this product, and what we suggest charging"
+                          onClick={() => navigate(`/products/${product.id}`)}
+                        >
+                          See the workings
+                        </button>
                       </TableCell>
                     </TableRow>
                   );
@@ -677,7 +631,6 @@ export default function Products() {
                         onClick={() => {
                           setSearchQuery("");
                           setCategoryFilter("all");
-                          setStatusFilter("all");
                         }}
                       >
                         <RotateCcw className="h-3 w-3 mr-1.5" />
