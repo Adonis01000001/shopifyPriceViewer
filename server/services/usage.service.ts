@@ -1,4 +1,4 @@
-import { and, eq, gte, sql } from "drizzle-orm";
+import { and, eq, gte, inArray, sql } from "drizzle-orm";
 import { requireDb } from "../_core/db-assert";
 import type { AppDatabase } from "../db";
 import {
@@ -9,6 +9,7 @@ import {
   products,
   recommendations,
   subscriptions,
+  accountCompetitorConnections,
 } from "../../drizzle/schema";
 import { getPlanDefinition, type PlanId } from "../../shared/plans";
 
@@ -96,7 +97,18 @@ export const usageService = {
           .from(competitors)
           .where(
             and(
-              eq(competitors.userId, userId),
+              inArray(
+                competitors.id,
+                database
+                  .select({ id: accountCompetitorConnections.competitorId })
+                  .from(accountCompetitorConnections)
+                  .where(
+                    and(
+                      eq(accountCompetitorConnections.userId, userId),
+                      eq(accountCompetitorConnections.isActive, true)
+                    )
+                  )
+              ),
               eq(competitors.status, "active")
             )
           )
@@ -128,7 +140,18 @@ export const usageService = {
           )
           .where(
             and(
-              eq(competitors.userId, userId),
+              inArray(
+                competitors.id,
+                database
+                  .select({ id: accountCompetitorConnections.competitorId })
+                  .from(accountCompetitorConnections)
+                  .where(
+                    and(
+                      eq(accountCompetitorConnections.userId, userId),
+                      eq(accountCompetitorConnections.isActive, true)
+                    )
+                  )
+              ),
               eq(competitorProducts.isActive, true)
             )
           )
@@ -147,7 +170,18 @@ export const usageService = {
           )
           .where(
             and(
-              eq(competitors.userId, userId),
+              inArray(
+                competitors.id,
+                database
+                  .select({ id: accountCompetitorConnections.competitorId })
+                  .from(accountCompetitorConnections)
+                  .where(
+                    and(
+                      eq(accountCompetitorConnections.userId, userId),
+                      eq(accountCompetitorConnections.isActive, true)
+                    )
+                  )
+              ),
               gte(priceChanges.detectedAt, since)
             )
           )

@@ -16,10 +16,15 @@ import {
   verifyShopifyHmac,
 } from "./sdk";
 import * as db from "../db";
-import { eq, and } from "drizzle-orm";
-import { shopifyStores, users } from "../../drizzle/schema";
+import { eq, and, inArray } from "drizzle-orm";
+import { accountShopConnections, shops, users } from "../../drizzle/schema";
 import { logger } from "./logger";
 import { setAuthSessionCookies } from "./auth/session-cookies";
+import {
+  getOrCreateAccountShopConnection,
+  getOrCreateShop,
+  normalizeShopDomain as normalizeCanonicalShopDomain,
+} from "../services/shop.service";
 
 const GOOGLE_STATE_COOKIE = "google_oauth_state";
 const GOOGLE_STATE_TTL_MS = 10 * 60 * 1000;
@@ -379,7 +384,8 @@ export function registerOAuthRoutes(app: Express) {
       return;
     }
 
-    // Check if user already has a connected store
+    // Existing connections do not prevent connecting another store. Keep the
+    // user on Settings so the new connection is added to the existing list.
     const database = await db.getDb();
     let hasStore = false;
     if (database) {
@@ -389,15 +395,22 @@ export function registerOAuthRoutes(app: Express) {
         .where(eq(users.openId, session.openId))
         .limit(1);
       if (user) {
-        const store = await database.query.shopifyStores.findFirst({
-          where: and(eq(shopifyStores.userId, user.id), eq(shopifyStores.isActive, true)),
-        });
-        hasStore = !!store;
+        const store = await database
+          .select({ id: accountShopConnections.id })
+          .from(accountShopConnections)
+          .where(
+            and(
+              eq(accountShopConnections.userId, user.id),
+              eq(accountShopConnections.isActive, true)
+            )
+          )
+          .limit(1);
+        hasStore = store.length > 0;
       }
     }
 
     if (hasStore) {
-      res.redirect(302, "/");
+      res.redirect(302, "/settings");
       return;
     }
 
@@ -670,54 +683,32 @@ export function registerOAuthRoutes(app: Express) {
         );
         return;
       }
-      {
-        // Check if store already exists for this user
-        const existing = await database.query.shopifyStores.findFirst({
-          where: eq(shopifyStores.shopDomain, shop),
-        });
-
-        if (existing) {
-          // A store whose app was uninstalled (or disconnected here) holds no
-          // token, so nobody is really using it. Whoever reinstalls next takes
-          // it over; otherwise an uninstall would lock the domain forever.
-          const claimIsLive = existing.isActive && !!existing.accessToken;
-          if (existing.userId !== userId && claimIsLive) {
-            sendConnectError(
-              res,
-              403,
-              "This store is already connected to another account",
-              "Each Shopify store can currently be connected to one PriceIntel account at a time. Sign in with the account that connected it and disconnect it there, or remove the app from your Shopify admin, then try again."
-            );
-            return;
-          }
-          await database
-            .update(shopifyStores)
-            .set({
-              userId,
-              accessToken: encryptedToken,
-              scopes: ENV.shopifyScopes,
-              isActive: true,
-              updatedAt: new Date(),
-            })
-            .where(eq(shopifyStores.id, existing.id));
-        } else {
-          await database.insert(shopifyStores).values({
-            userId,
-            shopDomain: shop,
-            accessToken: encryptedToken,
-            scopes: ENV.shopifyScopes,
-            storeName: shop.split(".")[0].replace(/-/g, " "),
-            currency: "USD",
-            isActive: true,
-          });
+      const normalizedDomain = normalizeCanonicalShopDomain(shop);
+      const canonicalShop = await getOrCreateShop(normalizedDomain, {
+        name: normalizedDomain.split(".")[0].replace(/-/g, " "),
+        platform: "shopify",
+        database,
+      });
+      const connection = await getOrCreateAccountShopConnection(
+        userId,
+        canonicalShop.id,
+        {
+          accessToken: encryptedToken,
+          scopes: ENV.shopifyScopes,
+          storeName: normalizedDomain.split(".")[0].replace(/-/g, " "),
+          currency: "USD",
+          database,
         }
-      }
+      );
 
       // Clear the state cookie
       res.clearCookie("shopify_oauth_state");
 
       // Redirect to dashboard with success
-      res.redirect(302, "/?shopify_connected=true");
+      res.redirect(
+        302,
+        `/settings?shopify_connected=true&shopify_connection=${encodeURIComponent(connection.id)}`
+      );
     } catch (error) {
       logger.error({ err: error }, "Shopify OAuth callback failed");
       res.status(500).json({ error: "Shopify connection failed" });
@@ -762,12 +753,28 @@ export function registerOAuthRoutes(app: Express) {
       }
 
       await database
-        .update(shopifyStores)
-        .set({ isActive: false, accessToken: null, updatedAt: new Date() })
+        .update(accountShopConnections)
+        .set({
+          isActive: false,
+          connectionStatus: "inactive",
+          accessToken: null,
+          updatedAt: new Date(),
+        })
         .where(
           and(
-            eq(shopifyStores.userId, user.id),
-            eq(shopifyStores.shopDomain, shopDomain)
+            eq(accountShopConnections.userId, user.id),
+            inArray(
+              accountShopConnections.shopId,
+              database
+                .select({ id: shops.id })
+                .from(shops)
+                .where(
+                  eq(
+                    shops.normalizedDomain,
+                    normalizeCanonicalShopDomain(shopDomain)
+                  )
+                )
+            )
           )
         );
     }

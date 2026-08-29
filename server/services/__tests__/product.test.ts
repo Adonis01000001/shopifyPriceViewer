@@ -1,8 +1,9 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { eq } from "drizzle-orm";
 import { productService } from "../product.service";
-import { users, products, shopifyStores } from "../../../drizzle/schema";
+import { users, products, shops, accountShopConnections } from "../../../drizzle/schema";
 import { requireDb } from "../../_core/db-assert";
+import { getOrCreateAccountShopConnection, getOrCreateShop } from "../shop.service";
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -22,24 +23,27 @@ async function createTestUser(email: string): Promise<string> {
 
 async function createTestStore(userId: string): Promise<string> {
   const db = await requireDb();
-  const result = await db
-    .insert(shopifyStores)
-    .values({
-      userId,
-      shopDomain: `test-${Date.now()}.myshopify.com`,
-      accessToken: "test-token",
-      scopes: "read_products",
-      isActive: true,
-    })
-    .returning();
-  return result[0].id;
+  const shop = await getOrCreateShop(`test-${Date.now()}-${Math.random()}.myshopify.com`, { database: db });
+  const connection = await getOrCreateAccountShopConnection(userId, shop.id, {
+    accessToken: "test-token",
+    scopes: "read_products",
+    database: db,
+  });
+  return connection.id;
 }
 
 async function cleanUp(userId: string) {
   const db = await requireDb();
-  await db.delete(shopifyStores).where(eq(shopifyStores.userId, userId));
+  const connectionRows = await db
+    .select({ shopId: accountShopConnections.shopId })
+    .from(accountShopConnections)
+    .where(eq(accountShopConnections.userId, userId));
   await db.delete(products).where(eq(products.userId, userId));
+  await db.delete(accountShopConnections).where(eq(accountShopConnections.userId, userId));
   await db.delete(users).where(eq(users.id, userId));
+  for (const row of connectionRows) {
+    await db.delete(shops).where(eq(shops.id, row.shopId));
+  }
 }
 
 // ── Tests ────────────────────────────────────────────────────────────────────

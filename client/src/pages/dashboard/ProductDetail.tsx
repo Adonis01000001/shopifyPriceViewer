@@ -14,6 +14,7 @@ import { Badge } from "@/components/ui/badge";
 import { PageSkeleton } from "@/components/dashboard/PageSkeleton";
 import { PricingRecommendationWidget } from "@/components/dashboard/PricingRecommendationWidget";
 import { ProductEvidence } from "@/components/dashboard/ProductEvidence";
+import { getStoreDashboardPath, useShopContext } from "@/contexts/ShopContext";
 
 
 const statusConfig: Record<string, { label: string; className: string }> = {
@@ -38,21 +39,24 @@ const statusConfig: Record<string, { label: string; className: string }> = {
 };
 
 export default function ProductDetail() {
-  const [, params] = useRoute("/products/:id");
+  const [, scopedParams] = useRoute("/dashboard/:connectionId/products/:id");
+  const [, legacyParams] = useRoute("/products/:id");
   const [, navigate] = useLocation();
-  const productId = params?.id;
+  const { selectedShopId } = useShopContext();
+  const productId = scopedParams?.id ?? legacyParams?.id;
+  const productsPath = getStoreDashboardPath(selectedShopId ?? "", "/products");
 
   const {
     data: product,
     isLoading,
     error,
   } = trpc.products.getById.useQuery(
-    { id: productId ?? "" },
+    { id: productId ?? "", storeId: selectedShopId ?? undefined },
     { enabled: !!productId }
   );
 
   const { data: competitorPrices } = trpc.products.getCompetitorPrices.useQuery(
-    { productId: productId ?? "" },
+    { productId: productId ?? "", storeId: selectedShopId ?? undefined },
     { enabled: !!productId }
   );
 
@@ -61,7 +65,7 @@ export default function ProductDetail() {
       <div className="space-y-6">
         <button
           type="button"
-          onClick={() => navigate("/products")}
+          onClick={() => navigate(selectedShopId ? productsPath : "/products")}
           className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-primary transition-colors"
         >
           <ArrowLeft className="h-4 w-4" />
@@ -74,7 +78,7 @@ export default function ProductDetail() {
           <Button
             variant="outline"
             size="sm"
-            onClick={() => navigate("/products")}
+            onClick={() => navigate(selectedShopId ? productsPath : "/products")}
           >
             Return to Products
           </Button>
@@ -92,7 +96,7 @@ export default function ProductDetail() {
     <div className="space-y-8">
       {/* Breadcrumb */}
       <button
-        onClick={() => navigate("/products")}
+        onClick={() => navigate(selectedShopId ? productsPath : "/products")}
         type="button"
         className="text-link inline-flex items-center gap-1.5 text-sm text-muted-foreground transition-colors"
         aria-label="Back to products"
@@ -250,7 +254,7 @@ export default function ProductDetail() {
       </div>
 
       {/* The working behind the suggestion */}
-      <ProductEvidence productId={product.id} />
+      <ProductEvidence productId={product.id} storeId={selectedShopId ?? undefined} />
 
       {/* Product Metadata */}
       {product.description && (

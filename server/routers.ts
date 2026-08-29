@@ -21,12 +21,18 @@ import { protectedProcedure } from "./_core/trpc";
 import { TRPCError } from "@trpc/server";
 import { publicShopifyStoreColumns } from "./_core/public-views";
 import { z } from "zod";
-import { shopifyStores } from "../drizzle/schema";
+import { accountShopConnections, shops } from "../drizzle/schema";
 import { eq, and } from "drizzle-orm";
 import * as db from "./db";
 import { encryptToken, decryptToken, isValidShopDomain } from "./_core/sdk";
 import { ENV } from "./_core/env";
 import { logger } from "./_core/logger";
+import {
+  getAccountShopConnection,
+  getOrCreateAccountShopConnection,
+  getOrCreateShop,
+  normalizeShopDomain,
+} from "./services/shop.service";
 
 export const appRouter = router({
   system: systemRouter,
@@ -56,13 +62,15 @@ export const appRouter = router({
       if (!database) return [];
       return database
         .select(publicShopifyStoreColumns)
-        .from(shopifyStores)
+        .from(accountShopConnections)
+        .innerJoin(shops, eq(accountShopConnections.shopId, shops.id))
         .where(
           and(
-            eq(shopifyStores.userId, ctx.user!.id),
-            eq(shopifyStores.isActive, true)
+            eq(accountShopConnections.userId, ctx.user!.id),
+            eq(accountShopConnections.isActive, true)
           )
-        );
+        )
+        .orderBy(accountShopConnections.createdAt);
     }),
 
     /**
@@ -109,56 +117,27 @@ export const appRouter = router({
         const database = await db.getDb();
         if (!database) throw new Error("Database not available");
 
-        const [existing] = await database
-          .select({ id: shopifyStores.id, userId: shopifyStores.userId })
-          .from(shopifyStores)
-          .where(eq(shopifyStores.shopDomain, input.shop))
-          .limit(1);
-
-        if (existing) {
-          if (existing.userId !== ctx.user!.id) {
-            throw new TRPCError({
-              code: "CONFLICT",
-              message: "Store is already connected to another account",
-            });
-          }
-          await database
-            .update(shopifyStores)
-            .set({
-              accessToken: encryptedToken,
-              scopes: ENV.shopifyScopes,
-              isActive: true,
-              updatedAt: new Date(),
-            })
-            .where(
-              and(
-                eq(shopifyStores.id, existing.id),
-                eq(shopifyStores.userId, ctx.user!.id)
-              )
-            );
-          return {
-            success: true,
-            storeId: existing.id,
-            message: "Store reconnected",
-          };
-        }
-
-        const result = await database
-          .insert(shopifyStores)
-          .values({
-            userId: ctx.user!.id,
-            shopDomain: input.shop,
+        const normalizedDomain = normalizeShopDomain(input.shop);
+        const shop = await getOrCreateShop(normalizedDomain, {
+          name: normalizedDomain.split(".")[0].replace(/-/g, " "),
+          platform: "shopify",
+          database,
+        });
+        const connection = await getOrCreateAccountShopConnection(
+          ctx.user!.id,
+          shop.id,
+          {
             accessToken: encryptedToken,
             scopes: ENV.shopifyScopes,
-            storeName: input.shop.split(".")[0].replace(/-/g, " "),
+            storeName: normalizedDomain.split(".")[0].replace(/-/g, " "),
             currency: "USD",
-            isActive: true,
-          })
-          .returning();
+            database,
+          }
+        );
 
         return {
           success: true,
-          storeId: result[0].id,
+          storeId: connection.id,
           message: "Store connected",
         };
       }),
@@ -167,20 +146,49 @@ export const appRouter = router({
      * Disconnect a Shopify store (soft delete — keeps history).
      */
     disconnect: protectedProcedure
-      .input(z.object({ shopDomain: z.string().min(1) }))
+      .input(
+        z.object({
+          connectionId: z.string().uuid().optional(),
+          shopDomain: z.string().min(1).optional(),
+        })
+      )
       .mutation(async ({ ctx, input }) => {
         const database = await db.getDb();
         if (!database) throw new Error("Database not available");
 
-        await database
-          .update(shopifyStores)
-          .set({ isActive: false, accessToken: null, updatedAt: new Date() })
-          .where(
-            and(
-              eq(shopifyStores.userId, ctx.user!.id),
-              eq(shopifyStores.shopDomain, input.shopDomain)
+        let connectionId = input.connectionId;
+        if (!connectionId && input.shopDomain) {
+          const normalizedDomain = normalizeShopDomain(input.shopDomain);
+          const [row] = await database
+            .select({ id: accountShopConnections.id })
+            .from(accountShopConnections)
+            .innerJoin(shops, eq(accountShopConnections.shopId, shops.id))
+            .where(
+              and(
+                eq(accountShopConnections.userId, ctx.user!.id),
+                eq(accountShopConnections.isActive, true),
+                eq(shops.normalizedDomain, normalizedDomain)
+              )
             )
-          );
+            .limit(1);
+          connectionId = row?.id;
+        }
+        if (connectionId) {
+          await database
+            .update(accountShopConnections)
+            .set({
+              isActive: false,
+              connectionStatus: "inactive",
+              accessToken: null,
+              updatedAt: new Date(),
+            })
+            .where(
+              and(
+                eq(accountShopConnections.id, connectionId),
+                eq(accountShopConnections.userId, ctx.user!.id)
+              )
+            );
+        }
 
         return { success: true };
       }),
@@ -196,13 +204,14 @@ export const appRouter = router({
         if (!database) throw new Error("Database not available");
 
         // 1. Get the store and verify ownership
-        const store = await database.query.shopifyStores.findFirst({
-          where: and(
-            eq(shopifyStores.id, input.storeId),
-            eq(shopifyStores.userId, ctx.user!.id),
-            eq(shopifyStores.isActive, true)
-          ),
-        });
+        const owned = await getAccountShopConnection(
+          ctx.user!.id,
+          input.storeId,
+          database
+        );
+        const store = owned
+          ? { ...owned.connection, shopDomain: owned.shop.normalizedDomain }
+          : undefined;
 
         if (!store) {
           throw new Error("Store not found or not connected");
@@ -295,9 +304,9 @@ export const appRouter = router({
 
         if (allShopifyProducts.length === 0) {
           await database
-            .update(shopifyStores)
+            .update(accountShopConnections)
             .set({ lastSyncedAt: new Date(), updatedAt: new Date() })
-            .where(eq(shopifyStores.id, input.storeId));
+            .where(eq(accountShopConnections.id, input.storeId));
           return { synced: 0, message: "No products found in Shopify store" };
         }
 
@@ -336,9 +345,9 @@ export const appRouter = router({
 
         // 6. Update store's lastSyncedAt
         await database
-          .update(shopifyStores)
+          .update(accountShopConnections)
           .set({ lastSyncedAt: new Date(), updatedAt: new Date() })
-          .where(eq(shopifyStores.id, input.storeId));
+          .where(eq(accountShopConnections.id, input.storeId));
 
         // 7. Import is the trigger. The whole chain -- discover competitors,
         // read their pages, validate with one AI call, price -- runs from here
@@ -346,7 +355,9 @@ export const appRouter = router({
         // response is not held open for the length of the pipeline.
         const pipelineUserId = ctx.user!.id;
         void import("./services/pipeline.service")
-          .then(({ pipelineService }) => pipelineService.runForUser(pipelineUserId))
+          .then(({ pipelineService }) =>
+            pipelineService.runForUser(pipelineUserId, 50, undefined, input.storeId)
+          )
           .catch((err: unknown) =>
             logger.error({ err }, "Post-sync pipeline failed")
           );

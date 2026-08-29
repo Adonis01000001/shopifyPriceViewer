@@ -1,6 +1,10 @@
 import express, { type Express, type Request, type Response } from "express";
-import { eq } from "drizzle-orm";
-import { products, shopifyStores } from "../../drizzle/schema";
+import { eq, inArray } from "drizzle-orm";
+import {
+  accountShopConnections,
+  products,
+  shops,
+} from "../../drizzle/schema";
 import { requireDb } from "./db-assert";
 import { isValidShopDomain, verifyWebhookHmac } from "./auth/hmac";
 import { logger } from "./logger";
@@ -58,26 +62,25 @@ export function registerShopifyWebhookRoute(app: Express) {
 
       try {
         const database = await requireDb();
-        const store = await database
-          .select({ id: shopifyStores.id })
-          .from(shopifyStores)
-          .where(eq(shopifyStores.shopDomain, shopDomain))
-          .limit(1);
-        const storeId = store[0]?.id;
+        const connections = await database
+          .select({ id: accountShopConnections.id })
+          .from(accountShopConnections)
+          .innerJoin(shops, eq(accountShopConnections.shopId, shops.id))
+          .where(eq(shops.normalizedDomain, shopDomain.toLowerCase()))
+        const connectionIds = connections.map(connection => connection.id);
 
-        if (topic === "shop/redact" && storeId) {
-          // Products use ON DELETE SET NULL for their store relation, so delete
-          // store-scoped catalog data before deleting the store record.
-          await database.delete(products).where(eq(products.storeId, storeId));
+        if (topic === "shop/redact" && connectionIds.length > 0) {
+          await database.delete(products).where(inArray(products.storeId, connectionIds));
           await database
-            .delete(shopifyStores)
-            .where(eq(shopifyStores.id, storeId));
+            .update(accountShopConnections)
+            .set({ accessToken: null, isActive: false, connectionStatus: "inactive", updatedAt: new Date() })
+            .where(inArray(accountShopConnections.id, connectionIds));
           logger.info({ shopDomain }, "Shopify shop data redacted");
-        } else if (topic === "app/uninstalled" && storeId) {
+        } else if (topic === "app/uninstalled" && connectionIds.length > 0) {
           await database
-            .update(shopifyStores)
-            .set({ accessToken: null, isActive: false, updatedAt: new Date() })
-            .where(eq(shopifyStores.id, storeId));
+            .update(accountShopConnections)
+            .set({ accessToken: null, isActive: false, connectionStatus: "inactive", updatedAt: new Date() })
+            .where(inArray(accountShopConnections.id, connectionIds));
           logger.info({ shopDomain }, "Shopify app uninstall processed");
         } else if (COMPLIANCE_TOPICS.has(topic)) {
           // No customer/order scopes are requested and no Shopify customer

@@ -7,7 +7,9 @@ import {
   notificationDeliveries,
   emailConfigs,
   notificationPreferences,
-  shopifyStores,
+  shops,
+  accountShopConnections,
+  accountCompetitorConnections,
   products,
   productEmbeddings,
   competitors,
@@ -25,7 +27,7 @@ export const usersRelations = relations(users, ({ many, one }) => ({
   notificationDeliveries: many(notificationDeliveries),
   emailConfigs: many(emailConfigs),
   notificationPreferences: many(notificationPreferences),
-  shopifyStores: many(shopifyStores),
+  accountShopConnections: many(accountShopConnections),
   products: many(products),
   competitors: many(competitors),
   alerts: many(alerts),
@@ -81,12 +83,21 @@ export const notificationPreferencesRelations = relations(
   })
 );
 
-export const shopifyStoresRelations = relations(
-  shopifyStores,
+export const shopsRelations = relations(shops, ({ many }) => ({
+  accountShopConnections: many(accountShopConnections),
+  competitors: many(competitors),
+}));
+
+export const accountShopConnectionsRelations = relations(
+  accountShopConnections,
   ({ one, many }) => ({
     user: one(users, {
-      fields: [shopifyStores.userId],
+      fields: [accountShopConnections.userId],
       references: [users.id],
+    }),
+    shop: one(shops, {
+      fields: [accountShopConnections.shopId],
+      references: [shops.id],
     }),
     products: many(products),
   })
@@ -97,9 +108,9 @@ export const productsRelations = relations(products, ({ one, many }) => ({
     fields: [products.userId],
     references: [users.id],
   }),
-  store: one(shopifyStores, {
+  store: one(accountShopConnections, {
     fields: [products.storeId],
-    references: [shopifyStores.id],
+    references: [accountShopConnections.id],
   }),
   embedding: one(productEmbeddings),
   competitorProducts: many(competitorProducts),
@@ -119,13 +130,28 @@ export const productEmbeddingsRelations = relations(
 );
 
 export const competitorsRelations = relations(competitors, ({ one, many }) => ({
-  user: one(users, {
-    fields: [competitors.userId],
-    references: [users.id],
+  shop: one(shops, {
+    fields: [competitors.shopId],
+    references: [shops.id],
   }),
+  accountConnections: many(accountCompetitorConnections),
   competitorProducts: many(competitorProducts),
   scrapeJobs: many(scrapeJobs),
 }));
+
+export const accountCompetitorConnectionsRelations = relations(
+  accountCompetitorConnections,
+  ({ one }) => ({
+    user: one(users, {
+      fields: [accountCompetitorConnections.userId],
+      references: [users.id],
+    }),
+    competitor: one(competitors, {
+      fields: [accountCompetitorConnections.competitorId],
+      references: [competitors.id],
+    }),
+  })
+);
 
 export const competitorProductsRelations = relations(
   competitorProducts,
@@ -211,7 +237,9 @@ export const dbRelations = {
   notificationDeliveries: notificationDeliveriesRelations,
   emailConfigs: emailConfigsRelations,
   notificationPreferences: notificationPreferencesRelations,
-  shopifyStores: shopifyStoresRelations,
+  shops: shopsRelations,
+  accountShopConnections: accountShopConnectionsRelations,
+  accountCompetitorConnections: accountCompetitorConnectionsRelations,
   products: productsRelations,
   productEmbeddings: productEmbeddingsRelations,
   competitors: competitorsRelations,

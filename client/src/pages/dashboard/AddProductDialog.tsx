@@ -122,11 +122,12 @@ const DEFAULT_PRODUCTS: ProductRow[] = [
 
 interface Props {
   onSuccess: () => void;
+  storeId?: string;
 }
 
-export default function AddProductDialog({ onSuccess }: Props) {
+export default function AddProductDialog({ onSuccess, storeId: initialStoreId }: Props) {
   const [open, setOpen] = useState(false);
-  const [storeId, setStoreId] = useState("");
+  const [storeId, setStoreId] = useState(initialStoreId ?? "");
   const [products, setProducts] = useState<ProductRow[]>(DEFAULT_PRODUCTS);
   const [submitting, setSubmitting] = useState(false);
 

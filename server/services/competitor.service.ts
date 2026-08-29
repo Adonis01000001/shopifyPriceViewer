@@ -14,8 +14,10 @@ import { requireDb } from "../_core/db-assert";
 import { TRPCError } from "@trpc/server";
 import {
   competitors,
+  accountCompetitorConnections,
   competitorProducts,
   products,
+  accountShopConnections,
   priceHistory,
   scrapeJobs,
   activityLogs,
@@ -24,6 +26,74 @@ import {
   type CompetitorProduct,
   type InsertCompetitorProduct,
 } from "../../drizzle/schema";
+import { getOrCreateShop, normalizeShopDomain } from "./shop.service";
+
+async function assertOwnedStore(userId: string, storeId?: string) {
+  if (!storeId) return;
+  const database = await requireDb();
+  const [connection] = await database
+    .select({ id: accountShopConnections.id })
+    .from(accountShopConnections)
+    .where(and(eq(accountShopConnections.id, storeId), eq(accountShopConnections.userId, userId), eq(accountShopConnections.isActive, true)))
+    .limit(1);
+  if (!connection) throw new TRPCError({ code: "FORBIDDEN", message: "Store not found" });
+}
+
+export async function findOrCreateCompetitor(
+  userId: string,
+  rawDomain: string,
+  name: string,
+  storeId?: string
+): Promise<Competitor> {
+  const database = await requireDb();
+  await assertOwnedStore(userId, storeId);
+  const domain = normalizeShopDomain(rawDomain);
+  const shop = await getOrCreateShop(domain, { database });
+  const [existing] = await database
+    .select()
+    .from(competitors)
+    .where(eq(competitors.shopId, shop.id))
+    .limit(1);
+  if (existing) {
+    await database
+      .insert(accountCompetitorConnections)
+      .values({ userId, competitorId: existing.id, isActive: true })
+      .onConflictDoUpdate({
+        target: [
+          accountCompetitorConnections.userId,
+          accountCompetitorConnections.competitorId,
+        ],
+        set: { isActive: true, updatedAt: new Date() },
+      });
+    return existing;
+  }
+  await database
+    .insert(competitors)
+    .values({
+      shopId: shop.id,
+      name: name.trim() || domain,
+      domain,
+      status: "active",
+    })
+    .onConflictDoNothing({ target: competitors.shopId });
+  const [created] = await database
+    .select()
+    .from(competitors)
+    .where(eq(competitors.shopId, shop.id))
+    .limit(1);
+  if (!created) throw new Error("Failed to create competitor");
+  await database
+    .insert(accountCompetitorConnections)
+    .values({ userId, competitorId: created.id, isActive: true })
+    .onConflictDoUpdate({
+      target: [
+        accountCompetitorConnections.userId,
+        accountCompetitorConnections.competitorId,
+      ],
+      set: { isActive: true, updatedAt: new Date() },
+    });
+  return created;
+}
 
 /**
  * How a competitor's prices compare with the merchant's own, measured from the
@@ -35,7 +105,9 @@ import {
  * the figure is always as current as the matches behind it.
  */
 async function getPriceComparison(
-  competitorIds: string[]
+  userId: string,
+  competitorIds: string[],
+  storeId?: string
 ): Promise<
   Map<
     string,
@@ -58,10 +130,12 @@ async function getPriceComparison(
     })
     .from(competitorProducts)
     .innerJoin(products, eq(products.id, competitorProducts.productId))
-    .where(
+      .where(
       and(
         inArray(competitorProducts.competitorId, competitorIds),
-        eq(competitorProducts.isActive, true)
+        eq(competitorProducts.isActive, true),
+        eq(products.userId, userId),
+        storeId ? eq(products.storeId, storeId) : undefined
       )
     );
 
@@ -98,7 +172,8 @@ async function getPriceComparison(
 
 async function getMergedProductCounts(
   userId: string,
-  competitorRows: Array<Pick<Competitor, "id" | "domain">>
+  competitorRows: Array<Pick<Competitor, "id" | "domain">>,
+  storeId?: string
 ): Promise<Map<string, number>> {
   const counts = new Map<string, number>();
   if (competitorRows.length === 0) return counts;
@@ -114,9 +189,12 @@ async function getMergedProductCounts(
       competitorProductUrl: competitorProducts.competitorProductUrl,
     })
     .from(competitorProducts)
+    .innerJoin(products, eq(products.id, competitorProducts.productId))
     .where(
       and(
         inArray(competitorProducts.competitorId, competitorIds),
+        eq(products.userId, userId),
+        storeId ? eq(products.storeId, storeId) : undefined,
         or(
           isNull(competitorProducts.matchMethod),
           ne(
@@ -150,7 +228,8 @@ async function getMergedProductCounts(
  */
 async function filterSyntheticOnlyCompetitors<T extends Pick<Competitor, "id">>(
   userId: string,
-  competitorRows: T[]
+  competitorRows: T[],
+  storeId?: string
 ): Promise<T[]> {
   if (competitorRows.length === 0) return competitorRows;
 
@@ -165,6 +244,7 @@ async function filterSyntheticOnlyCompetitors<T extends Pick<Competitor, "id">>(
     .where(
       and(
         eq(products.userId, userId),
+        storeId ? eq(products.storeId, storeId) : undefined,
         eq(products.isActive, true),
         eq(competitorProducts.isActive, true),
         inArray(
@@ -192,21 +272,36 @@ async function filterSyntheticOnlyCompetitors<T extends Pick<Competitor, "id">>(
 export const competitorService = {
   async getByUserId(
     userId: string,
-    options?: { limit?: number; offset?: number }
+    options?: { limit?: number; offset?: number; storeId?: string }
   ): Promise<Competitor[]> {
     const database = await requireDb();
+    await assertOwnedStore(userId, options?.storeId);
     const limit = Math.min(options?.limit ?? 50, 200);
     const offset = options?.offset ?? 0;
     const rows = await database
       .select()
       .from(competitors)
-      .where(eq(competitors.userId, userId))
+      .where(
+        and(
+          inArray(competitors.id, database.select({ id: accountCompetitorConnections.competitorId }).from(accountCompetitorConnections).where(and(eq(accountCompetitorConnections.userId, userId), eq(accountCompetitorConnections.isActive, true)))),
+          options?.storeId
+            ? inArray(
+                competitors.id,
+                database
+                  .select({ id: competitorProducts.competitorId })
+                  .from(competitorProducts)
+                  .innerJoin(products, eq(competitorProducts.productId, products.id))
+                  .where(eq(products.storeId, options.storeId))
+              )
+            : undefined
+        )
+      )
       .orderBy(desc(competitors.createdAt))
       .limit(limit)
       .offset(offset);
-    const visibleRows = await filterSyntheticOnlyCompetitors(userId, rows);
-    const counts = await getMergedProductCounts(userId, visibleRows);
-    const comparison = await getPriceComparison(visibleRows.map(r => r.id));
+    const visibleRows = await filterSyntheticOnlyCompetitors(userId, rows, options?.storeId);
+    const counts = await getMergedProductCounts(userId, visibleRows, options?.storeId);
+    const comparison = await getPriceComparison(userId, visibleRows.map(r => r.id), options?.storeId);
     return visibleRows.map(competitor => {
       const measured = comparison.get(competitor.id);
       return {
@@ -219,26 +314,56 @@ export const competitorService = {
     });
   },
 
-  async countByUserId(userId: string): Promise<number> {
+  async countByUserId(userId: string, storeId?: string): Promise<number> {
     const database = await requireDb();
+    await assertOwnedStore(userId, storeId);
     const rows = await database
       .select({ id: competitors.id })
       .from(competitors)
-      .where(eq(competitors.userId, userId));
-    const visibleRows = await filterSyntheticOnlyCompetitors(userId, rows);
+      .where(
+        and(
+          inArray(competitors.id, database.select({ id: accountCompetitorConnections.competitorId }).from(accountCompetitorConnections).where(and(eq(accountCompetitorConnections.userId, userId), eq(accountCompetitorConnections.isActive, true)))),
+          storeId
+            ? inArray(
+                competitors.id,
+                database
+                  .select({ id: competitorProducts.competitorId })
+                  .from(competitorProducts)
+                  .innerJoin(products, eq(competitorProducts.productId, products.id))
+                  .where(eq(products.storeId, storeId))
+              )
+            : undefined
+        )
+      );
+    const visibleRows = await filterSyntheticOnlyCompetitors(userId, rows, storeId);
     return visibleRows.length;
   },
 
   async getById(
     userId: string,
-    competitorId: string
+    competitorId: string,
+    storeId?: string
   ): Promise<Competitor | undefined> {
     const database = await requireDb();
+    await assertOwnedStore(userId, storeId);
     const result = await database
       .select()
       .from(competitors)
       .where(
-        and(eq(competitors.id, competitorId), eq(competitors.userId, userId))
+        and(
+          eq(competitors.id, competitorId),
+          inArray(competitors.id, database.select({ id: accountCompetitorConnections.competitorId }).from(accountCompetitorConnections).where(and(eq(accountCompetitorConnections.userId, userId), eq(accountCompetitorConnections.isActive, true)))),
+          storeId
+            ? inArray(
+                competitors.id,
+                database
+                  .select({ id: competitorProducts.competitorId })
+                  .from(competitorProducts)
+                  .innerJoin(products, eq(competitorProducts.productId, products.id))
+                  .where(eq(products.storeId, storeId))
+              )
+            : undefined
+        )
       )
       .limit(1);
     return result[0];
@@ -260,49 +385,74 @@ export const competitorService = {
   async update(
     userId: string,
     competitorId: string,
-    data: Partial<InsertCompetitor>
+    data: Partial<InsertCompetitor>,
+    storeId?: string
   ): Promise<Competitor | undefined> {
     const database = await requireDb();
+    await assertOwnedStore(userId, storeId);
     const result = await database
       .update(competitors)
       .set({ ...data, updatedAt: new Date() })
       .where(
-        and(eq(competitors.id, competitorId), eq(competitors.userId, userId))
+        and(
+          eq(competitors.id, competitorId),
+          inArray(
+            competitors.id,
+            database
+              .select({ id: accountCompetitorConnections.competitorId })
+              .from(accountCompetitorConnections)
+              .where(
+                and(
+                  eq(accountCompetitorConnections.userId, userId),
+                  eq(accountCompetitorConnections.isActive, true)
+                )
+              )
+          )
+        )
       )
       .returning();
     return result[0];
   },
 
-  async delete(userId: string, competitorId: string): Promise<void> {
+  async delete(userId: string, competitorId: string, storeId?: string): Promise<void> {
     const database = await requireDb();
-    // Log the deletion before removing
+    await assertOwnedStore(userId, storeId);
+    const competitor = await this.getById(userId, competitorId, storeId);
+    if (!competitor) return;
+    // Removing a competitor is account-specific. The canonical competitor and
+    // its shop remain available to other accounts.
+    await database
+      .update(accountCompetitorConnections)
+      .set({ isActive: false, updatedAt: new Date() })
+      .where(
+        and(
+          eq(accountCompetitorConnections.userId, userId),
+          eq(accountCompetitorConnections.competitorId, competitorId)
+        )
+      );
     await database.insert(activityLogs).values({
       userId,
       action: "competitor.deleted",
       entityType: "competitor",
       entityId: competitorId,
-      detail: `Deleted competitor`,
+      detail: `Disconnected competitor ${competitor.name}`,
     });
-    // Hard delete — cascades to competitorProducts via FK
-    await database
-      .delete(competitors)
-      .where(
-        and(eq(competitors.id, competitorId), eq(competitors.userId, userId))
-      );
   },
 
-  async getProducts(userId: string, competitorId: string) {
+  async getProducts(userId: string, competitorId: string, storeId?: string) {
     // Verify ownership
-    const comp = await this.getById(userId, competitorId);
+    const comp = await this.getById(userId, competitorId, storeId);
     if (!comp) return [];
     const database = await requireDb();
-    const matchedProducts = await
-      database
-        .select()
+    const matchedProducts = await database
+        .select({ cp: competitorProducts })
         .from(competitorProducts)
+        .innerJoin(products, eq(competitorProducts.productId, products.id))
         .where(
           and(
             eq(competitorProducts.competitorId, competitorId),
+            eq(products.userId, userId),
+            storeId ? eq(products.storeId, storeId) : undefined,
             or(
               isNull(competitorProducts.matchMethod),
               ne(
@@ -316,7 +466,7 @@ export const competitorService = {
 
 
     return matchedProducts
-      .map(product => ({ ...product, source: "matched" as const }))
+      .map(({ cp }) => ({ ...cp, source: "matched" as const }))
       .sort(
         (left, right) =>
           new Date(right.updatedAt).getTime() -
@@ -327,16 +477,29 @@ export const competitorService = {
 
   async addProduct(
     userId: string,
-    data: InsertCompetitorProduct
+    data: InsertCompetitorProduct & { storeId?: string }
   ): Promise<CompetitorProduct> {
     const database = await requireDb();
+    const { storeId, ...linkData } = data;
+    await assertOwnedStore(userId, storeId);
     const [ownedCompetitor] = await database
       .select({ id: competitors.id })
       .from(competitors)
       .where(
         and(
           eq(competitors.id, data.competitorId),
-          eq(competitors.userId, userId)
+          inArray(
+            competitors.id,
+            database
+              .select({ id: accountCompetitorConnections.competitorId })
+              .from(accountCompetitorConnections)
+              .where(
+                and(
+                  eq(accountCompetitorConnections.userId, userId),
+                  eq(accountCompetitorConnections.isActive, true)
+                )
+              )
+          )
         )
       )
       .limit(1);
@@ -351,7 +514,11 @@ export const competitorService = {
         .select({ id: products.id })
         .from(products)
         .where(
-          and(eq(products.id, data.productId), eq(products.userId, userId))
+          and(
+            eq(products.id, data.productId),
+            eq(products.userId, userId),
+            storeId ? eq(products.storeId, storeId) : undefined
+          )
         )
         .limit(1);
       if (!ownedProduct) {
@@ -379,15 +546,15 @@ export const competitorService = {
     }
     const result = await database
       .insert(competitorProducts)
-      .values(data)
+      .values(linkData)
       .returning();
     // Record initial price in price history
     if (data.productId) {
       await database.insert(priceHistory).values({
         productId: data.productId,
         competitorProductId: result[0].id,
-        price: data.price,
-        currency: data.currency ?? "USD",
+        price: linkData.price,
+        currency: linkData.currency ?? "USD",
         source: "manual",
       });
     }
@@ -400,20 +567,34 @@ export const competitorService = {
 
   async removeProduct(
     userId: string,
-    competitorProductId: string
+    competitorProductId: string,
+    storeId?: string
   ): Promise<boolean> {
     const database = await requireDb();
     const cp = await database
       .select({
         id: competitorProducts.id,
         competitorId: competitorProducts.competitorId,
+        productId: competitorProducts.productId,
       })
       .from(competitorProducts)
       .where(eq(competitorProducts.id, competitorProductId))
       .limit(1);
     if (!cp[0]) return false;
-    const comp = await this.getById(userId, cp[0].competitorId);
+    const comp = await this.getById(userId, cp[0].competitorId, storeId);
     if (!comp) return false;
+    const [ownedProduct] = await database
+      .select({ id: products.id })
+      .from(products)
+      .where(
+        and(
+          eq(products.id, cp[0].productId),
+          eq(products.userId, userId),
+          storeId ? eq(products.storeId, storeId) : undefined
+        )
+      )
+      .limit(1);
+    if (!ownedProduct) return false;
     await database
       .delete(competitorProducts)
       .where(eq(competitorProducts.id, competitorProductId));
@@ -443,9 +624,11 @@ export const competitorService = {
   async updateProduct(
     userId: string,
     productId: string,
-    data: Partial<InsertCompetitorProduct>
+    data: Partial<InsertCompetitorProduct> & { storeId?: string }
   ): Promise<CompetitorProduct | undefined> {
     const database = await requireDb();
+    const { storeId, ...linkData } = data;
+    await assertOwnedStore(userId, storeId);
     const [current] = await database
       .select({
         id: competitorProducts.id,
@@ -460,7 +643,29 @@ export const competitorService = {
       .where(
         and(
           eq(competitorProducts.id, productId),
-          eq(competitors.userId, userId)
+          inArray(
+            competitors.id,
+            database
+              .select({ id: accountCompetitorConnections.competitorId })
+              .from(accountCompetitorConnections)
+              .where(
+                and(
+                  eq(accountCompetitorConnections.userId, userId),
+                  eq(accountCompetitorConnections.isActive, true)
+                )
+              )
+          ),
+          storeId
+            ? inArray(
+                competitorProducts.productId,
+                database
+                  .select({ id: products.id })
+                  .from(products)
+                  .where(
+                    and(eq(products.userId, userId), eq(products.storeId, storeId))
+                  )
+              )
+            : undefined
         )
       )
       .limit(1);
@@ -474,7 +679,11 @@ export const competitorService = {
         .select({ id: products.id })
         .from(products)
         .where(
-          and(eq(products.userId, userId), inArray(products.id, productIds))
+          and(
+            eq(products.userId, userId),
+            inArray(products.id, productIds),
+            storeId ? eq(products.storeId, storeId) : undefined
+          )
         );
       if (ownedProducts.length !== new Set(productIds).size) return undefined;
     }
@@ -485,7 +694,18 @@ export const competitorService = {
         .where(
           and(
             eq(competitors.id, data.competitorId),
-            eq(competitors.userId, userId)
+            inArray(
+              competitors.id,
+              database
+                .select({ id: accountCompetitorConnections.competitorId })
+                .from(accountCompetitorConnections)
+                .where(
+                  and(
+                    eq(accountCompetitorConnections.userId, userId),
+                    eq(accountCompetitorConnections.isActive, true)
+                  )
+                )
+            )
           )
         )
         .limit(1);
@@ -493,7 +713,7 @@ export const competitorService = {
     }
     const result = await database
       .update(competitorProducts)
-      .set({ ...data, updatedAt: new Date() })
+      .set({ ...linkData, updatedAt: new Date() })
       .where(eq(competitorProducts.id, productId))
       .returning();
     if (
@@ -507,8 +727,9 @@ export const competitorService = {
     return result[0];
   },
 
-  async getStats(userId: string) {
+  async getStats(userId: string, storeId?: string) {
     const database = await requireDb();
+    await assertOwnedStore(userId, storeId);
     const result = await database
       .select({
         id: competitors.id,
@@ -516,9 +737,34 @@ export const competitorService = {
         status: competitors.status,
       })
       .from(competitors)
-      .where(eq(competitors.userId, userId));
-    const visibleRows = await filterSyntheticOnlyCompetitors(userId, result);
-    const counts = await getMergedProductCounts(userId, visibleRows);
+      .where(
+        and(
+          inArray(
+            competitors.id,
+            database
+              .select({ id: accountCompetitorConnections.competitorId })
+              .from(accountCompetitorConnections)
+              .where(
+                and(
+                  eq(accountCompetitorConnections.userId, userId),
+                  eq(accountCompetitorConnections.isActive, true)
+                )
+              )
+          ),
+          storeId
+            ? inArray(
+                competitors.id,
+                database
+                  .select({ id: competitorProducts.competitorId })
+                  .from(competitorProducts)
+                  .innerJoin(products, eq(competitorProducts.productId, products.id))
+                  .where(eq(products.storeId, storeId))
+              )
+            : undefined
+        )
+      );
+    const visibleRows = await filterSyntheticOnlyCompetitors(userId, result, storeId);
+    const counts = await getMergedProductCounts(userId, visibleRows, storeId);
 
     const stats = {
       total: 0,
@@ -537,9 +783,9 @@ export const competitorService = {
     return stats;
   },
 
-  async getFeed(userId: string, competitorId: string, limit: number = 50) {
+  async getFeed(userId: string, competitorId: string, limit: number = 50, storeId?: string) {
     // Verify ownership
-    const comp = await this.getById(userId, competitorId);
+    const comp = await this.getById(userId, competitorId, storeId);
     if (!comp) return null;
     const database = await requireDb();
 
@@ -585,7 +831,7 @@ export const competitorService = {
       .limit(limit);
 
     // Competitor's matched products with current prices
-    const products = await this.getProducts(userId, competitorId);
+    const products = await this.getProducts(userId, competitorId, storeId);
 
     return {
       priceHistory: priceHistoryEntries,
@@ -595,15 +841,37 @@ export const competitorService = {
     };
   },
 
-  async search(userId: string, query: string): Promise<Competitor[]> {
+  async search(userId: string, query: string, storeId?: string): Promise<Competitor[]> {
     const database = await requireDb();
+    await assertOwnedStore(userId, storeId);
     const pattern = `%${query}%`;
     return database
       .select()
       .from(competitors)
       .where(
         and(
-          eq(competitors.userId, userId),
+          inArray(
+            competitors.id,
+            database
+              .select({ id: accountCompetitorConnections.competitorId })
+              .from(accountCompetitorConnections)
+              .where(
+                and(
+                  eq(accountCompetitorConnections.userId, userId),
+                  eq(accountCompetitorConnections.isActive, true)
+                )
+              )
+          ),
+          storeId
+            ? inArray(
+                competitors.id,
+                database
+                  .select({ id: competitorProducts.competitorId })
+                  .from(competitorProducts)
+                  .innerJoin(products, eq(competitorProducts.productId, products.id))
+                  .where(eq(products.storeId, storeId))
+              )
+            : undefined,
           or(
             ilike(competitors.name, pattern),
             ilike(competitors.domain, pattern)

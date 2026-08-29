@@ -1,4 +1,4 @@
-import { and, desc, eq, gte, sql } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, sql } from "drizzle-orm";
 import { requireDb } from "../_core/db-assert";
 import {
   alerts,
@@ -7,6 +7,7 @@ import {
   priceChanges,
   products,
   recommendations,
+  accountShopConnections,
 } from "../../drizzle/schema";
 
 export type ActionCenter = {
@@ -60,9 +61,36 @@ async function countRows(
 }
 
 export const actionCenterService = {
-  async getForUser(userId: string): Promise<ActionCenter> {
+  async getForUser(userId: string, storeId?: string): Promise<ActionCenter> {
     const database = await requireDb();
     const since = new Date(Date.now() - 24 * 60 * 60 * 1000);
+
+    if (storeId) {
+      const [connection] = await database
+        .select({ id: accountShopConnections.id })
+        .from(accountShopConnections)
+        .where(
+          and(
+            eq(accountShopConnections.id, storeId),
+            eq(accountShopConnections.userId, userId),
+            eq(accountShopConnections.isActive, true)
+          )
+        )
+        .limit(1);
+      if (!connection) {
+        return {
+          generatedAt: new Date(),
+          pendingRecommendations: [],
+          unreadAlerts: [],
+          recentChanges: [],
+          totals: {
+            pendingRecommendations: 0,
+            unreadAlerts: 0,
+            changesLast24Hours: 0,
+          },
+        };
+      }
+    }
 
     const [
       pendingRecommendations,
@@ -91,7 +119,8 @@ export const actionCenterService = {
           and(
             eq(recommendations.userId, userId),
             eq(recommendations.status, "pending"),
-            eq(products.isActive, true)
+            eq(products.isActive, true),
+            storeId ? eq(products.storeId, storeId) : undefined
           )
         )
         .orderBy(
@@ -117,7 +146,8 @@ export const actionCenterService = {
           and(
             eq(alerts.userId, userId),
             eq(alerts.isRead, false),
-            eq(alerts.isResolved, false)
+            eq(alerts.isResolved, false),
+            storeId ? eq(products.storeId, storeId) : undefined
           )
         )
         .orderBy(desc(alerts.createdAt))
@@ -144,7 +174,12 @@ export const actionCenterService = {
           competitors,
           eq(competitorProducts.competitorId, competitors.id)
         )
-        .where(eq(competitors.userId, userId))
+        .where(
+          and(
+            eq(products.userId, userId),
+            storeId ? eq(products.storeId, storeId) : undefined
+          )
+        )
         .orderBy(desc(priceChanges.detectedAt))
         .limit(12),
       countRows(
@@ -154,7 +189,16 @@ export const actionCenterService = {
           .where(
             and(
               eq(recommendations.userId, userId),
-              eq(recommendations.status, "pending")
+              eq(recommendations.status, "pending"),
+              storeId
+                ? inArray(
+                    recommendations.productId,
+                    database
+                      .select({ id: products.id })
+                      .from(products)
+                      .where(eq(products.storeId, storeId))
+                  )
+                : undefined
             )
           )
       ),
@@ -166,7 +210,16 @@ export const actionCenterService = {
             and(
               eq(alerts.userId, userId),
               eq(alerts.isRead, false),
-              eq(alerts.isResolved, false)
+              eq(alerts.isResolved, false),
+              storeId
+                ? inArray(
+                    alerts.productId,
+                    database
+                      .select({ id: products.id })
+                      .from(products)
+                      .where(eq(products.storeId, storeId))
+                  )
+                : undefined
             )
           )
       ),
@@ -182,10 +235,12 @@ export const actionCenterService = {
             competitors,
             eq(competitorProducts.competitorId, competitors.id)
           )
+          .innerJoin(products, eq(priceChanges.productId, products.id))
           .where(
             and(
-              eq(competitors.userId, userId),
-              gte(priceChanges.detectedAt, since)
+              eq(products.userId, userId),
+              gte(priceChanges.detectedAt, since),
+              storeId ? eq(products.storeId, storeId) : undefined
             )
           )
       ),

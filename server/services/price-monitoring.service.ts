@@ -1,4 +1,4 @@
-import { eq, and, desc, sql } from "drizzle-orm";
+import { eq, and, desc, inArray, sql } from "drizzle-orm";
 import { Firecrawl } from "firecrawl";
 import { requireDb } from "../_core/db-assert";
 import {
@@ -12,6 +12,8 @@ import {
   alerts,
   activityLogs,
   notificationPreferences,
+  accountShopConnections,
+  accountCompetitorConnections,
   type PriceChange,
   type InsertActivityLog,
 } from "../../drizzle/schema";
@@ -177,7 +179,6 @@ export const priceMonitoringService = {
       const whereClause = userId
         ? and(
             eq(competitorProducts.isActive, true),
-            eq(competitors.userId, userId),
             eq(products.userId, userId),
             eq(products.isActive, true),
             eq(products.isTracked, true)
@@ -290,6 +291,8 @@ export const priceMonitoringService = {
               scrapeMethod: pageData.method,
             });
 
+            const ownerUserId = product.userId;
+
             // Update competitor product
             if (previousPrice !== newPrice && newPrice != null) {
               await database
@@ -340,7 +343,7 @@ export const priceMonitoringService = {
                 extracted.currency
               );
               await database.insert(activityLogs).values({
-                userId: competitor.userId,
+                userId: ownerUserId,
                 action: `price_change.${change.changeType}`,
                 entityType: "price_change",
                 entityId: pc.id,
@@ -367,7 +370,7 @@ export const priceMonitoringService = {
                 const severity: "high" | "medium" =
                   Math.abs(change.priceDiffPercent) >= 10 ? "high" : "medium";
                 await database.insert(alerts).values({
-                  userId: competitor.userId,
+                  userId: ownerUserId,
                   productId: product.id,
                   competitorProductId: competitorProduct.id,
                   alertType,
@@ -381,7 +384,7 @@ export const priceMonitoringService = {
 
                 notificationBroadcaster.broadcast({
                   type: "alert_created",
-                  userId: competitor.userId,
+                  userId: ownerUserId,
                   payload: {
                     alertType,
                     severity,
@@ -396,7 +399,7 @@ export const priceMonitoringService = {
                     .select()
                     .from(notificationPreferences)
                     .where(
-                      eq(notificationPreferences.userId, competitor.userId)
+                      eq(notificationPreferences.userId, ownerUserId)
                     )
                     .limit(1);
                   if (prefs[0]) {
@@ -409,7 +412,7 @@ export const priceMonitoringService = {
                       Math.abs(change.priceDiffPercent) >= thresholdPct
                     ) {
                       await database.insert(alerts).values({
-                        userId: competitor.userId,
+                        userId: ownerUserId,
                         productId: product.id,
                         competitorProductId: competitorProduct.id,
                         alertType: "threshold",
@@ -426,7 +429,7 @@ export const priceMonitoringService = {
 
                       notificationBroadcaster.broadcast({
                         type: "alert_created",
-                        userId: competitor.userId,
+                        userId: ownerUserId,
                         payload: {
                           alertType: "threshold",
                           severity,
@@ -444,7 +447,7 @@ export const priceMonitoringService = {
               // G2 — Regenerate recommendation for this product
               try {
                 await recommendationService.generateForProduct(
-                  competitor.userId,
+                  ownerUserId,
                   product.id
                 );
               } catch {
@@ -521,10 +524,37 @@ export const priceMonitoringService = {
       changeType?: string;
       limit?: number;
       offset?: number;
+      storeId?: string;
     }
   ): Promise<PriceChange[]> {
     const database = await requireDb();
-    const conditions: any[] = [eq(competitors.userId, userId)];
+    const conditions: any[] = [
+      eq(products.userId, userId),
+      inArray(
+        products.storeId,
+        database
+          .select({ id: accountShopConnections.id })
+          .from(accountShopConnections)
+          .where(
+            and(
+              eq(accountShopConnections.userId, userId),
+              eq(accountShopConnections.isActive, true)
+            )
+          )
+      ),
+      inArray(
+        competitors.id,
+        database
+          .select({ id: accountCompetitorConnections.competitorId })
+          .from(accountCompetitorConnections)
+          .where(
+            and(
+              eq(accountCompetitorConnections.userId, userId),
+              eq(accountCompetitorConnections.isActive, true)
+            )
+          )
+      ),
+    ];
     if (options?.productId)
       conditions.push(eq(priceChanges.productId, options.productId));
     if (options?.changeType)
@@ -533,6 +563,7 @@ export const priceMonitoringService = {
       conditions.push(
         eq(competitorProducts.competitorId, options.competitorId)
       );
+    if (options?.storeId) conditions.push(eq(products.storeId, options.storeId));
 
     const results = await database
       .select({ change: priceChanges })
@@ -545,6 +576,7 @@ export const priceMonitoringService = {
         competitors,
         eq(competitorProducts.competitorId, competitors.id)
       )
+      .innerJoin(products, eq(priceChanges.productId, products.id))
       .where(and(...conditions))
       .orderBy(desc(priceChanges.detectedAt))
       .limit(Math.min(options?.limit ?? 50, 200))
@@ -554,21 +586,38 @@ export const priceMonitoringService = {
 
   async getTimeline(
     userId: string,
-    options?: { limit?: number; offset?: number }
+    options?: { limit?: number; offset?: number; storeId?: string }
   ) {
     const database = await requireDb();
-    return database
-      .select()
+    const rows = await database
+      .select({ activity: activityLogs })
       .from(activityLogs)
+      .innerJoin(priceChanges, eq(activityLogs.entityId, priceChanges.id))
+      .innerJoin(products, eq(priceChanges.productId, products.id))
       .where(
         and(
           eq(activityLogs.userId, userId),
+          eq(products.userId, userId),
+          inArray(
+            products.storeId,
+            database
+              .select({ id: accountShopConnections.id })
+              .from(accountShopConnections)
+              .where(
+                and(
+                  eq(accountShopConnections.userId, userId),
+                  eq(accountShopConnections.isActive, true)
+                )
+              )
+          ),
+          options?.storeId ? eq(products.storeId, options.storeId) : undefined,
           sql`${activityLogs.action} LIKE 'price_change.%'`
         )
       )
       .orderBy(desc(activityLogs.createdAt))
       .limit(Math.min(options?.limit ?? 50, 200))
       .offset(options?.offset ?? 0);
+    return rows.map(row => row.activity);
   },
 
   async getCronRuns(limit: number = 20) {
@@ -583,7 +632,8 @@ export const priceMonitoringService = {
   async getSnapshotHistory(
     userId: string,
     competitorProductId: string,
-    limit: number = 30
+    limit: number = 30,
+    storeId?: string
   ) {
     const database = await requireDb();
     const rows = await database
@@ -597,10 +647,36 @@ export const priceMonitoringService = {
         competitors,
         eq(competitorProducts.competitorId, competitors.id)
       )
+      .innerJoin(products, eq(competitorProducts.productId, products.id))
       .where(
         and(
           eq(priceSnapshots.competitorProductId, competitorProductId),
-          eq(competitors.userId, userId)
+          storeId ? eq(products.storeId, storeId) : undefined,
+          eq(products.userId, userId),
+          inArray(
+            products.storeId,
+            database
+              .select({ id: accountShopConnections.id })
+              .from(accountShopConnections)
+              .where(
+                and(
+                  eq(accountShopConnections.userId, userId),
+                  eq(accountShopConnections.isActive, true)
+                )
+              )
+          ),
+          inArray(
+            competitors.id,
+            database
+              .select({ id: accountCompetitorConnections.competitorId })
+              .from(accountCompetitorConnections)
+              .where(
+                and(
+                  eq(accountCompetitorConnections.userId, userId),
+                  eq(accountCompetitorConnections.isActive, true)
+                )
+              )
+          )
         )
       )
       .orderBy(desc(priceSnapshots.scrapedAt))

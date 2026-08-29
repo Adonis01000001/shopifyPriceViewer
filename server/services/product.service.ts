@@ -14,7 +14,8 @@ import { TRPCError } from "@trpc/server";
 import { requireDb } from "../_core/db-assert";
 import {
   products,
-  shopifyStores,
+  accountShopConnections,
+  accountCompetitorConnections,
   competitors,
   competitorProducts,
   type Product,
@@ -23,6 +24,12 @@ import {
 } from "../../drizzle/schema";
 import { normalizeName } from "../../shared/validation";
 import { publicShopifyStoreColumns } from "../_core/public-views";
+import { shops } from "../../drizzle/schema";
+import {
+  getOrCreateAccountShopConnection,
+  getOrCreateShop,
+  normalizeShopDomain,
+} from "./shop.service";
 
 function validateProductTitle(title: string | undefined): void {
   if (title !== undefined && title.trim().length < 2) {
@@ -33,34 +40,68 @@ function validateProductTitle(title: string | undefined): void {
   }
 }
 
+async function assertOwnedConnection(userId: string, storeId: string) {
+  const database = await requireDb();
+  const [connection] = await database
+    .select({ id: accountShopConnections.id })
+    .from(accountShopConnections)
+    .where(
+      and(
+        eq(accountShopConnections.id, storeId),
+        eq(accountShopConnections.userId, userId),
+        eq(accountShopConnections.isActive, true)
+      )
+    )
+    .limit(1);
+  if (!connection) {
+    throw new TRPCError({ code: "FORBIDDEN", message: "Store not found" });
+  }
+  return connection;
+}
+
 export const productService = {
   async getByUserId(
     userId: string,
-    options?: { limit?: number; offset?: number }
+    options?: { limit?: number; offset?: number; storeId?: string }
   ): Promise<Product[]> {
     const database = await requireDb();
+    if (options?.storeId) await assertOwnedConnection(userId, options.storeId);
     const limit = Math.min(options?.limit ?? 500, 1000);
     const offset = options?.offset ?? 0;
     return database
       .select()
       .from(products)
-      .where(and(eq(products.userId, userId), eq(products.isActive, true)))
+      .where(
+        and(
+          eq(products.userId, userId),
+          eq(products.isActive, true),
+          options?.storeId ? eq(products.storeId, options.storeId) : undefined
+        )
+      )
       .orderBy(desc(products.updatedAt))
       .limit(limit)
       .offset(offset);
   },
 
-  async countByUserId(userId: string): Promise<number> {
+  async countByUserId(userId: string, storeId?: string): Promise<number> {
     const database = await requireDb();
+    if (storeId) await assertOwnedConnection(userId, storeId);
     const result = await database
       .select({ count: sql<number>`count(*)::int` })
       .from(products)
-      .where(and(eq(products.userId, userId), eq(products.isActive, true)));
+      .where(
+        and(
+          eq(products.userId, userId),
+          eq(products.isActive, true),
+          storeId ? eq(products.storeId, storeId) : undefined
+        )
+      );
     return result[0]?.count ?? 0;
   },
 
   async getByStoreId(userId: string, storeId: string): Promise<Product[]> {
     const database = await requireDb();
+    await assertOwnedConnection(userId, storeId);
     return database
       .select()
       .from(products)
@@ -76,13 +117,21 @@ export const productService = {
 
   async getById(
     userId: string,
-    productId: string
+    productId: string,
+    storeId?: string
   ): Promise<Product | undefined> {
     const database = await requireDb();
+    if (storeId) await assertOwnedConnection(userId, storeId);
     const result = await database
       .select()
       .from(products)
-      .where(and(eq(products.id, productId), eq(products.userId, userId)))
+      .where(
+        and(
+          eq(products.id, productId),
+          eq(products.userId, userId),
+          storeId ? eq(products.storeId, storeId) : undefined
+        )
+      )
       .limit(1);
     return result[0];
   },
@@ -98,12 +147,13 @@ export const productService = {
       });
     }
     const [ownedStore] = await database
-      .select({ id: shopifyStores.id })
-      .from(shopifyStores)
+      .select({ id: accountShopConnections.id })
+      .from(accountShopConnections)
       .where(
         and(
-          eq(shopifyStores.id, storeId),
-          eq(shopifyStores.userId, data.userId)
+          eq(accountShopConnections.id, storeId),
+          eq(accountShopConnections.userId, data.userId),
+          eq(accountShopConnections.isActive, true)
         )
       )
       .limit(1);
@@ -119,7 +169,7 @@ export const productService = {
 
     // Duplicate detection: SKU path
     if (normalizedSku) {
-      const existing = await this.findBySku(data.userId, normalizedSku);
+      const existing = await this.findBySku(data.userId, normalizedSku, storeId);
       if (existing) {
         throw new TRPCError({
           code: "CONFLICT",
@@ -128,7 +178,7 @@ export const productService = {
       }
     } else {
       // Duplicate detection: name path (only when no SKU)
-      const existing = await this.findByName(data.userId, data.title);
+      const existing = await this.findByName(data.userId, data.title, storeId);
       if (existing) {
         throw new TRPCError({
           code: "CONFLICT",
@@ -147,7 +197,8 @@ export const productService = {
   async update(
     userId: string,
     productId: string,
-    data: Partial<InsertProduct>
+    data: Partial<InsertProduct>,
+    storeId?: string
   ): Promise<Product | undefined> {
     const database = await requireDb();
     validateProductTitle(data.title);
@@ -158,7 +209,7 @@ export const productService = {
 
     // Duplicate SKU check (exclude current product).
     if (normalizedSku) {
-      const existing = await this.findBySku(userId, normalizedSku);
+      const existing = await this.findBySku(userId, normalizedSku, storeId);
       if (existing && existing.id !== productId) {
         throw new TRPCError({
           code: "CONFLICT",
@@ -169,7 +220,7 @@ export const productService = {
 
     // Duplicate name check: only when SKU is being cleared AND name is changing.
     if (data.sku !== undefined && !normalizedSku && data.title) {
-      const existing = await this.findByName(userId, data.title);
+      const existing = await this.findByName(userId, data.title, storeId);
       if (existing && existing.id !== productId) {
         throw new TRPCError({
           code: "CONFLICT",
@@ -186,39 +237,62 @@ export const productService = {
       updateData.sku = normalizedSku ?? null;
     }
 
+    if (storeId) await assertOwnedConnection(userId, storeId);
     const result = await database
       .update(products)
       .set(updateData)
-      .where(and(eq(products.id, productId), eq(products.userId, userId)))
+      .where(
+        and(
+          eq(products.id, productId),
+          eq(products.userId, userId),
+          storeId ? eq(products.storeId, storeId) : undefined
+        )
+      )
       .returning();
     return result[0];
   },
 
-  async delete(userId: string, productId: string): Promise<void> {
+  async delete(userId: string, productId: string, storeId?: string): Promise<void> {
     const database = await requireDb();
+    if (storeId) await assertOwnedConnection(userId, storeId);
     await database
       .update(products)
       .set({ isActive: false, updatedAt: new Date() })
-      .where(and(eq(products.id, productId), eq(products.userId, userId)));
+      .where(
+        and(
+          eq(products.id, productId),
+          eq(products.userId, userId),
+          storeId ? eq(products.storeId, storeId) : undefined
+        )
+      );
   },
 
   async toggleTracking(
     userId: string,
     productId: string,
-    isTracked: boolean
+    isTracked: boolean,
+    storeId?: string
   ): Promise<Product | undefined> {
-    return this.update(userId, productId, { isTracked });
+    return this.update(userId, productId, { isTracked }, storeId);
   },
 
   async getCompetitorPrices(
     userId: string,
-    productId: string
+    productId: string,
+    storeId?: string
   ): Promise<CompetitorProduct[]> {
     const database = await requireDb();
+    if (storeId) await assertOwnedConnection(userId, storeId);
     const [ownedProduct] = await database
       .select({ id: products.id })
       .from(products)
-      .where(and(eq(products.id, productId), eq(products.userId, userId)))
+      .where(
+        and(
+          eq(products.id, productId),
+          eq(products.userId, userId),
+          storeId ? eq(products.storeId, storeId) : undefined
+        )
+      )
       .limit(1);
     if (!ownedProduct) return [];
     return database
@@ -232,7 +306,34 @@ export const productService = {
             database
               .select({ id: competitors.id })
               .from(competitors)
-              .where(eq(competitors.userId, userId))
+              .where(
+                or(
+                  inArray(
+                    competitors.id,
+                    database
+                      .select({ id: accountCompetitorConnections.competitorId })
+                      .from(accountCompetitorConnections)
+                      .where(
+                        and(
+                          eq(accountCompetitorConnections.userId, userId),
+                          eq(accountCompetitorConnections.isActive, true)
+                        )
+                      )
+                  ),
+                  inArray(
+                    competitors.id,
+                    database
+                      .select({ id: accountCompetitorConnections.competitorId })
+                      .from(accountCompetitorConnections)
+                      .where(
+                        and(
+                          eq(accountCompetitorConnections.userId, userId),
+                          eq(accountCompetitorConnections.isActive, true)
+                        )
+                      )
+                  )
+                )
+              )
           ),
           eq(competitorProducts.isActive, true),
           or(
@@ -246,8 +347,9 @@ export const productService = {
       );
   },
 
-  async getCompetitorPricesForUser(userId: string) {
+  async getCompetitorPricesForUser(userId: string, storeId?: string) {
     const database = await requireDb();
+    if (storeId) await assertOwnedConnection(userId, storeId);
     const rows = await database
       .select({
         id: competitorProducts.id,
@@ -275,8 +377,34 @@ export const productService = {
       .where(
         and(
           eq(products.userId, userId),
+          storeId ? eq(products.storeId, storeId) : undefined,
           eq(products.isActive, true),
-          eq(competitors.userId, userId),
+          or(
+            inArray(
+              competitors.id,
+              database
+                .select({ id: accountCompetitorConnections.competitorId })
+                .from(accountCompetitorConnections)
+                .where(
+                  and(
+                    eq(accountCompetitorConnections.userId, userId),
+                    eq(accountCompetitorConnections.isActive, true)
+                  )
+                )
+            ),
+            inArray(
+              competitors.id,
+              database
+                .select({ id: accountCompetitorConnections.competitorId })
+                .from(accountCompetitorConnections)
+                .where(
+                  and(
+                    eq(accountCompetitorConnections.userId, userId),
+                    eq(accountCompetitorConnections.isActive, true)
+                  )
+                )
+            )
+          ),
           eq(competitorProducts.isActive, true),
           or(
             isNull(competitorProducts.matchMethod),
@@ -294,8 +422,9 @@ export const productService = {
     );
   },
 
-  async getStats(userId: string) {
+  async getStats(userId: string, storeId?: string) {
     const database = await requireDb();
+    if (storeId) await assertOwnedConnection(userId, storeId);
     const result = await database
       .select({
         status: products.status,
@@ -303,7 +432,13 @@ export const productService = {
         avgPrice: sql<number>`coalesce(avg(${products.price}), 0)`,
       })
       .from(products)
-      .where(and(eq(products.userId, userId), eq(products.isActive, true)))
+      .where(
+        and(
+          eq(products.userId, userId),
+          eq(products.isActive, true),
+          storeId ? eq(products.storeId, storeId) : undefined
+        )
+      )
       .groupBy(products.status);
 
     const stats = {
@@ -334,9 +469,13 @@ export const productService = {
     const database = await requireDb();
     return database
       .select(publicShopifyStoreColumns)
-      .from(shopifyStores)
+      .from(accountShopConnections)
+      .innerJoin(shops, eq(accountShopConnections.shopId, shops.id))
       .where(
-        and(eq(shopifyStores.userId, userId), eq(shopifyStores.isActive, true))
+        and(
+          eq(accountShopConnections.userId, userId),
+          eq(accountShopConnections.isActive, true)
+        )
       );
   },
 
@@ -355,7 +494,7 @@ export const productService = {
    * Find an active product by SKU for a specific user.
    * Returns the first match or undefined.
    */
-  async findBySku(userId: string, sku: string): Promise<Product | undefined> {
+  async findBySku(userId: string, sku: string, storeId?: string): Promise<Product | undefined> {
     const database = await requireDb();
     const result = await database
       .select()
@@ -364,7 +503,8 @@ export const productService = {
         and(
           eq(products.userId, userId),
           eq(products.sku, sku),
-          eq(products.isActive, true)
+          eq(products.isActive, true),
+          storeId ? eq(products.storeId, storeId) : undefined
         )
       )
       .limit(1);
@@ -375,7 +515,7 @@ export const productService = {
    * Find an active product by normalized name for a specific user.
    * Used for duplicate-name detection when SKU is empty.
    */
-  async findByName(userId: string, name: string): Promise<Product | undefined> {
+  async findByName(userId: string, name: string, storeId?: string): Promise<Product | undefined> {
     const database = await requireDb();
     const normalized = normalizeName(name);
     // Use ILIKE on a trimmed lowercase version. We compare against a
@@ -387,6 +527,7 @@ export const productService = {
         and(
           eq(products.userId, userId),
           eq(products.isActive, true),
+          storeId ? eq(products.storeId, storeId) : undefined,
           sql`lower(trim(${products.title})) = ${normalized}`
         )
       )
@@ -394,41 +535,43 @@ export const productService = {
     return result[0];
   },
 
-  async upsertStore(data: typeof shopifyStores.$inferInsert) {
+  async upsertStore(data: {
+    userId: string;
+    shopDomain: string;
+    accessToken?: string | null;
+    scopes: string;
+    storeName?: string | null;
+    storeEmail?: string | null;
+    currency?: string | null;
+    timezone?: string | null;
+  }) {
     const database = await requireDb();
-    const [existing] = await database
-      .select({ id: shopifyStores.id, userId: shopifyStores.userId })
-      .from(shopifyStores)
-      .where(eq(shopifyStores.shopDomain, data.shopDomain))
+    const normalizedDomain = normalizeShopDomain(data.shopDomain);
+    const shop = await getOrCreateShop(normalizedDomain, {
+      name: data.storeName,
+      platform: "shopify",
+      database,
+    });
+    const connection = await getOrCreateAccountShopConnection(
+      data.userId,
+      shop.id,
+      {
+        accessToken: data.accessToken,
+        scopes: data.scopes,
+        storeName: data.storeName,
+        storeEmail: data.storeEmail,
+        currency: data.currency,
+        timezone: data.timezone,
+        database,
+      }
+    );
+    const [publicConnection] = await database
+      .select(publicShopifyStoreColumns)
+      .from(accountShopConnections)
+      .innerJoin(shops, eq(accountShopConnections.shopId, shops.id))
+      .where(eq(accountShopConnections.id, connection.id))
       .limit(1);
-
-    if (existing && existing.userId !== data.userId) {
-      throw new TRPCError({
-        code: "CONFLICT",
-        message: "Store is already connected to another account",
-      });
-    }
-
-    if (existing) {
-      const { userId: _userId, ...updateData } = data;
-      const result = await database
-        .update(shopifyStores)
-        .set({ ...updateData, updatedAt: new Date() })
-        .where(
-          and(
-            eq(shopifyStores.id, existing.id),
-            eq(shopifyStores.userId, data.userId)
-          )
-        )
-        .returning();
-      return result[0];
-    }
-
-    const result = await database
-      .insert(shopifyStores)
-      .values(data)
-      .returning();
-    return result[0];
+    return publicConnection;
   },
 
   async bulkUpsertProducts(items: InsertProduct[]): Promise<number> {
@@ -451,12 +594,13 @@ export const productService = {
     }
     const storeIds = Array.from(new Set(rawStoreIds as string[]));
     const ownedStores = await database
-      .select({ id: shopifyStores.id })
-      .from(shopifyStores)
+      .select({ id: accountShopConnections.id })
+      .from(accountShopConnections)
       .where(
         and(
-          eq(shopifyStores.userId, userId),
-          inArray(shopifyStores.id, storeIds)
+          eq(accountShopConnections.userId, userId),
+          eq(accountShopConnections.isActive, true),
+          inArray(accountShopConnections.id, storeIds)
         )
       );
     if (ownedStores.length !== storeIds.length) {
@@ -493,8 +637,9 @@ export const productService = {
     return result.length;
   },
 
-  async search(userId: string, query: string): Promise<Product[]> {
+  async search(userId: string, query: string, storeId?: string): Promise<Product[]> {
     const database = await requireDb();
+    if (storeId) await assertOwnedConnection(userId, storeId);
     const pattern = `%${query}%`;
     const normalizedQuery = query.trim().toUpperCase();
 
@@ -540,6 +685,7 @@ export const productService = {
         and(
           eq(products.userId, userId),
           eq(products.isActive, true),
+          storeId ? eq(products.storeId, storeId) : undefined,
           or(
             ilike(products.title, pattern),
             ilike(products.sku, pattern),

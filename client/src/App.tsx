@@ -83,6 +83,11 @@ function App() {
                 <DashboardLayout>
                   <Suspense fallback={<DashboardPageFallback />}>
                     <Switch>
+                      <Route path="/dashboard/:connectionId/products/:id" component={ProductDetail} />
+                      <Route path="/dashboard/:connectionId/products" component={Products} />
+                      <Route path="/dashboard/:connectionId/alerts" component={Alerts} />
+                      <Route path="/dashboard/:connectionId/competitors" component={Competitors} />
+                      <Route path="/dashboard/:connectionId" component={Overview} />
                       <Route path="/" component={Overview} />
                       <Route path="/products" component={Products} />
                       <Route path="/products/:id" component={ProductDetail} />

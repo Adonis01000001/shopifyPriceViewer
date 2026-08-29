@@ -33,8 +33,11 @@ import {
 import { cn } from "@/lib/utils";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
+import { useLocation } from "wouter";
+import { getStoreDashboardPath } from "@/contexts/ShopContext";
 
 export default function Settings() {
+  const [, navigate] = useLocation();
   const { data: user } = trpc.auth.me.useQuery();
   const { data: stores, refetch: refetchStores } =
     trpc.shopify.listStores.useQuery();
@@ -314,6 +317,14 @@ export default function Settings() {
                       </p>
                     </div>
                   </div>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="mr-2 shrink-0 text-xs"
+                    onClick={() => navigate(getStoreDashboardPath(store.id))}
+                  >
+                    Open Dashboard
+                  </Button>
                   <Button
                     variant="ghost"
                     size="sm"

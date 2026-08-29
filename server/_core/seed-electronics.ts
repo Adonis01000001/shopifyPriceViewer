@@ -145,23 +145,30 @@ async function seed() {
     if (userResult.rows.length === 0) throw new Error("No users found");
     const userId = userResult.rows[0].id;
 
-    // Get any active store (prefer user's, but fall back to any)
+    // Seed into the first user's own connection. The legacy shopify_stores
+    // compatibility view is intentionally not writable and must not be used
+    // to select another account's connection.
     const storeResult = await client.query(
-      "SELECT id FROM shopify_stores WHERE is_active = true LIMIT 1"
+      "SELECT id FROM account_shop_connections WHERE user_id = $1 AND is_active = true LIMIT 1",
+      [userId]
     );
     let storeId = storeResult.rows[0]?.id || null;
     if (!storeId) {
       const anyStore = await client.query(
-        "SELECT id FROM shopify_stores LIMIT 1"
+        "SELECT id FROM account_shop_connections WHERE user_id = $1 LIMIT 1",
+        [userId]
       );
       storeId = anyStore.rows[0]?.id || null;
     }
     if (!storeId) {
-      const created = await client.query(
-        "INSERT INTO shopify_stores (user_id, shop_domain, scopes, is_active) VALUES ($1, 'temp-store.myshopify.com', 'read_products', true) RETURNING id",
-        [userId]
+      const shop = await client.query(
+        "INSERT INTO shops (canonical_domain, normalized_domain, name, platform) VALUES ('temp-store.myshopify.com', 'temp-store.myshopify.com', 'Temporary store', 'shopify') ON CONFLICT (normalized_domain) DO UPDATE SET updated_at = now() RETURNING id"
       );
-      storeId = created.rows[0].id;
+      const connection = await client.query(
+        "INSERT INTO account_shop_connections (user_id, shop_id, scopes, is_active, connection_status) VALUES ($1, $2, 'read_products', true, 'active') ON CONFLICT (user_id, shop_id) DO UPDATE SET is_active = true, connection_status = 'active', updated_at = now() RETURNING id",
+        [userId, shop.rows[0].id]
+      );
+      storeId = connection.rows[0].id;
       console.log("Created temp store:", storeId);
     }
 

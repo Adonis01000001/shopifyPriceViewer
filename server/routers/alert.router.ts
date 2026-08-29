@@ -11,6 +11,7 @@ export const alertRouter = router({
           unreadOnly: z.boolean().default(false),
           limit: z.number().min(1).max(200).optional(),
           offset: z.number().min(0).optional(),
+          storeId: z.string().uuid().optional(),
         })
         .optional()
     )
@@ -23,6 +24,7 @@ export const alertRouter = router({
       z
         .object({
           unreadOnly: z.boolean().default(false),
+          storeId: z.string().uuid().optional(),
         })
         .optional()
     )
@@ -108,7 +110,9 @@ export const alertRouter = router({
       return { success: true };
     }),
 
-  stats: protectedProcedure.query(async ({ ctx }) => {
-    return alertService.getStats(ctx.user!.id);
+  stats: protectedProcedure
+    .input(z.object({ storeId: z.string().uuid().optional() }).optional())
+    .query(async ({ ctx, input }) => {
+    return alertService.getStats(ctx.user!.id, input?.storeId);
   }),
 });

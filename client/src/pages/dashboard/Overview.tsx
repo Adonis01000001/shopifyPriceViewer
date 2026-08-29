@@ -24,6 +24,7 @@ import { useLocation } from "wouter";
 import { PricingDashboardSummary } from "@/components/dashboard/PricingRecommendationWidget";
 import { UpgradePrompt } from "@/components/dashboard/UpgradePrompt";
 import { useProductAnalytics } from "@/lib/analytics";
+import { getStoreDashboardPath, useShopContext } from "@/contexts/ShopContext";
 import { toast } from "sonner";
 import {
   AlertDialog,
@@ -51,22 +52,26 @@ function timeAgo(date: Date | string): string {
 
 export default function Overview() {
   const [, setLocation] = useLocation();
+  const { selectedShopId, selectedShop } = useShopContext();
+  const navigateToStore = (path: string) =>
+    setLocation(selectedShopId ? getStoreDashboardPath(selectedShopId, path) : path);
   const utils = trpc.useUtils();
-  const run = usePipelineRun();
-  const { data: outcomes } = trpc.pipeline.productOutcomes.useQuery(undefined, {
-    staleTime: 1000 * 20,
-  });
+  const run = usePipelineRun(selectedShopId ?? undefined);
+  const { data: outcomes } = trpc.pipeline.productOutcomes.useQuery(
+    selectedShopId ? { storeId: selectedShopId } : undefined,
+    { staleTime: 1000 * 20, enabled: !!selectedShopId }
+  );
   const [pushTarget, setPushTarget] = useState<{
     id: string;
     title: string;
     from: string;
     to: string;
   } | null>(null);
-  const { data: products } = trpc.products.list.useQuery();
-  const { data: productStats } = trpc.products.stats.useQuery();
-  const { data: competitorStats } = trpc.competitors.stats.useQuery();
-  const { data: alertStats } = trpc.alerts.stats.useQuery();
-  const { data: actionCenter } = trpc.intelligence.actionCenter.useQuery();
+  const { data: products } = trpc.products.list.useQuery(selectedShopId ? { storeId: selectedShopId } : undefined);
+  const { data: productStats } = trpc.products.stats.useQuery(selectedShopId ? { storeId: selectedShopId } : undefined);
+  const { data: competitorStats } = trpc.competitors.stats.useQuery(selectedShopId ? { storeId: selectedShopId } : undefined);
+  const { data: alertStats } = trpc.alerts.stats.useQuery(selectedShopId ? { storeId: selectedShopId } : undefined);
+  const { data: actionCenter } = trpc.intelligence.actionCenter.useQuery(selectedShopId ? { storeId: selectedShopId } : undefined);
   const { data: accountUsage } = trpc.account.usage.useQuery();
   const { data: user } = trpc.auth.me.useQuery();
   const track = useProductAnalytics();
@@ -75,13 +80,13 @@ export default function Overview() {
   const isAdmin = user?.role === "admin";
   // Admins see all pending recommendations; regular users see only their own
   const adminQuery = trpc.recommendations.listAll.useQuery(
-    { status: "pending", limit: 200 },
+    { status: "pending", limit: 200, storeId: selectedShopId ?? undefined },
     { enabled: isAdmin }
   );
   // The table lists every product, so it needs every pending suggestion. At 6
   // the seventh onward silently read as "nothing to do" when there was.
   const userQuery = trpc.recommendations.list.useQuery(
-    { status: "pending", limit: 200 },
+    { status: "pending", limit: 200, storeId: selectedShopId ?? undefined },
     { enabled: !isAdmin }
   );
   const adminRecommendations = adminQuery.data;
@@ -93,6 +98,7 @@ export default function Overview() {
   const { data: notifications } = trpc.alerts.list.useQuery({
     unreadOnly: true,
     limit: 6,
+    storeId: selectedShopId ?? undefined,
   });
   const implementRecommendation = trpc.recommendations.implement.useMutation({
     onSuccess: result => {
@@ -282,7 +288,7 @@ export default function Overview() {
             type="button"
             className="inline-flex shrink-0 items-center justify-center gap-1.5 rounded-md bg-primary px-3 py-2 text-[13px] font-bold text-primary-foreground transition hover:brightness-110"
             onClick={() =>
-              setLocation(
+              navigateToStore(
                 topRecommendation
                   ? "/products"
                   : topAlert
@@ -574,6 +580,7 @@ export default function Overview() {
                                     onClick={() =>
                                       implementRecommendation.mutate({
                                         id: insight.id,
+                                        storeId: selectedShopId ?? undefined,
                                       })
                                     }
                                     disabled={
@@ -591,6 +598,7 @@ export default function Overview() {
                                     onClick={() =>
                                       dismissRecommendation.mutate({
                                         id: insight.id,
+                                        storeId: selectedShopId ?? undefined,
                                       })
                                     }
                                     disabled={
@@ -861,6 +869,7 @@ export default function Overview() {
                   implementRecommendation.mutate({
                     id: pushTarget.id,
                     pushToStore: true,
+                    storeId: selectedShopId ?? undefined,
                   });
                 }
                 setPushTarget(null);

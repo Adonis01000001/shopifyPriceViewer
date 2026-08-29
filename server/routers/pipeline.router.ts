@@ -2,7 +2,7 @@ import { z } from "zod";
 import { and, desc, eq, gte, inArray } from "drizzle-orm";
 import { router, protectedProcedure } from "../_core/trpc";
 import { requireDb } from "../_core/db-assert";
-import { activityLogs } from "../../drizzle/schema";
+import { activityLogs, accountShopConnections, products } from "../../drizzle/schema";
 import { PIPELINE_ACTIONS } from "../services/pipeline.service";
 
 const EVENT_LIMIT = 40;
@@ -28,9 +28,19 @@ export const pipelineRouter = router({
    * that way it still reports correctly when the run happens in the worker
    * process rather than this one.
    */
-  status: protectedProcedure.query(async ({ ctx }) => {
+  status: protectedProcedure
+    .input(z.object({ storeId: z.string().uuid().optional() }).optional())
+    .query(async ({ ctx, input }) => {
     const database = await requireDb();
     const userId = ctx.user!.id;
+    if (input?.storeId) {
+      const [connection] = await database
+        .select({ id: accountShopConnections.id })
+        .from(accountShopConnections)
+        .where(and(eq(accountShopConnections.id, input.storeId), eq(accountShopConnections.userId, userId), eq(accountShopConnections.isActive, true)))
+        .limit(1);
+      if (!connection) return { running: false, startedAt: null, total: 0, done: 0, current: null, steps: [], events: [], lastRun: null };
+    }
 
     const bookends = await database
       .select({
@@ -181,7 +191,9 @@ export const pipelineRouter = router({
    * product with no recommendation just shows a dash, and the reason — which
    * the run already recorded — is only visible in the activity panel.
    */
-  productOutcomes: protectedProcedure.query(async ({ ctx }) => {
+  productOutcomes: protectedProcedure
+    .input(z.object({ storeId: z.string().uuid().optional() }).optional())
+    .query(async ({ ctx, input }) => {
     const database = await requireDb();
 
     const rows = await database
@@ -195,6 +207,12 @@ export const pipelineRouter = router({
         and(
           eq(activityLogs.userId, ctx.user!.id),
           eq(activityLogs.action, PIPELINE_ACTIONS.productDone)
+          ,input?.storeId
+            ? inArray(
+                activityLogs.entityId,
+                database.select({ id: products.id }).from(products).where(eq(products.storeId, input.storeId))
+              )
+            : undefined
         )
       )
       .orderBy(desc(activityLogs.createdAt))
@@ -225,9 +243,18 @@ export const pipelineRouter = router({
    * back so a merchant can see the working rather than only the verdict.
    */
   productEvidence: protectedProcedure
-    .input(z.object({ productId: z.string().uuid() }))
+    .input(z.object({ productId: z.string().uuid(), storeId: z.string().uuid().optional() }))
     .query(async ({ ctx, input }) => {
       const database = await requireDb();
+      if (input.storeId) {
+        const [ownedProduct] = await database
+          .select({ id: products.id })
+          .from(products)
+          .innerJoin(accountShopConnections, eq(products.storeId, accountShopConnections.id))
+          .where(and(eq(products.id, input.productId), eq(products.storeId, input.storeId), eq(products.userId, ctx.user!.id), eq(accountShopConnections.isActive, true)))
+          .limit(1);
+        if (!ownedProduct) throw new Error("Product not found");
+      }
 
       const rows = await database
         .select({

@@ -1,6 +1,7 @@
 import { useMemo, useEffect } from "react";
 import { useLocation } from "wouter";
 import { trpc } from "@/lib/trpc";
+import { useShopContext } from "@/contexts/ShopContext";
 import { cn } from "@/lib/utils";
 import {
   TrendingDown,
@@ -31,6 +32,7 @@ interface PricingRecommendationWidgetProps {
 export function PricingRecommendationWidget({
   productId,
 }: PricingRecommendationWidgetProps) {
+  const { selectedShopId } = useShopContext();
   const {
     data: ensuredAnalysis,
     isError: hasEnsureError,
@@ -42,9 +44,9 @@ export function PricingRecommendationWidget({
 
   useEffect(() => {
     if (productId && !ensuredAnalysis) {
-      ensureAnalysis({ productId });
+      ensureAnalysis({ productId, storeId: selectedShopId ?? undefined });
     }
-  }, [ensureAnalysis, ensuredAnalysis, productId]);
+  }, [ensureAnalysis, ensuredAnalysis, productId, selectedShopId]);
 
   const result = ensuredAnalysis;
   const snapshot = result?.marketSnapshot ?? null;
@@ -228,7 +230,12 @@ export function PricingRecommendationWidget({
           <button
             type="button"
             className="w-full rounded bg-primary px-4 py-2.5 text-[14px] font-semibold text-primary-foreground transition-all hover:brightness-110 disabled:opacity-50"
-            onClick={() => generateMutation.mutate({ productId })}
+            onClick={() =>
+              generateMutation.mutate({
+                productId,
+                storeId: selectedShopId ?? undefined,
+              })
+            }
             disabled={generateMutation.isPending || suggested == null}
           >
             {generateMutation.isPending
@@ -258,7 +265,10 @@ export function PricingRecommendationWidget({
 
 export function PricingDashboardSummary() {
   const [, setLocation] = useLocation();
-  const { data, isLoading } = trpc.pricingEngine.dashboardStats.useQuery();
+  const { selectedShopId } = useShopContext();
+  const { data, isLoading } = trpc.pricingEngine.dashboardStats.useQuery(
+    selectedShopId ? { storeId: selectedShopId } : undefined
+  );
 
   const stats: DashboardStats = data ?? {
     leading: 0,

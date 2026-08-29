@@ -29,18 +29,21 @@ function duration(ms: number) {
  * invisible: pages sat still while rows appeared underneath them. This reports
  * what the run is doing and nudges the open page to refetch as results land.
  */
-export default function PipelineActivity() {
+export default function PipelineActivity({ storeId }: { storeId?: string }) {
   const [open, setOpen] = useState(false);
   const [pollMs, setPollMs] = useState<number>(POLL_IDLE_MS);
   const wrapRef = useRef<HTMLDivElement>(null);
   const utils = trpc.useUtils();
   const lastDoneRef = useRef(0);
 
-  const { data } = trpc.pipeline.status.useQuery(undefined, {
+  const { data } = trpc.pipeline.status.useQuery(
+    storeId ? { storeId } : undefined,
+    {
     refetchInterval: pollMs,
     refetchIntervalInBackground: false,
     refetchOnWindowFocus: true,
-  });
+    }
+  );
 
   useEffect(() => {
     setPollMs(data?.running ? POLL_RUNNING_MS : POLL_IDLE_MS);
@@ -51,12 +54,18 @@ export default function PipelineActivity() {
     const done = data?.done ?? 0;
     if (done === lastDoneRef.current) return;
     lastDoneRef.current = done;
-    utils.competitors.list.invalidate();
-    utils.competitors.stats.invalidate();
-    utils.products.list.invalidate();
-    utils.products.stats.invalidate();
-    utils.recommendations.list.invalidate();
-  }, [data?.done, utils]);
+    void utils.competitors.list.invalidate(
+      storeId ? { storeId } : undefined
+    );
+    void utils.competitors.stats.invalidate(
+      storeId ? { storeId } : undefined
+    );
+    void utils.products.list.invalidate(storeId ? { storeId } : undefined);
+    void utils.products.stats.invalidate(storeId ? { storeId } : undefined);
+    void utils.recommendations.list.invalidate(
+      storeId ? { storeId } : undefined
+    );
+  }, [data?.done, storeId, utils]);
 
   useEffect(() => {
     if (!open) return;

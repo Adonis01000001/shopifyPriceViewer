@@ -11,6 +11,7 @@ export const recommendationRouter = router({
         .object({
           status: z.enum(["pending", "implemented", "dismissed"]).optional(),
           limit: z.number().min(1).max(200).default(100),
+          storeId: z.string().uuid().optional(),
         })
         .optional()
     )
@@ -19,18 +20,19 @@ export const recommendationRouter = router({
     }),
 
   getByProduct: protectedProcedure
-    .input(z.object({ productId: z.string().uuid() }))
+    .input(z.object({ productId: z.string().uuid(), storeId: z.string().uuid().optional() }))
     .query(async ({ ctx, input }) => {
       return recommendationService.getByProductId(
         ctx.user!.id,
-        input.productId
+        input.productId,
+        input.storeId
       );
     }),
 
   getById: protectedProcedure
-    .input(z.object({ id: z.string().uuid() }))
+    .input(z.object({ id: z.string().uuid(), storeId: z.string().uuid().optional() }))
     .query(async ({ ctx, input }) => {
-      const rec = await recommendationService.getById(ctx.user!.id, input.id);
+      const rec = await recommendationService.getById(ctx.user!.id, input.id, input.storeId);
       if (!rec)
         throw new TRPCError({
           code: "NOT_FOUND",
@@ -40,7 +42,7 @@ export const recommendationRouter = router({
     }),
 
   generate: protectedProcedure
-    .input(z.object({ productId: z.string().uuid() }))
+    .input(z.object({ productId: z.string().uuid(), storeId: z.string().uuid().optional() }))
     .mutation(async ({ ctx, input }) => {
       await entitlementService.assertFeature(
         ctx.user!.id,
@@ -52,7 +54,8 @@ export const recommendationRouter = router({
       );
       const rec = await recommendationService.generateForProduct(
         ctx.user!.id,
-        input.productId
+        input.productId,
+        input.storeId
       );
       if (!rec)
         throw new TRPCError({
@@ -73,10 +76,11 @@ export const recommendationRouter = router({
       z.object({
         id: z.string().uuid(),
         pushToStore: z.boolean().optional(),
+        storeId: z.string().uuid().optional(),
       })
     )
     .mutation(async ({ ctx, input }) => {
-      const existing = await recommendationService.getById(ctx.user!.id, input.id);
+      const existing = await recommendationService.getById(ctx.user!.id, input.id, input.storeId);
       if (!existing)
         throw new TRPCError({
           code: "NOT_FOUND",
@@ -102,7 +106,7 @@ export const recommendationRouter = router({
         }
       }
 
-      const rec = await recommendationService.implement(ctx.user!.id, input.id);
+      const rec = await recommendationService.implement(ctx.user!.id, input.id, input.storeId);
       if (!rec)
         throw new TRPCError({
           code: "NOT_FOUND",
@@ -112,9 +116,9 @@ export const recommendationRouter = router({
     }),
 
   dismiss: protectedProcedure
-    .input(z.object({ id: z.string().uuid() }))
+    .input(z.object({ id: z.string().uuid(), storeId: z.string().uuid().optional() }))
     .mutation(async ({ ctx, input }) => {
-      const rec = await recommendationService.dismiss(ctx.user!.id, input.id);
+      const rec = await recommendationService.dismiss(ctx.user!.id, input.id, input.storeId);
       if (!rec)
         throw new TRPCError({
           code: "NOT_FOUND",
@@ -123,9 +127,11 @@ export const recommendationRouter = router({
       return rec;
     }),
 
-  stats: protectedProcedure.query(async ({ ctx }) => {
-    return recommendationService.getStats(ctx.user!.id);
-  }),
+  stats: protectedProcedure
+    .input(z.object({ storeId: z.string().uuid().optional() }).optional())
+    .query(async ({ ctx, input }) => {
+      return recommendationService.getStats(ctx.user!.id, input?.storeId);
+    }),
 
   generateAll: adminProcedure.mutation(async () => {
     return recommendationService.generateForAllUsers();
@@ -137,6 +143,7 @@ export const recommendationRouter = router({
         .object({
           status: z.enum(["pending", "implemented", "dismissed"]).optional(),
           limit: z.number().min(1).max(500).default(200),
+          storeId: z.string().uuid().optional(),
         })
         .optional()
     )

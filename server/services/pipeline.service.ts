@@ -21,12 +21,15 @@ import {
   priceHistory,
   products,
   recommendations,
-  shopifyStores,
+  accountShopConnections,
+  accountCompetitorConnections,
+  shops,
 } from "../../drizzle/schema";
 import { aiExtractionService } from "./ai-extraction.service";
 import { pricingEngine } from "./pricing-engine.service";
 import { pricingRulesService } from "./pricing-rules.service";
 import { activityService } from "./activity.service";
+import { getOrCreateShop, normalizeShopDomain } from "./shop.service";
 
 /**
  * The run is unattended on a cron, so a single product that never returns
@@ -381,23 +384,47 @@ async function findOrCreateCompetitor(
   const database = await db.getDb();
   if (!database) throw new Error("Database not available");
 
+  const normalizedDomain = normalizeShopDomain(domain);
+  const shop = await getOrCreateShop(normalizedDomain, { database });
   const existing = await database.query.competitors.findFirst({
-    where: and(eq(competitors.userId, userId), eq(competitors.domain, domain)),
+    where: eq(competitors.shopId, shop.id),
   });
-  if (existing) return existing;
+  if (existing) {
+    await database
+      .insert(accountCompetitorConnections)
+      .values({ userId, competitorId: existing.id, isActive: true })
+      .onConflictDoUpdate({
+        target: [
+          accountCompetitorConnections.userId,
+          accountCompetitorConnections.competitorId,
+        ],
+        set: { isActive: true, updatedAt: new Date() },
+      });
+    return existing;
+  }
 
   const [created] = await database
     .insert(competitors)
     .values({
-      userId,
+      shopId: shop.id,
       name,
-      domain,
+      domain: normalizedDomain,
       status: "active",
       productsTracked: 0,
       avgPriceDiff: "0.00",
       scrapeStatus: "pending",
     })
     .returning();
+  await database
+    .insert(accountCompetitorConnections)
+    .values({ userId, competitorId: created.id, isActive: true })
+    .onConflictDoUpdate({
+      target: [
+        accountCompetitorConnections.userId,
+        accountCompetitorConnections.competitorId,
+      ],
+      set: { isActive: true, updatedAt: new Date() },
+    });
   return created;
 }
 
@@ -430,11 +457,14 @@ export const pipelineService = {
     let ownDomain: string | null = null;
     let storeCurrency: string | null = null;
     if (product.storeId) {
-      const store = await database.query.shopifyStores.findFirst({
-        where: eq(shopifyStores.id, product.storeId),
-      });
-      ownDomain = store?.shopDomain?.toLowerCase() ?? null;
-      storeCurrency = store?.currency ?? null;
+      const store = await database
+        .select({ domain: shops.normalizedDomain, currency: accountShopConnections.currency })
+        .from(accountShopConnections)
+        .innerJoin(shops, eq(accountShopConnections.shopId, shops.id))
+        .where(eq(accountShopConnections.id, product.storeId))
+        .limit(1);
+      ownDomain = store[0]?.domain?.toLowerCase() ?? null;
+      storeCurrency = store[0]?.currency ?? null;
     }
 
     // Search the merchant's own market, not always the US.
@@ -804,19 +834,27 @@ export const pipelineService = {
       }
     }
 
-    const store = await database.query.shopifyStores.findFirst({
-      where: and(
-        eq(shopifyStores.id, product.storeId),
-        eq(shopifyStores.isActive, true)
-      ),
-    });
-    if (!store?.accessToken) throw new Error("Store is not connected");
+    const store = await database
+      .select({
+        accessToken: accountShopConnections.accessToken,
+        shopDomain: shops.normalizedDomain,
+      })
+      .from(accountShopConnections)
+      .innerJoin(shops, eq(accountShopConnections.shopId, shops.id))
+      .where(
+        and(
+          eq(accountShopConnections.id, product.storeId),
+          eq(accountShopConnections.isActive, true)
+        )
+      )
+      .limit(1);
+    if (!store[0]?.accessToken) throw new Error("Store is not connected");
 
     const { decryptToken } = await import("../_core/sdk");
-    const token = decryptToken(store.accessToken);
+    const token = decryptToken(store[0].accessToken);
 
     const resp = await fetch(
-      `https://${store.shopDomain}/admin/api/2025-01/variants/${product.shopifyVariantId}.json`,
+      `https://${store[0].shopDomain}/admin/api/2025-01/variants/${product.shopifyVariantId}.json`,
       {
         method: "PUT",
         headers: {
@@ -852,7 +890,7 @@ export const pipelineService = {
     });
 
     logger.info(
-      { productId, previousPrice, newPrice, shop: store.shopDomain },
+      { productId, previousPrice, newPrice, shop: store[0].shopDomain },
       "Pipeline: pushed new price to Shopify"
     );
     return { ok: true, previousPrice, newPrice };
@@ -862,7 +900,8 @@ export const pipelineService = {
   async runForUser(
     userId: string,
     limit = 50,
-    countryOverride?: string | null
+    countryOverride?: string | null,
+    storeId?: string
   ): Promise<{ products: PipelineProductResult[]; totals: Record<string, number> }> {
     const database = await db.getDb();
     if (!database) throw new Error("Database not available");
@@ -870,7 +909,13 @@ export const pipelineService = {
     const rows = await database
       .select({ id: products.id, title: products.title })
       .from(products)
-      .where(and(eq(products.userId, userId), eq(products.isActive, true)))
+      .where(
+        and(
+          eq(products.userId, userId),
+          eq(products.isActive, true),
+          storeId ? eq(products.storeId, storeId) : undefined
+        )
+      )
       .limit(limit);
 
     const startedAt = Date.now();
@@ -879,7 +924,7 @@ export const pipelineService = {
       action: PIPELINE_ACTIONS.runStarted,
       entityType: "pipeline",
       detail: `Checking ${rows.length} products`,
-      metadata: { total: rows.length },
+      metadata: { total: rows.length, connectionId: storeId ?? null },
     });
 
     const results: PipelineProductResult[] = [];

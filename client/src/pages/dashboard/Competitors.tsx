@@ -31,6 +31,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { trpc } from "@/lib/trpc";
 import { usePipelineRun } from "@/hooks/usePipelineRun";
+import { useShopContext } from "@/contexts/ShopContext";
 import {
   Empty,
   EmptyHeader,
@@ -359,6 +360,7 @@ function AddProductDialog({
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }) {
+  const { selectedShopId } = useShopContext();
   const [tab, setTab] = useState<"search" | "scrape">("search");
   const [searchQuery, setSearchQuery] = useState("");
   const [scrapeQuery, setScrapeQuery] = useState("");
@@ -375,8 +377,8 @@ function AddProductDialog({
   // Search existing products
   const { data: searchResults, isLoading: searchLoading } =
     trpc.competitors.searchProducts.useQuery(
-      { query: debouncedQuery },
-      { enabled: open && tab === "scrape" && debouncedQuery.length >= 2 }
+      { query: debouncedQuery, storeId: selectedShopId ?? undefined },
+      { enabled: open && tab === "scrape" && debouncedQuery.length >= 2 && !!selectedShopId }
     );
 
   // Scrape results
@@ -420,9 +422,10 @@ function AddProductDialog({
         competitorProductTitle: product.title,
         matchScore: 1,
         matchMethod: "manual",
+        storeId: selectedShopId ?? undefined,
       });
     },
-    [addProductMutation, competitorId]
+    [addProductMutation, competitorId, selectedShopId]
   );
 
   const handleAddScraped = useCallback(
@@ -436,9 +439,10 @@ function AddProductDialog({
         competitorProductUrl: item.productUrl,
         matchScore: 0.9,
         matchMethod: "scraped",
+        storeId: selectedShopId ?? undefined,
       });
     },
-    [addProductMutation, competitorId]
+    [addProductMutation, competitorId, selectedShopId]
   );
 
   return (
@@ -502,10 +506,11 @@ function AddProductDialog({
               <Button
                 size="sm"
                 onClick={() =>
-                  scrapeMutation.mutate({
-                    competitorId,
-                    searchQuery: scrapeQuery || undefined,
-                  })
+                scrapeMutation.mutate({
+                  competitorId,
+                  searchQuery: scrapeQuery || undefined,
+                  storeId: selectedShopId ?? undefined,
+                })
                 }
                 disabled={scrapeMutation.isPending}
                 className="bg-primary text-primary-foreground hover:brightness-110 shrink-0"
@@ -601,12 +606,13 @@ function CompetitorFeed({
   competitorCount: number;
   onNext?: () => void;
 }) {
+  const { selectedShopId } = useShopContext();
   const {
     data: feed,
     isLoading,
     dataUpdatedAt,
   } = trpc.competitors.feed.useQuery(
-    { competitorId },
+    { competitorId, storeId: selectedShopId ?? undefined },
     { refetchInterval: 15000, refetchIntervalInBackground: false }
   );
 
@@ -895,6 +901,7 @@ function CompetitorFeed({
                                     updatePriceMutation.mutate({
                                       competitorProductId: cp.id,
                                       price: v,
+                                      storeId: selectedShopId ?? undefined,
                                     });
                                   } else {
                                     toast.error(
@@ -915,6 +922,7 @@ function CompetitorFeed({
                                   updatePriceMutation.mutate({
                                     competitorProductId: cp.id,
                                     price: v,
+                                    storeId: selectedShopId ?? undefined,
                                   });
                                 } else {
                                   toast.error(
@@ -1070,6 +1078,7 @@ function CompetitorFeed({
                 if (removeTarget)
                   removeProductMutation.mutate({
                     competitorProductId: removeTarget,
+                    storeId: selectedShopId ?? undefined,
                   });
                 setRemoveTarget(null);
               }}
@@ -1089,6 +1098,7 @@ function CompetitorFeed({
 // ─── Main Competitors Page ───────────────────────────────────────────────────
 
 export default function Competitors() {
+  const { selectedShopId } = useShopContext();
   const [competitorQuery, setCompetitorQuery] = useState("");
   const [dialogOpen, setDialogOpen] = useState(false);
   const [importPreview, setImportPreview] = useState<ParsedRow[] | null>(null);
@@ -1112,8 +1122,10 @@ export default function Competitors() {
   } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const run = usePipelineRun();
-  const { data: competitors } = trpc.competitors.list.useQuery();
+  const run = usePipelineRun(selectedShopId ?? undefined);
+  const { data: competitors } = trpc.competitors.list.useQuery(
+    selectedShopId ? { storeId: selectedShopId } : undefined
+  );
   const utils = trpc.useUtils();
 
   const createMutation = trpc.competitors.create.useMutation({
@@ -1172,6 +1184,7 @@ export default function Competitors() {
       ...data,
       description: data.description || undefined,
       logoUrl: data.logoUrl || undefined,
+      storeId: selectedShopId ?? undefined,
     });
     form.reset();
   });
@@ -1250,6 +1263,7 @@ export default function Competitors() {
         name: r.name,
         domain: r.domain,
         description: r.description,
+        storeId: selectedShopId ?? undefined,
       })),
     });
   };
@@ -1727,7 +1741,11 @@ export default function Competitors() {
             </AlertDialogCancel>
             <AlertDialogAction
               onClick={() =>
-                deleteTarget && deleteMutation.mutate({ id: deleteTarget.id })
+                deleteTarget &&
+                  deleteMutation.mutate({
+                    id: deleteTarget.id,
+                    storeId: selectedShopId ?? undefined,
+                  })
               }
               disabled={deleteMutation.isPending}
               className="bg-[var(--destructive)] text-[var(--destructive)] hover:bg-[var(--destructive)]/80"

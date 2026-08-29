@@ -9,9 +9,11 @@ import { productService } from "../services/product.service";
 import { actionCenterService } from "../services/action-center.service";
 
 export const intelligenceRouter = router({
-  actionCenter: protectedProcedure.query(async ({ ctx }) => {
-    return actionCenterService.getForUser(ctx.user!.id);
-  }),
+  actionCenter: protectedProcedure
+    .input(z.object({ storeId: z.string().uuid().optional() }).optional())
+    .query(async ({ ctx, input }) => {
+      return actionCenterService.getForUser(ctx.user!.id, input?.storeId);
+    }),
 
   // ── Competitor Discovery ──────────────────────────────────────────────────
 
@@ -66,6 +68,7 @@ export const intelligenceRouter = router({
           minConfidence: z.number().min(0).max(1).optional(),
           limit: z.number().min(1).max(200).optional(),
           offset: z.number().min(0).optional(),
+          storeId: z.string().uuid().optional(),
         })
         .optional()
     )
@@ -97,6 +100,7 @@ export const intelligenceRouter = router({
             .optional(),
           limit: z.number().min(1).max(200).optional(),
           offset: z.number().min(0).optional(),
+          storeId: z.string().uuid().optional(),
         })
         .optional()
     )
@@ -110,6 +114,7 @@ export const intelligenceRouter = router({
         .object({
           limit: z.number().min(1).max(200).optional(),
           offset: z.number().min(0).optional(),
+          storeId: z.string().uuid().optional(),
         })
         .optional()
     )
@@ -132,13 +137,15 @@ export const intelligenceRouter = router({
       z.object({
         competitorProductId: z.string().uuid(),
         limit: z.number().min(1).max(100).optional(),
+        storeId: z.string().uuid().optional(),
       })
     )
     .query(async ({ ctx, input }) => {
       return priceMonitoringService.getSnapshotHistory(
         ctx.user!.id,
         input.competitorProductId,
-        input.limit ?? 30
+        input.limit ?? 30,
+        input.storeId
       );
     }),
 

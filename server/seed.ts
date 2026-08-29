@@ -124,22 +124,35 @@ async function seed() {
 
     // 2. Create a shopify store for the user
     logger.info("🏪 Creating mock Shopify store...");
+    const [canonicalShop] = await db
+      .insert(schema.shops)
+      .values({
+        canonicalDomain: "pricevision-demo.myshopify.com",
+        normalizedDomain: "pricevision-demo.myshopify.com",
+        name: "PriceVision Demo Store",
+        platform: "shopify",
+      })
+      .onConflictDoUpdate({
+        target: schema.shops.normalizedDomain,
+        set: { updatedAt: new Date() },
+      })
+      .returning();
     const [store] = await db
-      .insert(schema.shopifyStores)
+      .insert(schema.accountShopConnections)
       .values({
         userId,
-        shopDomain: "pricevision-demo.myshopify.com",
+        shopId: canonicalShop.id,
         storeName: "PriceVision Demo Store",
         currency: "USD",
         isActive: true,
         scopes: "read_products",
       })
       .onConflictDoUpdate({
-        target: schema.shopifyStores.shopDomain,
-        set: { updatedAt: new Date() },
+        target: [schema.accountShopConnections.userId, schema.accountShopConnections.shopId],
+        set: { updatedAt: new Date(), isActive: true },
       })
       .returning();
-    logger.info(`✅ Store created/updated: ${store.shopDomain}`);
+    logger.info(`✅ Store created/updated: pricevision-demo.myshopify.com`);
 
     // 3. Create competitors
     logger.info("🏢 Creating competitors...");
@@ -151,15 +164,32 @@ async function seed() {
 
     const competitors = [];
     for (const comp of competitorData) {
+      const [competitorShop] = await db
+        .insert(schema.shops)
+        .values({
+          canonicalDomain: comp.domain,
+          normalizedDomain: comp.domain,
+          name: comp.name,
+        })
+        .onConflictDoUpdate({
+          target: schema.shops.normalizedDomain,
+          set: { updatedAt: new Date() },
+        })
+        .returning();
       const [inserted] = await db
         .insert(schema.competitors)
         .values({
-          userId,
+          shopId: competitorShop.id,
           name: comp.name,
           domain: comp.domain,
           status: "active",
         })
         .returning();
+      await db.insert(schema.accountCompetitorConnections).values({
+        userId,
+        competitorId: inserted.id,
+        isActive: true,
+      }).onConflictDoNothing();
       competitors.push(inserted);
     }
     logger.info(`✅ Created ${competitors.length} competitors`);

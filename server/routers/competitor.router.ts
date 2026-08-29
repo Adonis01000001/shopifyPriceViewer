@@ -1,14 +1,19 @@
 import { z } from "zod";
-import { eq, and } from "drizzle-orm";
+import { eq, and, or, inArray } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 import { protectedProcedure, router } from "../_core/trpc";
-import { competitorService } from "../services/competitor.service";
+import {
+  competitorService,
+  findOrCreateCompetitor,
+} from "../services/competitor.service";
 import { productService } from "../services/product.service";
 import { scrapingService } from "../services/scraping.service";
 import {
   competitorProducts,
   priceHistory,
   competitors,
+  products,
+  accountCompetitorConnections,
 } from "../../drizzle/schema";
 import { requireDb } from "../_core/db-assert";
 import { entitlementService } from "../services/entitlement.service";
@@ -21,6 +26,7 @@ export const competitorRouter = router({
         .object({
           limit: z.number().min(1).max(200).optional(),
           offset: z.number().min(0).optional(),
+          storeId: z.string().uuid().optional(),
         })
         .optional()
     )
@@ -28,16 +34,19 @@ export const competitorRouter = router({
       return competitorService.getByUserId(ctx.user!.id, input);
     }),
 
-  count: protectedProcedure.query(async ({ ctx }) => {
-    return competitorService.countByUserId(ctx.user!.id);
+  count: protectedProcedure
+    .input(z.object({ storeId: z.string().uuid().optional() }).optional())
+    .query(async ({ ctx, input }) => {
+    return competitorService.countByUserId(ctx.user!.id, input?.storeId);
   }),
 
   getById: protectedProcedure
-    .input(z.object({ id: z.string().uuid() }))
+    .input(z.object({ id: z.string().uuid(), storeId: z.string().uuid().optional() }))
     .query(async ({ ctx, input }) => {
       const competitor = await competitorService.getById(
         ctx.user!.id,
-        input.id
+        input.id,
+        input.storeId
       );
       if (!competitor)
         throw new TRPCError({
@@ -54,21 +63,17 @@ export const competitorRouter = router({
         domain: z.string().min(1).max(255),
         logoUrl: z.string().url().optional(),
         description: z.string().optional(),
+        storeId: z.string().uuid().optional(),
       })
     )
     .mutation(async ({ ctx, input }) => {
       await entitlementService.assertCanAdd(ctx.user!.id, "competitors");
-      const competitor = await competitorService.create({
-        userId: ctx.user!.id,
-        ...input,
-        status: "active",
-        productsTracked: 0,
-        avgPriceDiff: "0.00",
-        // No index until a scrape produces real prices. Seeding "100.00"
-        // made brand-new competitors look like measured, on-par rivals.
-        priceIndex: null,
-        scrapeStatus: "pending",
-      });
+      const competitor = await findOrCreateCompetitor(
+        ctx.user!.id,
+        input.domain,
+        input.name,
+        input.storeId
+      );
       if (!competitor)
         throw new TRPCError({
           code: "INTERNAL_SERVER_ERROR",
@@ -85,7 +90,8 @@ export const competitorRouter = router({
             z.object({
               name: z.string().min(1).max(255),
               domain: z.string().min(1).max(255),
-              description: z.string().max(500).optional(),
+        description: z.string().max(500).optional(),
+              storeId: z.string().uuid().optional(),
             })
           )
           .min(1)
@@ -99,21 +105,11 @@ export const competitorRouter = router({
         "competitors",
         input.competitors.length
       );
-      const rows = input.competitors.map(c => ({
-        userId,
-        name: c.name,
-        domain: c.domain,
-        description: c.description ?? null,
-        logoUrl: null,
-        status: "active" as const,
-        productsTracked: 0,
-        avgPriceDiff: "0.00" as const,
-        priceIndex: "100.00" as const,
-        scrapeStatus: "pending" as const,
-        lastScrapedAt: null,
-        scrapeError: null,
-      }));
-      const result = await competitorService.bulkCreate(rows);
+      const result = await Promise.all(
+        input.competitors.map(c =>
+          findOrCreateCompetitor(userId, c.domain, c.name, c.storeId)
+        )
+      );
       return { imported: result.length };
     }),
 
@@ -126,11 +122,12 @@ export const competitorRouter = router({
         logoUrl: z.string().url().optional(),
         description: z.string().optional(),
         status: z.enum(["active", "inactive", "error"]).optional(),
+        storeId: z.string().uuid().optional(),
       })
     )
     .mutation(async ({ ctx, input }) => {
       const { id, ...data } = input;
-      const competitor = await competitorService.update(ctx.user!.id, id, data);
+      const competitor = await competitorService.update(ctx.user!.id, id, data, input.storeId);
       if (!competitor)
         throw new TRPCError({
           code: "NOT_FOUND",
@@ -140,9 +137,9 @@ export const competitorRouter = router({
     }),
 
   delete: protectedProcedure
-    .input(z.object({ id: z.string().uuid() }))
+    .input(z.object({ id: z.string().uuid(), storeId: z.string().uuid().optional() }))
     .mutation(async ({ ctx, input }) => {
-      await competitorService.delete(ctx.user!.id, input.id);
+      await competitorService.delete(ctx.user!.id, input.id, input.storeId);
       return { success: true };
     }),
 
@@ -151,13 +148,15 @@ export const competitorRouter = router({
       z.object({
         competitorId: z.string().uuid(),
         limit: z.number().min(1).max(200).optional(),
+        storeId: z.string().uuid().optional(),
       })
     )
     .query(async ({ ctx, input }) => {
       const feed = await competitorService.getFeed(
         ctx.user!.id,
         input.competitorId,
-        input.limit ?? 50
+        input.limit ?? 50,
+        input.storeId
       );
       if (!feed)
         throw new TRPCError({
@@ -168,19 +167,21 @@ export const competitorRouter = router({
     }),
 
   search: protectedProcedure
-    .input(z.object({ query: z.string().min(1).max(200) }))
+    .input(z.object({ query: z.string().min(1).max(200), storeId: z.string().uuid().optional() }))
     .query(async ({ ctx, input }) => {
-      return competitorService.search(ctx.user!.id, input.query);
+      return competitorService.search(ctx.user!.id, input.query, input.storeId);
     }),
 
-  stats: protectedProcedure.query(async ({ ctx }) => {
-    return competitorService.getStats(ctx.user!.id);
+  stats: protectedProcedure
+    .input(z.object({ storeId: z.string().uuid().optional() }).optional())
+    .query(async ({ ctx, input }) => {
+    return competitorService.getStats(ctx.user!.id, input?.storeId);
   }),
 
   products: protectedProcedure
-    .input(z.object({ competitorId: z.string().uuid() }))
+    .input(z.object({ competitorId: z.string().uuid(), storeId: z.string().uuid().optional() }))
     .query(async ({ ctx, input }) => {
-      return competitorService.getProducts(ctx.user!.id, input.competitorId);
+      return competitorService.getProducts(ctx.user!.id, input.competitorId, input.storeId);
     }),
 
   addProduct: protectedProcedure
@@ -195,6 +196,7 @@ export const competitorRouter = router({
         currency: z.string().length(3).default("USD"),
         matchScore: z.number().min(0).max(1).default(0),
         matchMethod: z.string().max(64).default("manual"),
+        storeId: z.string().uuid().optional(),
       })
     )
     .mutation(async ({ ctx, input }) => {
@@ -225,6 +227,7 @@ export const competitorRouter = router({
           .regex(/^\d+(\.\d{1,2})?$/)
           .optional(),
         currency: z.string().length(3).optional(),
+        storeId: z.string().uuid().optional(),
       })
     )
     .mutation(async ({ ctx, input }) => {
@@ -247,12 +250,14 @@ export const competitorRouter = router({
       z.object({
         competitorId: z.string().uuid(),
         searchQuery: z.string().max(200).optional(),
+        storeId: z.string().uuid().optional(),
       })
     )
     .mutation(async ({ ctx, input }) => {
       const comp = await competitorService.getById(
         ctx.user!.id,
-        input.competitorId
+        input.competitorId,
+        input.storeId
       );
       if (!comp)
         throw new TRPCError({
@@ -269,18 +274,19 @@ export const competitorRouter = router({
 
   // ── Search user's existing products ──────────────────────────────────────
   searchProducts: protectedProcedure
-    .input(z.object({ query: z.string().min(1).max(200) }))
+    .input(z.object({ query: z.string().min(1).max(200), storeId: z.string().uuid().optional() }))
     .query(async ({ ctx, input }) => {
-      return productService.search(ctx.user!.id, input.query);
+      return productService.search(ctx.user!.id, input.query, input.storeId);
     }),
 
   // ── Remove a competitor product link ─────────────────────────────────────
   removeProduct: protectedProcedure
-    .input(z.object({ competitorProductId: z.string().uuid() }))
+    .input(z.object({ competitorProductId: z.string().uuid(), storeId: z.string().uuid().optional() }))
     .mutation(async ({ ctx, input }) => {
       const removed = await competitorService.removeProduct(
         ctx.user!.id,
-        input.competitorProductId
+        input.competitorProductId,
+        input.storeId
       );
       if (!removed)
         throw new TRPCError({
@@ -296,6 +302,7 @@ export const competitorRouter = router({
       z.object({
         competitorProductId: z.string().uuid(),
         price: z.string().regex(/^\d+(\.\d{1,2})?$/),
+        storeId: z.string().uuid().optional(),
       })
     )
     .mutation(async ({ ctx, input }) => {
@@ -303,7 +310,6 @@ export const competitorRouter = router({
       const cp = await database
         .select({
           cp: competitorProducts,
-          compUserId: competitors.userId,
           productId: competitorProducts.productId,
           currency: competitorProducts.currency,
         })
@@ -312,9 +318,30 @@ export const competitorRouter = router({
           competitors,
           eq(competitorProducts.competitorId, competitors.id)
         )
-        .where(eq(competitorProducts.id, input.competitorProductId))
+        .innerJoin(products, eq(competitorProducts.productId, products.id))
+        .where(
+          and(
+            eq(competitorProducts.id, input.competitorProductId),
+            eq(products.userId, ctx.user!.id),
+            input.storeId ? eq(products.storeId, input.storeId) : undefined,
+            or(
+              inArray(
+                competitors.id,
+                database
+                  .select({ id: accountCompetitorConnections.competitorId })
+                  .from(accountCompetitorConnections)
+                  .where(
+                    and(
+                      eq(accountCompetitorConnections.userId, ctx.user!.id),
+                      eq(accountCompetitorConnections.isActive, true)
+                    )
+                  )
+              )
+            )
+          )
+        )
         .limit(1);
-      if (!cp[0] || cp[0].compUserId !== ctx.user!.id)
+      if (!cp[0])
         throw new TRPCError({
           code: "NOT_FOUND",
           message: "Product not found",
@@ -343,7 +370,9 @@ export const competitorRouter = router({
     }),
 
   // ── Analytics: all competitor products with prices ─────────────────────────
-  getProductsForAnalytics: protectedProcedure.query(async ({ ctx }) => {
+  getProductsForAnalytics: protectedProcedure
+    .input(z.object({ storeId: z.string().uuid().optional() }).optional())
+    .query(async ({ ctx, input }) => {
     const database = await requireDb();
     const rows = await database
       .select({
@@ -361,10 +390,26 @@ export const competitorRouter = router({
         competitors,
         eq(competitorProducts.competitorId, competitors.id)
       )
+      .innerJoin(products, eq(competitorProducts.productId, products.id))
       .where(
         and(
-          eq(competitors.userId, ctx.user!.id),
-          eq(competitorProducts.isActive, true)
+          eq(products.userId, ctx.user!.id),
+          input?.storeId ? eq(products.storeId, input.storeId) : undefined,
+          eq(competitorProducts.isActive, true),
+          or(
+            inArray(
+              competitors.id,
+              database
+                .select({ id: accountCompetitorConnections.competitorId })
+                .from(accountCompetitorConnections)
+                .where(
+                  and(
+                    eq(accountCompetitorConnections.userId, ctx.user!.id),
+                    eq(accountCompetitorConnections.isActive, true)
+                  )
+                )
+            )
+          )
         )
       )
       .orderBy(competitors.name);

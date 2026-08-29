@@ -39,6 +39,7 @@ import { useMemo, useState, useCallback, useRef } from "react";
 import { useLocation } from "wouter";
 import Papa from "papaparse";
 import { toast } from "sonner";
+import { useShopContext, getStoreDashboardPath } from "@/contexts/ShopContext";
 
 // ─── Market Position Badge ───────────────────────────────────────────────────
 
@@ -216,6 +217,7 @@ function MarketInsightCells({
 
 export default function Products() {
   const [, navigate] = useLocation();
+  const { selectedShopId } = useShopContext();
   const [searchQuery, setSearchQuery] = useState("");
   const [categoryFilter, setCategoryFilter] = useState("all");
   // The Overview's four counts link here rather than being dead ends.
@@ -228,12 +230,14 @@ export default function Products() {
   const priceInputRef = useRef<HTMLInputElement>(null);
 
   const utils = trpc.useUtils();
-  const { data: outcomes } = trpc.pipeline.productOutcomes.useQuery(undefined, {
-    staleTime: 1000 * 30,
-  });
+  const { data: outcomes } = trpc.pipeline.productOutcomes.useQuery(
+    selectedShopId ? { storeId: selectedShopId } : undefined,
+    { staleTime: 1000 * 30, enabled: !!selectedShopId }
+  );
   const { data: analyses, isLoading: analysisLoading } =
-    trpc.pricingEngine.analyzeAll.useQuery(undefined, {
+    trpc.pricingEngine.analyzeAll.useQuery(selectedShopId ? { storeId: selectedShopId } : undefined, {
       staleTime: 1000 * 60 * 2,
+      enabled: !!selectedShopId,
     });
   const analysisByProduct = useMemo(
     () => new Map((analyses ?? []).map(a => [a.productId, a])),
@@ -244,8 +248,9 @@ export default function Products() {
     isLoading,
     refetch,
     error,
-  } = trpc.products.list.useQuery(undefined, {
+  } = trpc.products.list.useQuery(selectedShopId ? { storeId: selectedShopId } : undefined, {
     staleTime: 1000 * 60 * 5,
+    enabled: !!selectedShopId,
   });
 
   const updateProductMutation = trpc.products.update.useMutation({
@@ -277,9 +282,9 @@ export default function Products() {
         toast.error("Enter a valid price");
         return;
       }
-      updateProductMutation.mutate({ id: productId, price: editingPriceVal });
+      updateProductMutation.mutate({ id: productId, price: editingPriceVal, storeId: selectedShopId ?? undefined });
     },
-    [editingPriceVal, updateProductMutation]
+    [editingPriceVal, selectedShopId, updateProductMutation]
   );
 
   const products = useMemo(() => allProducts ?? [], [allProducts]);
@@ -353,9 +358,9 @@ export default function Products() {
     async (file: File) => {
       setImporting(true);
       const text = await file.text();
-      importCsv.mutate({ csv: text });
+      importCsv.mutate({ csv: text, storeId: selectedShopId ?? undefined });
     },
-    [importCsv]
+    [importCsv, selectedShopId]
   );
 
   if (error) {
@@ -492,7 +497,10 @@ export default function Products() {
           <Upload className="mr-1.5 h-3.5 w-3.5" />
           {importing ? "Importing..." : "Import CSV"}
         </Button>
-        <AddProductDialog onSuccess={() => refetch()} />
+        <AddProductDialog
+          storeId={selectedShopId ?? undefined}
+          onSuccess={() => refetch()}
+        />
         {standFilter !== "all" && (
           <button
             type="button"
@@ -608,7 +616,16 @@ export default function Products() {
                           type="button"
                           className="inline-flex min-h-11 items-center whitespace-nowrap rounded-lg border border-outline-variant px-3 text-[13px] font-medium transition-colors hover:bg-surface-container-high focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/35"
                           title="Every shop we looked at for this product, and what we suggest charging"
-                          onClick={() => navigate(`/products/${product.id}`)}
+                          onClick={() =>
+                            navigate(
+                              selectedShopId
+                                ? getStoreDashboardPath(
+                                    selectedShopId,
+                                    `/products/${product.id}`
+                                  )
+                                : `/products/${product.id}`
+                            )
+                          }
                         >
                           See the workings
                         </button>

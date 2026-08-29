@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { TRPCError } from "@trpc/server";
 import { AUTO_GENERATED_COMPETITOR_MATCH_METHOD } from "@shared/const";
 import { protectedProcedure, router } from "../_core/trpc";
 import { pricingEngine } from "../services/pricing-engine.service";
@@ -9,9 +10,22 @@ import {
   products,
   competitors,
   competitorProducts,
+  accountCompetitorConnections,
 } from "../../drizzle/schema";
-import { eq, and, isNull, ne, or } from "drizzle-orm";
+import { eq, and, inArray, isNull, ne, or } from "drizzle-orm";
 import { requireDb } from "../_core/db-assert";
+import { accountShopConnections } from "../../drizzle/schema";
+
+async function assertStoreAccess(userId: string, storeId?: string) {
+  if (!storeId) return;
+  const database = await requireDb();
+  const [connection] = await database
+    .select({ id: accountShopConnections.id })
+    .from(accountShopConnections)
+    .where(and(eq(accountShopConnections.id, storeId), eq(accountShopConnections.userId, userId), eq(accountShopConnections.isActive, true)))
+    .limit(1);
+  if (!connection) throw new TRPCError({ code: "FORBIDDEN", message: "Store not found" });
+}
 
 export const pricingEngineRouter = router({
   /**
@@ -19,9 +33,10 @@ export const pricingEngineRouter = router({
    * Returns market snapshot, recommendation, and position classification.
    */
   analyze: protectedProcedure
-    .input(z.object({ productId: z.string().uuid() }))
+    .input(z.object({ productId: z.string().uuid(), storeId: z.string().uuid().optional() }))
     .query(async ({ ctx, input }) => {
       const database = await requireDb();
+      await assertStoreAccess(ctx.user!.id, input.storeId);
 
       const product = await database
         .select()
@@ -30,6 +45,7 @@ export const pricingEngineRouter = router({
           and(
             eq(products.id, input.productId),
             eq(products.userId, ctx.user!.id)
+            ,input.storeId ? eq(products.storeId, input.storeId) : undefined
           )
         )
         .limit(1);
@@ -46,7 +62,20 @@ export const pricingEngineRouter = router({
         .where(
           and(
             eq(competitorProducts.productId, input.productId),
-            eq(competitors.userId, ctx.user!.id),
+            or(
+              inArray(
+                competitors.id,
+                database
+                  .select({ id: accountCompetitorConnections.competitorId })
+                  .from(accountCompetitorConnections)
+                  .where(
+                    and(
+                      eq(accountCompetitorConnections.userId, ctx.user!.id),
+                      eq(accountCompetitorConnections.isActive, true)
+                    )
+                  )
+              )
+            ),
             eq(competitorProducts.isActive, true),
             or(
               isNull(competitorProducts.matchMethod),
@@ -82,9 +111,10 @@ export const pricingEngineRouter = router({
    * Returns an LLM-generated analysis with contextual reasoning.
    */
   ensureAnalysis: protectedProcedure
-    .input(z.object({ productId: z.string().uuid() }))
+    .input(z.object({ productId: z.string().uuid(), storeId: z.string().uuid().optional() }))
     .mutation(async ({ ctx, input }) => {
       const database = await requireDb();
+      await assertStoreAccess(ctx.user!.id, input.storeId);
 
       const product = await database
         .select()
@@ -93,6 +123,7 @@ export const pricingEngineRouter = router({
           and(
             eq(products.id, input.productId),
             eq(products.userId, ctx.user!.id)
+            ,input.storeId ? eq(products.storeId, input.storeId) : undefined
           )
         )
         .limit(1);
@@ -112,7 +143,20 @@ export const pricingEngineRouter = router({
         .where(
           and(
             eq(competitorProducts.productId, input.productId),
-            eq(competitors.userId, ctx.user!.id),
+            or(
+              inArray(
+                competitors.id,
+                database
+                  .select({ id: accountCompetitorConnections.competitorId })
+                  .from(accountCompetitorConnections)
+                  .where(
+                    and(
+                      eq(accountCompetitorConnections.userId, ctx.user!.id),
+                      eq(accountCompetitorConnections.isActive, true)
+                    )
+                  )
+              )
+            ),
             eq(competitorProducts.isActive, true),
             or(
               isNull(competitorProducts.matchMethod),
@@ -154,9 +198,13 @@ export const pricingEngineRouter = router({
    * Analyze all tracked products with competitor data.
    * Returns an array of product analyses.
    */
-  analyzeAll: protectedProcedure.query(async ({ ctx }) => {
+  analyzeAll: protectedProcedure
+    .input(z.object({ storeId: z.string().uuid().optional() }).optional())
+    .query(async ({ ctx, input }) => {
+    await assertStoreAccess(ctx.user!.id, input?.storeId);
     const allProducts = await productService.getByUserId(ctx.user!.id, {
       limit: 1000,
+      storeId: input?.storeId,
     });
     const tracked = allProducts.filter(p => p.isTracked && p.isActive);
 
@@ -191,7 +239,8 @@ export const pricingEngineRouter = router({
     for (const product of tracked) {
       const compPrices = await productService.getCompetitorPrices(
         ctx.user!.id,
-        product.id
+        product.id,
+        input?.storeId
       );
       const prices = compPrices.map(c => Number(c.price));
       const merchantPrice = Number(product.price);
@@ -219,9 +268,10 @@ export const pricingEngineRouter = router({
    * Lightweight endpoint returning just the market position classification for a product.
    */
   getMarketPosition: protectedProcedure
-    .input(z.object({ productId: z.string().uuid() }))
+    .input(z.object({ productId: z.string().uuid(), storeId: z.string().uuid().optional() }))
     .query(async ({ ctx, input }) => {
       const database = await requireDb();
+      await assertStoreAccess(ctx.user!.id, input.storeId);
 
       const product = await database
         .select()
@@ -230,6 +280,7 @@ export const pricingEngineRouter = router({
           and(
             eq(products.id, input.productId),
             eq(products.userId, ctx.user!.id)
+            ,input.storeId ? eq(products.storeId, input.storeId) : undefined
           )
         )
         .limit(1);
@@ -246,7 +297,20 @@ export const pricingEngineRouter = router({
         .where(
           and(
             eq(competitorProducts.productId, input.productId),
-            eq(competitors.userId, ctx.user!.id),
+            or(
+              inArray(
+                competitors.id,
+                database
+                  .select({ id: accountCompetitorConnections.competitorId })
+                  .from(accountCompetitorConnections)
+                  .where(
+                    and(
+                      eq(accountCompetitorConnections.userId, ctx.user!.id),
+                      eq(accountCompetitorConnections.isActive, true)
+                    )
+                  )
+              )
+            ),
             eq(competitorProducts.isActive, true),
             or(
               isNull(competitorProducts.matchMethod),
@@ -280,11 +344,12 @@ export const pricingEngineRouter = router({
    * Generate a pricing recommendation for a product and persist it to the database.
    */
   generateRecommendation: protectedProcedure
-    .input(z.object({ productId: z.string().uuid() }))
+    .input(z.object({ productId: z.string().uuid(), storeId: z.string().uuid().optional() }))
     .mutation(async ({ ctx, input }) => {
       const recommendation = await recommendationService.generateForProduct(
         ctx.user!.id,
-        input.productId
+        input.productId,
+        input.storeId
       );
       if (!recommendation) {
         return {
@@ -299,9 +364,13 @@ export const pricingEngineRouter = router({
   /**
    * Dashboard aggregate stats: counts of products by market position.
    */
-  dashboardStats: protectedProcedure.query(async ({ ctx }) => {
+  dashboardStats: protectedProcedure
+    .input(z.object({ storeId: z.string().uuid().optional() }).optional())
+    .query(async ({ ctx, input }) => {
+    await assertStoreAccess(ctx.user!.id, input?.storeId);
     const allProducts = await productService.getByUserId(ctx.user!.id, {
       limit: 1000,
+      storeId: input?.storeId,
     });
     const tracked = allProducts.filter(p => p.isTracked && p.isActive);
 
@@ -318,7 +387,8 @@ export const pricingEngineRouter = router({
     for (const product of tracked) {
       const compPrices = await productService.getCompetitorPrices(
         ctx.user!.id,
-        product.id
+        product.id,
+        input?.storeId
       );
       const prices = compPrices.map(c => Number(c.price));
       const merchantPrice = Number(product.price);

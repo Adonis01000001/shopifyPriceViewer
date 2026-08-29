@@ -32,6 +32,12 @@ import { toast } from "sonner";
 import { trpc, type RouterOutputs } from "@/lib/trpc";
 import PipelineActivity from "@/components/dashboard/PipelineActivity";
 import { useTheme } from "@/contexts/ThemeContext";
+import {
+  getStorePathForLocation,
+  getStoreDashboardPath,
+  ShopContextProvider,
+  useShopContext,
+} from "@/contexts/ShopContext";
 import { useRealtimeNotifications } from "@/hooks/use-realtime-notifications";
 import { DashboardLayoutSkeleton } from "./DashboardLayoutSkeleton";
 import OnboardingWizard from "./dashboard/OnboardingWizard";
@@ -142,15 +148,17 @@ export default function DashboardLayout({
           setOnboardingOpen(false);
         }}
       />
-      <DashboardLayoutContent
-        user={user}
-        products={products ?? []}
-        stores={stores ?? []}
-        setupKnown={storesQuery.isSuccess && productsQuery.isSuccess}
-        onResumeSetup={() => setOnboardingOpen(true)}
-      >
-        {children}
-      </DashboardLayoutContent>
+      <ShopContextProvider userId={user.id} shops={stores ?? []}>
+        <DashboardLayoutContent
+          user={user}
+          products={products ?? []}
+          stores={stores ?? []}
+          setupKnown={storesQuery.isSuccess && productsQuery.isSuccess}
+          onResumeSetup={() => setOnboardingOpen(true)}
+        >
+          {children}
+        </DashboardLayoutContent>
+      </ShopContextProvider>
     </div>
   );
 }
@@ -174,6 +182,11 @@ function DashboardLayoutContent({
   children,
 }: DashboardLayoutContentProps) {
   const [location, setLocation] = useLocation();
+  const {
+    selectedShopId,
+    selectedShop,
+    isRouteScoped,
+  } = useShopContext();
   const { theme, toggleTheme, switchable } = useTheme();
   const utils = trpc.useUtils();
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
@@ -186,6 +199,14 @@ function DashboardLayoutContent({
   const notificationRef = useRef<HTMLDivElement>(null);
   const profileRef = useRef<HTMLDivElement>(null);
   useRealtimeNotifications();
+
+  const scopedProductsQuery = trpc.products.list.useQuery(
+    selectedShopId ? { storeId: selectedShopId } : undefined,
+    { enabled: !!selectedShopId, staleTime: 60_000 }
+  );
+  const dashboardProducts = selectedShopId
+    ? (scopedProductsQuery.data ?? [])
+    : products;
 
   useEffect(() => {
     const timer = window.setTimeout(
@@ -234,20 +255,20 @@ function DashboardLayoutContent({
   }, []);
 
   const productSearch = trpc.products.search.useQuery(
-    { query: debouncedQuery },
-    { enabled: debouncedQuery.length >= 2 }
+    { query: debouncedQuery, storeId: selectedShopId ?? undefined },
+    { enabled: debouncedQuery.length >= 2 && !!selectedShopId }
   );
   const competitorSearch = trpc.competitors.search.useQuery(
-    { query: debouncedQuery },
-    { enabled: debouncedQuery.length >= 2 }
+    { query: debouncedQuery, storeId: selectedShopId ?? undefined },
+    { enabled: debouncedQuery.length >= 2 && !!selectedShopId }
   );
 
   const handleExport = useCallback(() => {
-    if (!products.length) {
+    if (!dashboardProducts.length) {
       toast.error("No products to export");
       return;
     }
-    const rows = products.map(product => ({
+    const rows = dashboardProducts.map(product => ({
       Title: product.title,
       SKU: product.sku ?? "",
       Category: product.category ?? "",
@@ -270,8 +291,8 @@ function DashboardLayoutContent({
     link.click();
     link.remove();
     URL.revokeObjectURL(url);
-    toast.success(`Exported ${products.length} products`);
-  }, [products]);
+    toast.success(`Exported ${dashboardProducts.length} products`);
+  }, [dashboardProducts]);
 
   const syncMutation = trpc.shopify.syncProducts.useMutation({
     onSuccess: data => {
@@ -285,7 +306,7 @@ function DashboardLayoutContent({
   });
 
   const handleSync = useCallback(() => {
-    const activeStore = stores.find(store => store.isActive);
+    const activeStore = selectedShop;
     if (!activeStore) {
       toast.error("Connect an active Shopify store first", {
         description: "Open Settings to connect your store.",
@@ -293,11 +314,17 @@ function DashboardLayoutContent({
       return;
     }
     syncMutation.mutate({ storeId: activeStore.id });
-  }, [stores, syncMutation]);
+  }, [selectedShop, syncMutation]);
 
-  const { data: alertStats } = trpc.alerts.stats.useQuery();
+  const { data: alertStats } = trpc.alerts.stats.useQuery(
+    selectedShopId ? { storeId: selectedShopId } : undefined
+  );
   const { data: unreadAlerts, refetch: refetchAlerts } =
-    trpc.alerts.list.useQuery({ unreadOnly: true, limit: 10 });
+    trpc.alerts.list.useQuery({
+      unreadOnly: true,
+      limit: 10,
+      storeId: selectedShopId ?? undefined,
+    });
   const markReadMutation = trpc.alerts.markRead.useMutation({
     onSuccess: () => void refetchAlerts(),
   });
@@ -316,11 +343,20 @@ function DashboardLayoutContent({
 
   const unreadCount = alertStats?.unread ?? 0;
   const notifications = unreadAlerts ?? [];
-  const activeStore = stores.find(store => store.isActive);
+  const activeStore = selectedShop;
   const currentNav = navItems.find(item =>
-    item.path === "/"
-      ? location === "/"
-      : location === item.path || location.startsWith(`${item.path}/`)
+    (() => {
+      const scopedLocation = location.replace(/^\/dashboard\/[^/]+/, "") || "/";
+      return item.path === "/"
+        ? scopedLocation === "/"
+        : scopedLocation === item.path || scopedLocation.startsWith(`${item.path}/`);
+    })()
+  );
+
+  const navigateToStore = useCallback(
+    (path: string) =>
+      setLocation(selectedShopId ? getStoreDashboardPath(selectedShopId, path) : path),
+    [selectedShopId, setLocation]
   );
 
   const getAlertIcon = (alertType: string) => {
@@ -329,6 +365,25 @@ function DashboardLayoutContent({
     if (alertType === "competitor_change") return Activity;
     return Zap;
   };
+
+  if (isRouteScoped && setupKnown && !selectedShop) {
+    return (
+      <div className="flex min-h-screen items-center justify-center px-6">
+        <div className="max-w-md space-y-4 text-center">
+          <h1 className="text-xl font-semibold">Store not found or unavailable</h1>
+          <p className="text-sm text-muted-foreground">
+            This store is not connected to your account.
+          </p>
+          <button
+            className="text-sm text-primary underline"
+            onClick={() => setLocation("/settings")}
+          >
+            Return to Settings
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <>
@@ -344,7 +399,7 @@ function DashboardLayoutContent({
           <button
             type="button"
             className="app-brand"
-            onClick={() => setLocation("/")}
+            onClick={() => navigateToStore("/")}
             aria-label="Go to PriceIntel overview"
           >
             <span className="app-brand-mark" aria-hidden="true">
@@ -363,11 +418,27 @@ function DashboardLayoutContent({
           </span>
           <span className="min-w-0">
             <span className="app-workspace-label">Active store</span>
-            <span className="app-workspace-value">
-              {activeStore?.storeName ??
-                activeStore?.shopDomain ??
-                (setupKnown ? "No store connected" : "Loading\u2026")}
-            </span>
+            <select
+              className="app-workspace-value w-full bg-transparent outline-none"
+              value={selectedShopId ?? ""}
+              onChange={event => {
+                const nextId = event.target.value;
+                if (!nextId) return;
+                const nextPath = getStorePathForLocation(nextId, location);
+                setLocation(nextPath);
+              }}
+              aria-label="Select active store"
+            >
+              {stores.length === 0 ? (
+                <option value="">{setupKnown ? "No store connected" : "Loading\u2026"}</option>
+              ) : (
+                stores.map(store => (
+                  <option key={store.id} value={store.id}>
+                    {store.storeName ?? store.shopDomain}
+                  </option>
+                ))
+              )}
+            </select>
           </span>
         </div>
 
@@ -376,18 +447,23 @@ function DashboardLayoutContent({
             {navItems
               .filter(item => !item.adminOnly || user.role === "admin")
               .map(item => {
+                const scopedLocation = location.replace(/^\/dashboard\/[^/]+/, "") || "/";
                 const isActive =
                   item.path === "/"
-                    ? location === "/"
-                    : location === item.path ||
-                      location.startsWith(`${item.path}/`);
+                    ? scopedLocation === "/"
+                    : scopedLocation === item.path ||
+                      scopedLocation.startsWith(`${item.path}/`);
                 const Icon = item.icon;
                 return (
                   <button
                     type="button"
                     key={item.path}
                     className={`app-nav-link ${isActive ? "is-active" : ""}`}
-                    onClick={() => setLocation(item.path)}
+                    onClick={() =>
+                      item.path === "/settings"
+                        ? setLocation(item.path)
+                        : navigateToStore(item.path)
+                    }
                     aria-current={isActive ? "page" : undefined}
                   >
                     <span className="app-nav-link-icon" aria-hidden="true">
@@ -549,7 +625,7 @@ function DashboardLayoutContent({
                           className="app-search-result"
                           key={product.id}
                           onClick={() => {
-                            setLocation(`/products/${product.id}`);
+                            navigateToStore(`/products/${product.id}`);
                             setSearchQuery("");
                           }}
                         >
@@ -584,7 +660,7 @@ function DashboardLayoutContent({
                           className="app-search-result"
                           key={competitor.id}
                           onClick={() => {
-                            setLocation("/competitors");
+                            navigateToStore("/competitors");
                             setSearchQuery("");
                           }}
                         >
@@ -623,7 +699,7 @@ function DashboardLayoutContent({
                 <span className="topbar-action-label">Finish setup</span>
               </button>
             )}
-            <PipelineActivity />
+            <PipelineActivity storeId={selectedShopId ?? undefined} />
             <button
               type="button"
               className="app-topbar-button hidden xl:inline-flex"
@@ -700,7 +776,7 @@ function DashboardLayoutContent({
                               className="app-notification-main"
                               onClick={() => {
                                 markReadMutation.mutate({ id: alert.id });
-                                setLocation("/alerts");
+                                navigateToStore("/alerts");
                               }}
                             >
                               <span
@@ -748,7 +824,7 @@ function DashboardLayoutContent({
                     <button
                       type="button"
                       className="app-popover-link"
-                      onClick={() => setLocation("/alerts")}
+                      onClick={() => navigateToStore("/alerts")}
                     >
                       View all alerts
                     </button>

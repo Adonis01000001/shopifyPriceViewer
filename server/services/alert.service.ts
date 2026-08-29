@@ -1,17 +1,31 @@
-import { eq, and, desc, sql } from "drizzle-orm";
+import { eq, and, desc, sql, inArray } from "drizzle-orm";
 import { requireDb } from "../_core/db-assert";
-import { alerts, type Alert, type InsertAlert } from "../../drizzle/schema";
+import { alerts, products, accountShopConnections, type Alert, type InsertAlert } from "../../drizzle/schema";
 import { notificationBroadcaster } from "./notification-broadcaster";
 
 export const alertService = {
   async getByUserId(
     userId: string,
-    options?: { unreadOnly?: boolean; limit?: number; offset?: number }
+    options?: { unreadOnly?: boolean; limit?: number; offset?: number; storeId?: string }
   ): Promise<Alert[]> {
     const database = await requireDb();
 
     const conditions = [eq(alerts.userId, userId)];
     if (options?.unreadOnly) conditions.push(eq(alerts.isRead, false));
+    if (options?.storeId) {
+      const [connection] = await database
+        .select({ id: accountShopConnections.id })
+        .from(accountShopConnections)
+        .where(and(eq(accountShopConnections.id, options.storeId), eq(accountShopConnections.userId, userId), eq(accountShopConnections.isActive, true)))
+        .limit(1);
+      if (!connection) return [];
+      conditions.push(
+        inArray(
+          alerts.productId,
+          database.select({ id: products.id }).from(products).where(eq(products.storeId, options.storeId))
+        )
+      );
+    }
 
     const limit = Math.min(options?.limit ?? 50, 200);
     const offset = options?.offset ?? 0;
@@ -27,11 +41,25 @@ export const alertService = {
 
   async countByUserId(
     userId: string,
-    options?: { unreadOnly?: boolean }
+    options?: { unreadOnly?: boolean; storeId?: string }
   ): Promise<number> {
     const database = await requireDb();
     const conditions = [eq(alerts.userId, userId)];
     if (options?.unreadOnly) conditions.push(eq(alerts.isRead, false));
+    if (options?.storeId) {
+      const [connection] = await database
+        .select({ id: accountShopConnections.id })
+        .from(accountShopConnections)
+        .where(and(eq(accountShopConnections.id, options.storeId), eq(accountShopConnections.userId, userId), eq(accountShopConnections.isActive, true)))
+        .limit(1);
+      if (!connection) return 0;
+      conditions.push(
+        inArray(
+          alerts.productId,
+          database.select({ id: products.id }).from(products).where(eq(products.storeId, options.storeId))
+        )
+      );
+    }
     const result = await database
       .select({ count: sql<number>`count(*)::int` })
       .from(alerts)
@@ -132,8 +160,16 @@ export const alertService = {
     });
   },
 
-  async getStats(userId: string) {
+  async getStats(userId: string, storeId?: string) {
     const database = await requireDb();
+    if (storeId) {
+      const [connection] = await database
+        .select({ id: accountShopConnections.id })
+        .from(accountShopConnections)
+        .where(and(eq(accountShopConnections.id, storeId), eq(accountShopConnections.userId, userId), eq(accountShopConnections.isActive, true)))
+        .limit(1);
+      if (!connection) return { total: 0, unread: 0, critical: 0, resolved: 0 };
+    }
     const result = await database
       .select({
         severity: alerts.severity,
@@ -142,7 +178,17 @@ export const alertService = {
         count: sql<number>`count(*)::int`,
       })
       .from(alerts)
-      .where(eq(alerts.userId, userId))
+      .where(
+        and(
+          eq(alerts.userId, userId),
+          storeId
+            ? inArray(
+                alerts.productId,
+                database.select({ id: products.id }).from(products).where(eq(products.storeId, storeId))
+              )
+            : undefined
+        )
+      )
       .groupBy(alerts.severity, alerts.isRead, alerts.isResolved);
 
     const stats = { total: 0, unread: 0, critical: 0, resolved: 0 };

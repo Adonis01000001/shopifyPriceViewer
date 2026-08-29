@@ -5,10 +5,13 @@ import { productService } from "../product.service";
 import {
   users,
   products,
-  shopifyStores,
+  shops,
+  accountShopConnections,
+  accountCompetitorConnections,
   competitors,
 } from "../../../drizzle/schema";
 import { requireDb } from "../../_core/db-assert";
+import { getOrCreateAccountShopConnection, getOrCreateShop } from "../shop.service";
 
 async function createUser(email: string): Promise<string> {
   const db = await requireDb();
@@ -26,30 +29,25 @@ async function createUser(email: string): Promise<string> {
 
 async function createStore(userId: string): Promise<string> {
   const db = await requireDb();
-  const [store] = await db
-    .insert(shopifyStores)
-    .values({
-      userId,
-      shopDomain: `mapping-${Date.now()}.myshopify.com`,
-      accessToken: "test-token",
-      scopes: "read_products",
-      isActive: true,
-    })
-    .returning();
-  return store.id;
+  const shop = await getOrCreateShop(`mapping-${Date.now()}-${Math.random()}.myshopify.com`, { database: db });
+  const connection = await getOrCreateAccountShopConnection(userId, shop.id, { database: db });
+  return connection.id;
 }
 
 async function createCompetitor(userId: string, name: string) {
   const db = await requireDb();
+  const domain = `${name.toLowerCase().replace(/[^a-z0-9]+/g, "-")}-${Date.now()}-${Math.random().toString(36).slice(2)}.example.com`;
+  const shop = await getOrCreateShop(domain, { database: db });
   const [competitor] = await db
     .insert(competitors)
     .values({
-      userId,
+      shopId: shop.id,
       name,
-      domain: `${name.toLowerCase()}.example.com`,
+      domain,
       status: "active",
     })
     .returning();
+  await db.insert(accountCompetitorConnections).values({ userId, competitorId: competitor.id });
   return competitor;
 }
 
@@ -66,10 +64,31 @@ describe("competitor product mappings", () => {
 
   afterEach(async () => {
     const db = await requireDb();
-    await db.delete(shopifyStores).where(eq(shopifyStores.userId, userId));
+    const connectionRows = await db
+      .select({ shopId: accountShopConnections.shopId })
+      .from(accountShopConnections)
+      .where(eq(accountShopConnections.userId, userId));
+    const competitorRows = await db
+      .select({ id: competitors.id, shopId: competitors.shopId })
+      .from(competitors)
+      .innerJoin(
+        accountCompetitorConnections,
+        eq(accountCompetitorConnections.competitorId, competitors.id)
+      )
+      .where(eq(accountCompetitorConnections.userId, userId));
+    if (competitorRows.length > 0) {
+      await db.delete(accountCompetitorConnections).where(eq(accountCompetitorConnections.userId, userId));
+      for (const row of competitorRows) {
+        await db.delete(competitors).where(eq(competitors.id, row.id));
+        await db.delete(shops).where(eq(shops.id, row.shopId));
+      }
+    }
     await db.delete(products).where(eq(products.userId, userId));
-    await db.delete(competitors).where(eq(competitors.userId, userId));
+    await db.delete(accountShopConnections).where(eq(accountShopConnections.userId, userId));
     await db.delete(users).where(eq(users.id, userId));
+    for (const row of connectionRows) {
+      await db.delete(shops).where(eq(shops.id, row.shopId));
+    }
   });
 
   it("returns mappings for the owning catalog product", async () => {

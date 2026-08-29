@@ -20,68 +20,83 @@ export const recommendationService = {
   async getAll(options?: {
     status?: string;
     limit?: number;
+    storeId?: string;
   }): Promise<Recommendation[]> {
     const database = await requireDb();
     const conditions = [];
     if (options?.status)
       conditions.push(eq(recommendations.status, options.status as any));
-    return database
+    const query = database
       .select()
       .from(recommendations)
+      .innerJoin(products, eq(recommendations.productId, products.id));
+    if (options?.storeId) conditions.push(eq(products.storeId, options.storeId));
+    const rows = await query
       .where(conditions.length > 0 ? and(...conditions) : undefined)
       .orderBy(desc(recommendations.createdAt))
       .limit(options?.limit ?? 200);
+    return rows.map(row => row.recommendations);
   },
 
   async getByUserId(
     userId: string,
-    options?: { status?: string; limit?: number }
+    options?: { status?: string; limit?: number; storeId?: string }
   ): Promise<Recommendation[]> {
     const database = await requireDb();
     const conditions = [eq(recommendations.userId, userId)];
     if (options?.status)
       conditions.push(eq(recommendations.status, options.status as any));
-    return database
+    if (options?.storeId) conditions.push(eq(products.storeId, options.storeId));
+    const rows = await database
       .select()
       .from(recommendations)
+      .innerJoin(products, eq(recommendations.productId, products.id))
       .where(and(...conditions))
       .orderBy(desc(recommendations.createdAt))
       .limit(options?.limit ?? 100);
+    return rows.map(row => row.recommendations);
   },
 
   async getByProductId(
     userId: string,
-    productId: string
+    productId: string,
+    storeId?: string
   ): Promise<Recommendation[]> {
     const database = await requireDb();
-    return database
+    const rows = await database
       .select()
       .from(recommendations)
+      .innerJoin(products, eq(recommendations.productId, products.id))
       .where(
         and(
           eq(recommendations.productId, productId),
-          eq(recommendations.userId, userId)
+          eq(recommendations.userId, userId),
+          storeId ? eq(products.storeId, storeId) : undefined
         )
       )
       .orderBy(desc(recommendations.createdAt));
+    return rows.map(row => row.recommendations);
   },
 
   async getById(
     userId: string,
-    recommendationId: string
+    recommendationId: string,
+    storeId?: string
   ): Promise<Recommendation | undefined> {
     const database = await requireDb();
     const result = await database
       .select()
       .from(recommendations)
+      .innerJoin(products, eq(recommendations.productId, products.id))
       .where(
         and(
           eq(recommendations.id, recommendationId),
-          eq(recommendations.userId, userId)
+          eq(recommendations.userId, userId),
+          storeId ? eq(products.storeId, storeId) : undefined
         )
       )
       .limit(1);
-    return result[0];
+    return result[0]?.recommendations;
   },
 
   async create(data: InsertRecommendation): Promise<Recommendation> {
@@ -95,11 +110,12 @@ export const recommendationService = {
 
   async implement(
     userId: string,
-    recommendationId: string
+    recommendationId: string,
+    storeId?: string
   ): Promise<Recommendation | undefined> {
     const database = await requireDb();
 
-    const rec = await this.getById(userId, recommendationId);
+    const rec = await this.getById(userId, recommendationId, storeId);
     if (!rec) return undefined;
 
     const result = await database
@@ -122,7 +138,11 @@ export const recommendationService = {
         .update(products)
         .set({ price: result[0].recommendedPrice, updatedAt: new Date() })
         .where(
-          and(eq(products.id, rec.productId), eq(products.userId, userId))
+          and(
+            eq(products.id, rec.productId),
+            eq(products.userId, userId),
+            storeId ? eq(products.storeId, storeId) : undefined
+          )
         );
 
       // G4 — Create alert when recommendation is implemented
@@ -153,9 +173,12 @@ export const recommendationService = {
 
   async dismiss(
     userId: string,
-    recommendationId: string
+    recommendationId: string,
+    storeId?: string
   ): Promise<Recommendation | undefined> {
     const database = await requireDb();
+    const rec = await this.getById(userId, recommendationId, storeId);
+    if (!rec) return undefined;
     const result = await database
       .update(recommendations)
       .set({
@@ -175,14 +198,15 @@ export const recommendationService = {
 
   async generateForProduct(
     userId: string,
-    productId: string
+    productId: string,
+    storeId?: string
   ): Promise<Recommendation | undefined> {
     const database = await requireDb();
 
     const product = await database
       .select()
       .from(products)
-      .where(and(eq(products.id, productId), eq(products.userId, userId)))
+      .where(and(eq(products.id, productId), eq(products.userId, userId), storeId ? eq(products.storeId, storeId) : undefined))
       .limit(1);
 
     if (product.length === 0) return undefined;
@@ -328,9 +352,9 @@ export const recommendationService = {
     return { usersProcessed, recommendationsGenerated, errors };
   },
 
-  async getStats(userId: string) {
+  async getStats(userId: string, storeId?: string) {
     const database = await requireDb();
-    const result = await database
+    const query = database
       .select({
         status: recommendations.status,
         count: sql<number>`count(*)::int`,
@@ -338,7 +362,14 @@ export const recommendationService = {
         totalSavings: sql<number>`coalesce(sum(${recommendations.potentialSavings}), 0)`,
       })
       .from(recommendations)
-      .where(eq(recommendations.userId, userId))
+      .innerJoin(products, eq(recommendations.productId, products.id));
+    const result = await query
+      .where(
+        and(
+          eq(recommendations.userId, userId),
+          storeId ? eq(products.storeId, storeId) : undefined
+        )
+      )
       .groupBy(recommendations.status);
 
     const stats = {

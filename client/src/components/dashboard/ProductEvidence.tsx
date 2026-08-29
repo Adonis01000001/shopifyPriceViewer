@@ -33,9 +33,9 @@ const MARK: Record<Kind, { icon: typeof Check; className: string }> = {
   look: { icon: Search, className: "text-muted-foreground/60" },
 };
 
-export function ProductEvidence({ productId }: { productId: string }) {
+export function ProductEvidence({ productId, storeId }: { productId: string; storeId?: string }) {
   const { data, isLoading } = trpc.pipeline.productEvidence.useQuery(
-    { productId },
+    { productId, storeId },
     { enabled: !!productId, staleTime: 1000 * 30 }
   );
 

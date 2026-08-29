@@ -10,44 +10,35 @@ import {
 import * as db from "../db";
 import {
   products,
-  shopifyStores,
+  accountShopConnections,
+  shops,
   competitors,
   competitorProducts,
+  accountCompetitorConnections,
 } from "../../drizzle/schema";
-import { eq, and } from "drizzle-orm";
+import { eq, and, or, inArray } from "drizzle-orm";
 import { encryptToken } from "../_core/sdk";
 import { toPublicShopifyStore } from "../_core/public-views";
 import { entitlementService } from "../services/entitlement.service";
+import { getOrCreateAccountShopConnection, getOrCreateShop } from "../services/shop.service";
 
 // Helper: get or create a "Manual" store placeholder for products without Shopify
 async function getOrCreateManualStore(userId: string): Promise<string> {
   const database = await db.getDb();
   if (!database) throw new Error("Database not available");
 
-  // Look for existing manual store for this user
-  const existing = await database.query.shopifyStores.findFirst({
-    where: and(
-      eq(shopifyStores.userId, userId),
-      eq(shopifyStores.storeName, "Manual")
-    ),
+  const shop = await getOrCreateShop(`manual-${userId.slice(0, 8)}.local`, {
+    name: "Manual",
+    platform: "manual",
+    database,
   });
-
-  if (existing) return existing.id;
-
-  // Create a placeholder manual store
-  const result = await database
-    .insert(shopifyStores)
-    .values({
-      userId,
-      shopDomain: `manual-${userId.slice(0, 8)}`,
-      storeName: "Manual",
-      currency: "USD",
-      isActive: true,
-      scopes: "manual",
-    })
-    .returning();
-
-  return result[0].id;
+  const connection = await getOrCreateAccountShopConnection(userId, shop.id, {
+    storeName: "Manual",
+    currency: "USD",
+    scopes: "manual",
+    database,
+  });
+  return connection.id;
 }
 
 /**
@@ -112,6 +103,7 @@ export const productRouter = router({
       z.object({
         csv: z.string().min(1).max(5_000_000),
         runPipeline: z.boolean().optional(),
+        storeId: z.string().uuid().optional(),
       })
     )
     .mutation(async ({ ctx, input }) => {
@@ -137,7 +129,7 @@ export const productRouter = router({
         throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
       }
 
-      const storeId = await getOrCreateManualStore(ctx.user!.id);
+      const storeId = input.storeId ?? (await getOrCreateManualStore(ctx.user!.id));
       const errors: Array<{ row: number; reason: string }> = [];
       const toInsert: Array<Record<string, unknown>> = [];
 
@@ -189,7 +181,9 @@ export const productRouter = router({
       if (input.runPipeline !== false) {
         const uid = ctx.user!.id;
         void import("../services/pipeline.service")
-          .then(({ pipelineService }) => pipelineService.runForUser(uid))
+          .then(({ pipelineService }) =>
+            pipelineService.runForUser(uid, 50, undefined, input.storeId)
+          )
           .catch(() => undefined);
       }
 
@@ -207,6 +201,7 @@ export const productRouter = router({
         .object({
           limit: z.number().min(1).max(200).optional(),
           offset: z.number().min(0).optional(),
+          storeId: z.string().uuid().optional(),
         })
         .optional()
     )
@@ -214,8 +209,10 @@ export const productRouter = router({
       return productService.getByUserId(ctx.user!.id, input);
     }),
 
-  count: protectedProcedure.query(async ({ ctx }) => {
-    return productService.countByUserId(ctx.user!.id);
+  count: protectedProcedure
+    .input(z.object({ storeId: z.string().uuid().optional() }).optional())
+    .query(async ({ ctx, input }) => {
+    return productService.countByUserId(ctx.user!.id, input?.storeId);
   }),
 
   listByStore: protectedProcedure
@@ -225,9 +222,9 @@ export const productRouter = router({
     }),
 
   getById: protectedProcedure
-    .input(z.object({ id: z.string().uuid() }))
+    .input(z.object({ id: z.string().uuid(), storeId: z.string().uuid().optional() }))
     .query(async ({ ctx, input }) => {
-      const product = await productService.getById(ctx.user!.id, input.id);
+      const product = await productService.getById(ctx.user!.id, input.id, input.storeId);
       if (!product)
         throw new TRPCError({
           code: "NOT_FOUND",
@@ -319,11 +316,12 @@ export const productRouter = router({
           .enum(["optimal", "underpriced", "overpriced", "alert"])
           .optional(),
         isTracked: z.boolean().optional(),
+        storeId: z.string().uuid().optional(),
       })
     )
     .mutation(async ({ ctx, input }) => {
       const { id, ...data } = input;
-      const product = await productService.update(ctx.user!.id, id, data);
+      const product = await productService.update(ctx.user!.id, id, data, input.storeId);
       if (!product)
         throw new TRPCError({
           code: "NOT_FOUND",
@@ -333,19 +331,20 @@ export const productRouter = router({
     }),
 
   delete: protectedProcedure
-    .input(z.object({ id: z.string().uuid() }))
+    .input(z.object({ id: z.string().uuid(), storeId: z.string().uuid().optional() }))
     .mutation(async ({ ctx, input }) => {
-      await productService.delete(ctx.user!.id, input.id);
+      await productService.delete(ctx.user!.id, input.id, input.storeId);
       return { success: true };
     }),
 
   toggleTracking: protectedProcedure
-    .input(z.object({ id: z.string().uuid(), isTracked: z.boolean() }))
+    .input(z.object({ id: z.string().uuid(), isTracked: z.boolean(), storeId: z.string().uuid().optional() }))
     .mutation(async ({ ctx, input }) => {
       const product = await productService.toggleTracking(
         ctx.user!.id,
         input.id,
-        input.isTracked
+        input.isTracked,
+        input.storeId
       );
       if (!product)
         throw new TRPCError({
@@ -356,10 +355,16 @@ export const productRouter = router({
     }),
 
   getCompetitorPrices: protectedProcedure
-    .input(z.object({ productId: z.string().uuid() }))
+    .input(z.object({ productId: z.string().uuid(), storeId: z.string().uuid().optional() }))
     .query(async ({ ctx, input }) => {
       const database = await db.getDb();
       if (!database) throw new Error("Database not available");
+      const ownedProduct = await productService.getById(
+        ctx.user!.id,
+        input.productId,
+        input.storeId
+      );
+      if (!ownedProduct) return [];
 
       const rows = await database
         .select({
@@ -385,7 +390,21 @@ export const productRouter = router({
           and(
             eq(competitorProducts.productId, input.productId),
             eq(products.userId, ctx.user!.id),
-            eq(competitors.userId, ctx.user!.id),
+            input.storeId ? eq(products.storeId, input.storeId) : undefined,
+            or(
+              inArray(
+                competitors.id,
+                database
+                  .select({ id: accountCompetitorConnections.competitorId })
+                  .from(accountCompetitorConnections)
+                  .where(
+                    and(
+                      eq(accountCompetitorConnections.userId, ctx.user!.id),
+                      eq(accountCompetitorConnections.isActive, true)
+                    )
+                  )
+              )
+            ),
             eq(competitorProducts.isActive, true)
           )
         );
@@ -393,12 +412,16 @@ export const productRouter = router({
       return rows;
     }),
 
-  getCompetitorMappings: protectedProcedure.query(({ ctx }) =>
-    productService.getCompetitorPricesForUser(ctx.user!.id)
+  getCompetitorMappings: protectedProcedure
+    .input(z.object({ storeId: z.string().uuid().optional() }).optional())
+    .query(({ ctx, input }) =>
+    productService.getCompetitorPricesForUser(ctx.user!.id, input?.storeId)
   ),
 
-  stats: protectedProcedure.query(async ({ ctx }) => {
-    return productService.getStats(ctx.user!.id);
+  stats: protectedProcedure
+    .input(z.object({ storeId: z.string().uuid().optional() }).optional())
+    .query(async ({ ctx, input }) => {
+    return productService.getStats(ctx.user!.id, input?.storeId);
   }),
 
   stores: protectedProcedure.query(async ({ ctx }) => {
@@ -423,7 +446,6 @@ export const productRouter = router({
         userId: ctx.user!.id,
         ...storeInput,
         accessToken: encryptToken(accessToken),
-        isActive: true,
       });
       if (!store)
         throw new TRPCError({
@@ -434,9 +456,9 @@ export const productRouter = router({
     }),
 
   search: protectedProcedure
-    .input(z.object({ query: z.string().min(1).max(200) }))
+    .input(z.object({ query: z.string().min(1).max(200), storeId: z.string().uuid().optional() }))
     .query(async ({ ctx, input }) => {
-      return productService.search(ctx.user!.id, input.query);
+      return productService.search(ctx.user!.id, input.query, input.storeId);
     }),
 
   bulkSync: protectedProcedure

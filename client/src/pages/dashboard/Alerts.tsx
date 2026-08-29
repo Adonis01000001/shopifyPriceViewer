@@ -9,6 +9,7 @@ import {
 } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { trpc } from "@/lib/trpc";
+import { useShopContext } from "@/contexts/ShopContext";
 import {
   Empty,
   EmptyHeader,
@@ -147,6 +148,7 @@ function AlertRow({
 
 export default function Alerts() {
   const utils = trpc.useUtils();
+  const { selectedShopId } = useShopContext();
   useRealtimeNotifications();
   const [searchQuery, setSearchQuery] = useState("");
   const [activeTab, setActiveTab] = useState("all");
@@ -158,8 +160,11 @@ export default function Alerts() {
   } = trpc.alerts.list.useQuery({
     unreadOnly: false,
     limit: 100,
+    storeId: selectedShopId ?? undefined,
   });
-  const { data: stats } = trpc.alerts.stats.useQuery();
+  const { data: stats } = trpc.alerts.stats.useQuery(
+    selectedShopId ? { storeId: selectedShopId } : undefined
+  );
 
   const resolveMutation = trpc.alerts.markRead.useMutation({
     onSuccess: () => {

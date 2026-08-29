@@ -399,20 +399,56 @@ export type InsertNotificationPreference =
   typeof notificationPreferences.$inferInsert;
 
 // =============================================================================
-// Shopify Stores
+// Canonical shops and account-specific connections
 // =============================================================================
 
-export const shopifyStores = pgTable(
-  "shopify_stores",
+export const shops = pgTable(
+  "shops",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    canonicalDomain: varchar("canonical_domain", { length: 255 }).notNull(),
+    normalizedDomain: varchar("normalized_domain", { length: 255 }).notNull(),
+    name: varchar("name", { length: 255 }).notNull(),
+    platform: varchar("platform", { length: 64 }),
+    metadata: jsonb("metadata"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  t => ({
+    normalizedDomainIdx: uniqueIndex("shops_normalized_domain_idx").on(
+      t.normalizedDomain
+    ),
+    canonicalDomainIdx: index("shops_canonical_domain_idx").on(
+      t.canonicalDomain
+    ),
+  })
+);
+
+export type Shop = typeof shops.$inferSelect;
+export type InsertShop = typeof shops.$inferInsert;
+
+export const accountShopConnections = pgTable(
+  "account_shop_connections",
   {
     id: uuid("id").defaultRandom().primaryKey(),
     userId: uuid("user_id")
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
-    shopDomain: varchar("shop_domain", { length: 255 }).notNull(),
-    // AES-256-CBC encrypted Shopify access token. Decrypt via sdk.decryptToken().
+    shopId: uuid("shop_id")
+      .notNull()
+      .references(() => shops.id, { onDelete: "cascade" }),
+    connectionStatus: varchar("connection_status", { length: 32 })
+      .default("active")
+      .notNull(),
+    // AES-256-CBC encrypted Shopify access token. Decrypt only server-side.
     accessToken: text("access_token"),
-    scopes: text("scopes").notNull(),
+    scopes: text("scopes").default("read_products").notNull(),
+    connectionSettings: jsonb("connection_settings"),
+    syncSettings: jsonb("sync_settings"),
     storeName: varchar("store_name", { length: 255 }),
     storeEmail: varchar("store_email", { length: 320 }),
     currency: varchar("currency", { length: 3 }).default("USD"),
@@ -427,15 +463,24 @@ export const shopifyStores = pgTable(
       .notNull(),
   },
   t => ({
-    userIdIdx: index("shopify_stores_user_id_idx").on(t.userId),
-    shopDomainIdx: uniqueIndex("shopify_stores_shop_domain_idx").on(
-      t.shopDomain
+    userActiveIdx: index("account_shop_connections_user_active_idx").on(
+      t.userId,
+      t.isActive
+    ),
+    shopActiveIdx: index("account_shop_connections_shop_active_idx").on(
+      t.shopId,
+      t.isActive
+    ),
+    userShopIdx: uniqueIndex("account_shop_connections_user_shop_idx").on(
+      t.userId,
+      t.shopId
     ),
   })
 );
 
-export type ShopifyStore = typeof shopifyStores.$inferSelect;
-export type InsertShopifyStore = typeof shopifyStores.$inferInsert;
+export type AccountShopConnection = typeof accountShopConnections.$inferSelect;
+export type InsertAccountShopConnection =
+  typeof accountShopConnections.$inferInsert;
 
 // =============================================================================
 // Products
@@ -448,7 +493,7 @@ export const products = pgTable(
     userId: uuid("user_id")
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
-    storeId: uuid("store_id").references(() => shopifyStores.id, {
+    storeId: uuid("store_id").references(() => accountShopConnections.id, {
       onDelete: "set null",
     }),
     shopifyProductId: varchar("shopify_product_id", { length: 64 }),
@@ -542,9 +587,9 @@ export const competitors = pgTable(
   "competitors",
   {
     id: uuid("id").defaultRandom().primaryKey(),
-    userId: uuid("user_id")
+    shopId: uuid("shop_id")
       .notNull()
-      .references(() => users.id, { onDelete: "cascade" }),
+      .references(() => shops.id, { onDelete: "restrict" }),
     name: varchar("name", { length: 255 }).notNull(),
     normalizedName: varchar("normalized_name", { length: 255 }),
     domain: varchar("domain", { length: 255 }).notNull(),
@@ -569,15 +614,7 @@ export const competitors = pgTable(
       .notNull(),
   },
   t => ({
-    userIdIdx: index("competitors_user_id_idx").on(t.userId),
-    userCreatedIdx: index("competitors_user_created_idx").on(
-      t.userId,
-      t.createdAt
-    ),
-    normalizedNameIdx: index("competitors_user_normalized_name_idx").on(
-      t.userId,
-      t.normalizedName
-    ),
+    shopIdIdx: uniqueIndex("competitors_shop_id_idx").on(t.shopId),
     domainIdx: index("competitors_domain_idx").on(t.domain),
     statusIdx: index("competitors_status_idx").on(t.status),
   })
@@ -585,6 +622,44 @@ export const competitors = pgTable(
 
 export type Competitor = typeof competitors.$inferSelect;
 export type InsertCompetitor = typeof competitors.$inferInsert;
+
+export const accountCompetitorConnections = pgTable(
+  "account_competitor_connections",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    competitorId: uuid("competitor_id")
+      .notNull()
+      .references(() => competitors.id, { onDelete: "cascade" }),
+    connectionSettings: jsonb("connection_settings"),
+    isActive: boolean("is_active").default(true).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  t => ({
+    userCompetitorIdx: uniqueIndex(
+      "account_competitor_connections_user_competitor_idx"
+    ).on(t.userId, t.competitorId),
+    userActiveIdx: index("account_competitor_connections_user_active_idx").on(
+      t.userId,
+      t.isActive
+    ),
+    competitorIdx: index("account_competitor_connections_competitor_idx").on(
+      t.competitorId
+    ),
+  })
+);
+
+export type AccountCompetitorConnection =
+  typeof accountCompetitorConnections.$inferSelect;
+export type InsertAccountCompetitorConnection =
+  typeof accountCompetitorConnections.$inferInsert;
 
 // =============================================================================
 // Competitor Products (matched products)
