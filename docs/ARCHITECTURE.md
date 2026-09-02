@@ -117,8 +117,7 @@ trust it.
 
 | Job | Interval | Does |
 | --- | --- | --- |
-| `price_monitor` | `MONITORING_INTERVAL_HOURS` | Re-reads pages already matched. No new searching, so no new search spend |
-| `competitor_discovery` | 24h | The full run above, per user |
+| `price_monitor` | Daily at `PRICE_REFRESH_HOUR:PRICE_REFRESH_MINUTE` in `PRICE_REFRESH_TIMEZONE` | Re-reads pages already matched; disabled while idle and never runs at startup |
 | `daily_reports` | 24h | Report generation for plans that include it |
 
 The scheduler reads `cron_runs` before starting a job and skips one that has

@@ -349,6 +349,9 @@ export default function Products() {
         );
       }
       refetch();
+      void utils.pipeline.status.invalidate(
+        selectedShopId ? { storeId: selectedShopId } : undefined
+      );
     },
     onError: err => toast.error(err.message),
     onSettled: () => setImporting(false),

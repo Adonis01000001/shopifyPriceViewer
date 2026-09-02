@@ -6,14 +6,16 @@ import { trpc } from "@/lib/trpc";
  * "we are looking" rather than "there is nothing here".
  */
 export function usePipelineRun(storeId?: string) {
-  const { data } = trpc.pipeline.status.useQuery(storeId ? { storeId } : undefined, {
-    // The indicator in the top bar already polls this same query, and
-    // react-query shares one request between them. Asking for a slower
-    // interval here keeps this from being the one that sets the pace.
-    refetchInterval: 30000,
-    refetchIntervalInBackground: false,
-    refetchOnWindowFocus: true,
-  });
+  const { data } = trpc.pipeline.status.useQuery(
+    storeId ? { storeId } : undefined,
+    {
+      // Do not poll an idle dashboard. Explicit Sync/import actions invalidate
+      // this query, and an active run gets a slower progress refresh here.
+      refetchInterval: query => (query.state.data?.running ? 30000 : false),
+      refetchIntervalInBackground: false,
+      refetchOnWindowFocus: true,
+    }
+  );
 
   const running = data?.running ?? false;
   const total = data?.total ?? 0;

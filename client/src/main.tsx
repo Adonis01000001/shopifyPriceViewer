@@ -22,6 +22,10 @@ const queryClient = new QueryClient({
 
 let csrfToken: string | null = null;
 let csrfTokenRequest: Promise<string> | null = null;
+let sessionRefreshRequest: Promise<boolean> | null = null;
+let sessionRefreshUnavailableUntil = 0;
+
+const SESSION_REFRESH_COOLDOWN_MS = 5_000;
 
 async function getCsrfToken(): Promise<string> {
   if (csrfToken) return csrfToken;
@@ -59,12 +63,54 @@ const redirectToLoginIfUnauthorized = (error: unknown) => {
   if (!(error instanceof TRPCClientError)) return;
   if (typeof window === "undefined") return;
 
-  const isUnauthorized = error.message === UNAUTHED_ERR_MSG;
+  const isUnauthorized =
+    error.message === UNAUTHED_ERR_MSG || error.data?.code === "UNAUTHORIZED";
 
   if (!isUnauthorized) return;
 
   window.location.href = getLoginUrl();
 };
+
+function isSessionRefreshRequest(input: RequestInfo | URL): boolean {
+  const url = input instanceof Request ? input.url : String(input);
+  return new URL(url, window.location.origin).pathname.endsWith(
+    "/auth.refreshSession"
+  );
+}
+
+async function refreshSession(): Promise<boolean> {
+  const now = Date.now();
+  if (now < sessionRefreshUnavailableUntil) return false;
+  if (sessionRefreshRequest) return sessionRefreshRequest;
+
+  sessionRefreshRequest = (async () => {
+    try {
+      const response = await globalThis.fetch("/api/trpc/auth.refreshSession", {
+        method: "POST",
+        credentials: "include",
+        headers: {
+          Accept: "application/json",
+          "Content-Type": "application/json",
+          "x-csrf-token": await getCsrfToken(),
+        },
+        body: JSON.stringify({ json: null }),
+      });
+
+      if (response.ok) return true;
+
+      // Avoid sending the same expired refresh token on every failed query.
+      sessionRefreshUnavailableUntil = Date.now() + SESSION_REFRESH_COOLDOWN_MS;
+      return false;
+    } catch {
+      sessionRefreshUnavailableUntil = Date.now() + SESSION_REFRESH_COOLDOWN_MS;
+      return false;
+    } finally {
+      sessionRefreshRequest = null;
+    }
+  })();
+
+  return sessionRefreshRequest;
+}
 
 queryClient.getQueryCache().subscribe(event => {
   if (event.type === "updated" && event.action.type === "error") {
@@ -93,11 +139,28 @@ const trpcClient = trpc.createClient({
         if (!["GET", "HEAD", "OPTIONS"].includes(method)) {
           headers.set("x-csrf-token", await getCsrfToken());
         }
-        return globalThis.fetch(input, {
-          ...(init ?? {}),
-          credentials: "include",
-          headers,
-        });
+
+        const request = () =>
+          globalThis.fetch(input instanceof Request ? input.clone() : input, {
+            ...(init ?? {}),
+            credentials: "include",
+            headers,
+          });
+
+        const response = await request();
+        if (
+          response.status !== 401 ||
+          isSessionRefreshRequest(input) ||
+          typeof window === "undefined"
+        ) {
+          return response;
+        }
+
+        // A valid refresh token can outlive the short-lived access cookie.
+        // Refresh once and replay the original request; protected procedures
+        // remain protected throughout this recovery path.
+        if (await refreshSession()) return request();
+        return response;
       },
     }),
   ],

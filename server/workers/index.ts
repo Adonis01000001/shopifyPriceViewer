@@ -42,6 +42,19 @@ const workers = [
     },
     { connection, concurrency: ENV.workerConcurrency }
   ),
+  new Worker<UserJobPayload>(
+    "ai-analysis",
+    async job => {
+      if (job.data.analysisKind !== "scraper-improvement") {
+        throw new Error("Unsupported AI analysis job type");
+      }
+      const { scraperImprovementService } = await import(
+        "../services/scraper-improvement.service"
+      );
+      return scraperImprovementService.analyzePendingFailures();
+    },
+    { connection, concurrency: 1 }
+  ),
 ];
 
 for (const worker of workers) {

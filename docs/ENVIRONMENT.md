@@ -44,7 +44,11 @@ for search.
 
 | Variable                    | Description                   | Default |
 | --------------------------- | ----------------------------- | ------- |
-| `MONITORING_INTERVAL_HOURS` | Hours between price re-reads. This re-reads pages already matched; it does not search again | `1` |
+| `PRICE_REFRESH_ENABLED`     | Enables the single daily automatic price refresh | `true` |
+| `PRICE_REFRESH_HOUR`        | Local hour for the daily refresh (`0`-`23`) | `2` |
+| `PRICE_REFRESH_MINUTE`      | Local minute for the daily refresh (`0`-`59`) | `0` |
+| `PRICE_REFRESH_TIMEZONE`    | IANA timezone used for the daily wall-clock schedule | `UTC` |
+| `MONITORING_INTERVAL_HOURS` | Legacy compatibility setting; no longer drives automatic price refresh frequency | `1` |
 
 ## Shopify Integration
 

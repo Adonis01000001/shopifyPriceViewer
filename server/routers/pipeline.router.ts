@@ -2,7 +2,11 @@ import { z } from "zod";
 import { and, desc, eq, gte, inArray } from "drizzle-orm";
 import { router, protectedProcedure } from "../_core/trpc";
 import { requireDb } from "../_core/db-assert";
-import { activityLogs, accountShopConnections, products } from "../../drizzle/schema";
+import {
+  activityLogs,
+  accountShopConnections,
+  products,
+} from "../../drizzle/schema";
 import { PIPELINE_ACTIONS } from "../services/pipeline.service";
 
 const EVENT_LIMIT = 40;
@@ -31,160 +35,211 @@ export const pipelineRouter = router({
   status: protectedProcedure
     .input(z.object({ storeId: z.string().uuid().optional() }).optional())
     .query(async ({ ctx, input }) => {
-    const database = await requireDb();
-    const userId = ctx.user!.id;
-    if (input?.storeId) {
-      const [connection] = await database
-        .select({ id: accountShopConnections.id })
-        .from(accountShopConnections)
-        .where(and(eq(accountShopConnections.id, input.storeId), eq(accountShopConnections.userId, userId), eq(accountShopConnections.isActive, true)))
-        .limit(1);
-      if (!connection) return { running: false, startedAt: null, total: 0, done: 0, current: null, steps: [], events: [], lastRun: null };
-    }
-
-    const bookends = await database
-      .select({
-        action: activityLogs.action,
-        detail: activityLogs.detail,
-        metadata: activityLogs.metadata,
-        createdAt: activityLogs.createdAt,
-      })
-      .from(activityLogs)
-      .where(
-        and(
-          eq(activityLogs.userId, userId),
-          inArray(activityLogs.action, [
-            PIPELINE_ACTIONS.runStarted,
-            PIPELINE_ACTIONS.runFinished,
-          ])
-        )
-      )
-      .orderBy(desc(activityLogs.createdAt))
-      .limit(2);
-
-    const started = bookends.find(r => r.action === PIPELINE_ACTIONS.runStarted);
-    const finished = bookends.find(
-      r => r.action === PIPELINE_ACTIONS.runFinished
-    );
-
-    const lastActivity = started
-      ? await database
-          .select({ createdAt: activityLogs.createdAt })
-          .from(activityLogs)
+      const database = await requireDb();
+      const userId = ctx.user!.id;
+      if (input?.storeId) {
+        const [connection] = await database
+          .select({ id: accountShopConnections.id })
+          .from(accountShopConnections)
           .where(
             and(
-              eq(activityLogs.userId, userId),
-              gte(activityLogs.createdAt, started.createdAt)
+              eq(accountShopConnections.id, input.storeId),
+              eq(accountShopConnections.userId, userId),
+              eq(accountShopConnections.isActive, true)
             )
           )
-          .orderBy(desc(activityLogs.createdAt))
-          .limit(1)
-      : [];
-
-    const wentQuietAt = lastActivity[0]?.createdAt ?? started?.createdAt;
-    const isStale =
-      !!wentQuietAt && Date.now() - wentQuietAt.getTime() > STALE_AFTER_MS;
-
-    const running =
-      !!started &&
-      (!finished ||
-        finished.createdAt.getTime() < started.createdAt.getTime()) &&
-      !isStale;
-
-    const events = started
-      ? await database
-          .select({
-            action: activityLogs.action,
-            detail: activityLogs.detail,
-            metadata: activityLogs.metadata,
-            createdAt: activityLogs.createdAt,
-          })
-          .from(activityLogs)
-          .where(
-            and(
-              eq(activityLogs.userId, userId),
-              gte(activityLogs.createdAt, started.createdAt),
-              inArray(activityLogs.action, [
-                PIPELINE_ACTIONS.productStarted,
-                PIPELINE_ACTIONS.productDone,
-              ])
-            )
-          )
-          .orderBy(desc(activityLogs.createdAt))
-          .limit(EVENT_LIMIT)
-      : [];
-
-    const doneIds = new Set<string>();
-    for (const event of events) {
-      if (event.action === PIPELINE_ACTIONS.productDone && event.detail) {
-        doneIds.add(event.detail);
-      }
-    }
-
-    // Newest first, so the first started-but-not-done product is the live one.
-    const current =
-      running &&
-      events.find(
-        e =>
-          e.action === PIPELINE_ACTIONS.productStarted &&
-          e.detail &&
-          !doneIds.has(e.detail)
-      )?.detail;
-
-    const steps = started
-      ? await database
-          .select({
-            detail: activityLogs.detail,
-            createdAt: activityLogs.createdAt,
-          })
-          .from(activityLogs)
-          .where(
-            and(
-              eq(activityLogs.userId, userId),
-              gte(activityLogs.createdAt, started.createdAt),
-              eq(activityLogs.action, PIPELINE_ACTIONS.productStep)
-            )
-          )
-          .orderBy(desc(activityLogs.createdAt))
-          .limit(STEP_LIMIT)
-      : [];
-
-    const startedMeta = started?.metadata as Meta;
-    const finishedMeta = finished?.metadata as Meta;
-
-    return {
-      running,
-      startedAt: started?.createdAt ?? null,
-      total: num(startedMeta, "total") ?? 0,
-      done: doneIds.size,
-      current: current || null,
-      steps: steps.map(e => ({ detail: e.detail ?? "", at: e.createdAt })),
-      events: events
-        .filter(e => e.action === PIPELINE_ACTIONS.productDone)
-        .slice(0, 12)
-        .map(e => {
-          const meta = e.metadata as Meta;
+          .limit(1);
+        if (!connection)
           return {
-            title: e.detail ?? "",
-            at: e.createdAt,
-            matched: num(meta, "matched") ?? 0,
-            recommendedPrice: num(meta, "recommendedPrice"),
-            marginProtectionApplied: meta?.marginProtectionApplied === true,
-            skipped: typeof meta?.skipped === "string" ? meta.skipped : null,
-            failed: meta?.failed === true,
+            running: false,
+            startedAt: null,
+            total: 0,
+            done: 0,
+            current: null,
+            steps: [],
+            events: [],
+            lastRun: null,
           };
-        }),
-      lastRun: finished
-        ? {
-            finishedAt: finished.createdAt,
-            durationMs: num(finishedMeta, "durationMs") ?? 0,
-            products: num(finishedMeta, "products") ?? 0,
-            matched: num(finishedMeta, "matched") ?? 0,
-            recommended: num(finishedMeta, "recommended") ?? 0,
-          }
-        : null,
-    };
-  }),
+      }
+
+      const allBookends = await database
+        .select({
+          action: activityLogs.action,
+          detail: activityLogs.detail,
+          metadata: activityLogs.metadata,
+          createdAt: activityLogs.createdAt,
+        })
+        .from(activityLogs)
+        .where(
+          and(
+            eq(activityLogs.userId, userId),
+            inArray(activityLogs.action, [
+              PIPELINE_ACTIONS.runStarted,
+              PIPELINE_ACTIONS.runFinished,
+            ])
+          )
+        )
+        .orderBy(desc(activityLogs.createdAt))
+        .limit(20);
+      const bookends = input?.storeId
+        ? allBookends.filter(
+            row => (row.metadata as Meta)?.connectionId === input.storeId
+          )
+        : allBookends;
+
+      const started = bookends.find(
+        r => r.action === PIPELINE_ACTIONS.runStarted
+      );
+      const finished = bookends.find(
+        r => r.action === PIPELINE_ACTIONS.runFinished
+      );
+
+      const lastActivity = started
+        ? await database
+            .select({ createdAt: activityLogs.createdAt })
+            .from(activityLogs)
+            .where(
+              and(
+                eq(activityLogs.userId, userId),
+                gte(activityLogs.createdAt, started.createdAt)
+              )
+            )
+            .orderBy(desc(activityLogs.createdAt))
+            .limit(1)
+        : [];
+
+      const wentQuietAt = lastActivity[0]?.createdAt ?? started?.createdAt;
+      const isStale =
+        !!wentQuietAt && Date.now() - wentQuietAt.getTime() > STALE_AFTER_MS;
+
+      const running =
+        !!started &&
+        (!finished ||
+          finished.createdAt.getTime() < started.createdAt.getTime()) &&
+        !isStale;
+
+      const events = started
+        ? await database
+            .select({
+              action: activityLogs.action,
+              detail: activityLogs.detail,
+              metadata: activityLogs.metadata,
+              createdAt: activityLogs.createdAt,
+            })
+            .from(activityLogs)
+            .where(
+              and(
+                eq(activityLogs.userId, userId),
+                gte(activityLogs.createdAt, started.createdAt),
+                inArray(activityLogs.action, [
+                  PIPELINE_ACTIONS.productStarted,
+                  PIPELINE_ACTIONS.productDone,
+                ])
+              )
+            )
+            .orderBy(desc(activityLogs.createdAt))
+            .limit(EVENT_LIMIT)
+        : [];
+
+      const doneIds = new Set<string>();
+      for (const event of events) {
+        if (event.action === PIPELINE_ACTIONS.productDone && event.detail) {
+          doneIds.add(event.detail);
+        }
+      }
+
+      // Newest first, so the first started-but-not-done product is the live one.
+      const current =
+        running &&
+        events.find(
+          e =>
+            e.action === PIPELINE_ACTIONS.productStarted &&
+            e.detail &&
+            !doneIds.has(e.detail)
+        )?.detail;
+
+      const steps = started
+        ? await database
+            .select({
+              detail: activityLogs.detail,
+              metadata: activityLogs.metadata,
+              createdAt: activityLogs.createdAt,
+            })
+            .from(activityLogs)
+            .where(
+              and(
+                eq(activityLogs.userId, userId),
+                gte(activityLogs.createdAt, started.createdAt),
+                eq(activityLogs.action, PIPELINE_ACTIONS.productStep)
+              )
+            )
+            .orderBy(desc(activityLogs.createdAt))
+            .limit(STEP_LIMIT)
+        : [];
+
+      const startedMeta = started?.metadata as Meta;
+      const finishedMeta = finished?.metadata as Meta;
+
+      return {
+        running,
+        startedAt: started?.createdAt ?? null,
+        total: num(startedMeta, "total") ?? 0,
+        done: doneIds.size,
+        current: current || null,
+        steps: steps.map(e => ({
+          detail: e.detail ?? "",
+          at: e.createdAt,
+          event:
+            typeof (e.metadata as Meta)?.pipelineEvent === "string"
+              ? String((e.metadata as Meta)?.pipelineEvent)
+              : null,
+        })),
+        events: events
+          .filter(e => e.action === PIPELINE_ACTIONS.productDone)
+          .slice(0, 12)
+          .map(e => {
+            const meta = e.metadata as Meta;
+            return {
+              title: e.detail ?? "",
+              at: e.createdAt,
+              matched: num(meta, "matched") ?? 0,
+              discovered: num(meta, "discovered") ?? 0,
+              scraped: num(meta, "scraped") ?? 0,
+              priceCandidates: num(meta, "priceCandidates") ?? 0,
+              recommendedPrice: num(meta, "recommendedPrice"),
+              marginProtectionApplied: meta?.marginProtectionApplied === true,
+              searchFailure:
+                typeof meta?.searchFailure === "string"
+                  ? meta.searchFailure
+                  : null,
+              searchDiagnostic: meta?.searchDiagnostic ?? null,
+              skipped: typeof meta?.skipped === "string" ? meta.skipped : null,
+              failed: meta?.failed === true,
+              diagnostics: meta?.diagnostics ?? null,
+            };
+          }),
+        lastRun: finished
+          ? {
+              finishedAt: finished.createdAt,
+              durationMs: num(finishedMeta, "durationMs") ?? 0,
+              products: num(finishedMeta, "products") ?? 0,
+              matched: num(finishedMeta, "matched") ?? 0,
+              recommended: num(finishedMeta, "recommended") ?? 0,
+              failed: num(finishedMeta, "failed") ?? 0,
+              rateLimited: num(finishedMeta, "rate_limited") ?? 0,
+              quotaExhausted: num(finishedMeta, "quota_exhausted") ?? 0,
+              providerErrors: num(finishedMeta, "provider_error") ?? 0,
+              serpApiProviderErrors:
+                num(finishedMeta, "serpapi_provider_errors") ?? 0,
+              timeouts: num(finishedMeta, "timeout") ?? 0,
+              networkErrors: num(finishedMeta, "network_error") ?? 0,
+              authenticationErrors:
+                num(finishedMeta, "authentication_error") ?? 0,
+              serverErrors: num(finishedMeta, "server_error") ?? 0,
+            }
+          : null,
+      };
+    }),
 
   /**
    * What became of each product the last time it was checked. Without this a
@@ -194,48 +249,56 @@ export const pipelineRouter = router({
   productOutcomes: protectedProcedure
     .input(z.object({ storeId: z.string().uuid().optional() }).optional())
     .query(async ({ ctx, input }) => {
-    const database = await requireDb();
+      const database = await requireDb();
 
-    const rows = await database
-      .select({
-        productId: activityLogs.entityId,
-        metadata: activityLogs.metadata,
-        createdAt: activityLogs.createdAt,
-      })
-      .from(activityLogs)
-      .where(
-        and(
-          eq(activityLogs.userId, ctx.user!.id),
-          eq(activityLogs.action, PIPELINE_ACTIONS.productDone)
-          ,input?.storeId
-            ? inArray(
-                activityLogs.entityId,
-                database.select({ id: products.id }).from(products).where(eq(products.storeId, input.storeId))
-              )
-            : undefined
+      const rows = await database
+        .select({
+          productId: activityLogs.entityId,
+          metadata: activityLogs.metadata,
+          createdAt: activityLogs.createdAt,
+        })
+        .from(activityLogs)
+        .where(
+          and(
+            eq(activityLogs.userId, ctx.user!.id),
+            eq(activityLogs.action, PIPELINE_ACTIONS.productDone),
+            input?.storeId
+              ? inArray(
+                  activityLogs.entityId,
+                  database
+                    .select({ id: products.id })
+                    .from(products)
+                    .where(eq(products.storeId, input.storeId))
+                )
+              : undefined
+          )
         )
-      )
-      .orderBy(desc(activityLogs.createdAt))
-      .limit(400);
+        .orderBy(desc(activityLogs.createdAt))
+        .limit(400);
 
-    // Newest first, so the first row seen for a product is its latest pass.
-    const latest = new Map<
-      string,
-      { checkedAt: Date; matched: number; skipped: string | null; failed: boolean }
-    >();
-    for (const row of rows) {
-      if (!row.productId || latest.has(row.productId)) continue;
-      const meta = row.metadata as Meta;
-      latest.set(row.productId, {
-        checkedAt: row.createdAt,
-        matched: num(meta, "matched") ?? 0,
-        skipped: typeof meta?.skipped === "string" ? meta.skipped : null,
-        failed: meta?.failed === true,
-      });
-    }
+      // Newest first, so the first row seen for a product is its latest pass.
+      const latest = new Map<
+        string,
+        {
+          checkedAt: Date;
+          matched: number;
+          skipped: string | null;
+          failed: boolean;
+        }
+      >();
+      for (const row of rows) {
+        if (!row.productId || latest.has(row.productId)) continue;
+        const meta = row.metadata as Meta;
+        latest.set(row.productId, {
+          checkedAt: row.createdAt,
+          matched: num(meta, "matched") ?? 0,
+          skipped: typeof meta?.skipped === "string" ? meta.skipped : null,
+          failed: meta?.failed === true,
+        });
+      }
 
-    return Object.fromEntries(latest);
-  }),
+      return Object.fromEntries(latest);
+    }),
 
   /**
    * Every shop the last run looked at for one product, and what came of each.
@@ -243,15 +306,30 @@ export const pipelineRouter = router({
    * back so a merchant can see the working rather than only the verdict.
    */
   productEvidence: protectedProcedure
-    .input(z.object({ productId: z.string().uuid(), storeId: z.string().uuid().optional() }))
+    .input(
+      z.object({
+        productId: z.string().uuid(),
+        storeId: z.string().uuid().optional(),
+      })
+    )
     .query(async ({ ctx, input }) => {
       const database = await requireDb();
       if (input.storeId) {
         const [ownedProduct] = await database
           .select({ id: products.id })
           .from(products)
-          .innerJoin(accountShopConnections, eq(products.storeId, accountShopConnections.id))
-          .where(and(eq(products.id, input.productId), eq(products.storeId, input.storeId), eq(products.userId, ctx.user!.id), eq(accountShopConnections.isActive, true)))
+          .innerJoin(
+            accountShopConnections,
+            eq(products.storeId, accountShopConnections.id)
+          )
+          .where(
+            and(
+              eq(products.id, input.productId),
+              eq(products.storeId, input.storeId),
+              eq(products.userId, ctx.user!.id),
+              eq(accountShopConnections.isActive, true)
+            )
+          )
           .limit(1);
         if (!ownedProduct) throw new Error("Product not found");
       }

@@ -164,9 +164,7 @@ export const passwordResetTokens = pgTable(
       t.tokenHash
     ),
     userIdIdx: index("password_reset_tokens_user_id_idx").on(t.userId),
-    expiresAtIdx: index("password_reset_tokens_expires_at_idx").on(
-      t.expiresAt
-    ),
+    expiresAtIdx: index("password_reset_tokens_expires_at_idx").on(t.expiresAt),
   })
 );
 
@@ -246,8 +244,6 @@ export type InsertBillingEvent = typeof billingEvents.$inferInsert;
 
 // The unique user key makes replacement atomic and prevents duplicate result
 // rows when a user runs the analysis from multiple sessions.
-
-
 
 export const reportRuns = pgTable(
   "report_runs",
@@ -748,8 +744,6 @@ export type InsertCompetitorProduct = typeof competitorProducts.$inferInsert;
 // The source product remains in its source catalog so future price updates
 // stay available without recreating a deleted match in the UI.
 
-
-
 // =============================================================================
 // Price History
 // =============================================================================
@@ -1152,9 +1146,120 @@ export type AiExtraction = typeof aiExtractions.$inferSelect;
 export type InsertAiExtraction = typeof aiExtractions.$inferInsert;
 
 // =============================================================================
-// Competitor Discoveries (search results from automated discovery)
+// Extraction Learning (sanitized failures + human-reviewed proposals)
 // =============================================================================
 
+export const extractionFailures = pgTable(
+  "extraction_failures",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    failureKey: varchar("failure_key", { length: 64 }).notNull(),
+    productId: uuid("product_id").references(() => products.id, {
+      onDelete: "set null",
+    }),
+    competitorId: uuid("competitor_id").references(() => competitors.id, {
+      onDelete: "set null",
+    }),
+    domain: varchar("domain", { length: 255 }).notNull(),
+    sourceUrl: text("source_url"),
+    contentHash: varchar("content_hash", { length: 64 }).notNull(),
+    extractorVersion: varchar("extractor_version", { length: 32 }).notNull(),
+    resolutionState: varchar("resolution_state", { length: 16 }).notNull(),
+    failureReasons: jsonb("failure_reasons").notNull(),
+    platform: varchar("platform", { length: 32 }).notNull(),
+    markerFingerprint: varchar("marker_fingerprint", { length: 64 }).notNull(),
+    markers: jsonb("markers").notNull(),
+    productEvidence: jsonb("product_evidence").notNull(),
+    variantEvidence: jsonb("variant_evidence").notNull(),
+    priceEvidence: jsonb("price_evidence").notNull(),
+    candidateCount: integer("candidate_count").default(0).notNull(),
+    confidence: doublePrecision("confidence"),
+    scoreBreakdown: jsonb("score_breakdown").notNull(),
+    reducedContent: text("reduced_content"),
+    deterministicDecision: jsonb("deterministic_decision").notNull(),
+    aiDecision: jsonb("ai_decision"),
+    expectedResult: jsonb("expected_result"),
+    occurrenceCount: integer("occurrence_count").default(1).notNull(),
+    status: varchar("status", { length: 32 }).default("pending").notNull(),
+    firstObservedAt: timestamp("first_observed_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    lastObservedAt: timestamp("last_observed_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  t => ({
+    failureKeyIdx: uniqueIndex("extraction_failures_key_idx").on(t.failureKey),
+    statusObservedIdx: index("extraction_failures_status_observed_idx").on(
+      t.status,
+      t.lastObservedAt
+    ),
+    clusterIdx: index("extraction_failures_cluster_idx").on(
+      t.domain,
+      t.platform,
+      t.extractorVersion
+    ),
+    productIdx: index("extraction_failures_product_idx").on(t.productId),
+    competitorIdx: index("extraction_failures_competitor_idx").on(
+      t.competitorId
+    ),
+  })
+);
+
+export type ExtractionFailure = typeof extractionFailures.$inferSelect;
+export type InsertExtractionFailure = typeof extractionFailures.$inferInsert;
+
+export const extractorImprovementProposals = pgTable(
+  "extractor_improvement_proposals",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    proposalKey: varchar("proposal_key", { length: 64 }).notNull(),
+    clusterKey: varchar("cluster_key", { length: 64 }).notNull(),
+    extractorVersion: varchar("extractor_version", { length: 32 }).notNull(),
+    title: varchar("title", { length: 255 }).notNull(),
+    platform: varchar("platform", { length: 32 }).notNull(),
+    failureReason: varchar("failure_reason", { length: 64 }).notNull(),
+    affectedFailureCount: integer("affected_failure_count").notNull(),
+    confidence: doublePrecision("confidence").notNull(),
+    proposal: jsonb("proposal").notNull(),
+    evaluation: jsonb("evaluation"),
+    report: text("report"),
+    status: varchar("status", { length: 32 })
+      .default("pending_review")
+      .notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  t => ({
+    proposalKeyIdx: uniqueIndex("extractor_proposals_key_idx").on(
+      t.proposalKey
+    ),
+    statusIdx: index("extractor_proposals_status_idx").on(t.status),
+    clusterIdx: index("extractor_proposals_cluster_idx").on(
+      t.clusterKey,
+      t.extractorVersion
+    ),
+  })
+);
+
+export type ExtractorImprovementProposal =
+  typeof extractorImprovementProposals.$inferSelect;
+export type InsertExtractorImprovementProposal =
+  typeof extractorImprovementProposals.$inferInsert;
+
+// =============================================================================
+// Competitor Discoveries (search results from automated discovery)
+// =============================================================================
 
 // =============================================================================
 // Cron Runs (monitoring job tracking)
@@ -1244,11 +1349,8 @@ export type InsertScrapeLog = typeof scrapeLogs.$inferInsert;
 // SerpAPI Scouts (search results + reviews from SerpAPI batch searches)
 // =============================================================================
 
-
 // =============================================================================
 // =============================================================================
-
-
 
 // =============================================================================
 // =============================================================================

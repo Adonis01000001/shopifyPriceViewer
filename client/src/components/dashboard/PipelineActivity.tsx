@@ -1,12 +1,16 @@
 import { useEffect, useRef, useState } from "react";
-import { Activity, Check, CircleSlash, Loader2, TriangleAlert } from "lucide-react";
+import {
+  Activity,
+  Check,
+  CircleSlash,
+  Loader2,
+  TriangleAlert,
+} from "lucide-react";
 import { trpc } from "@/lib/trpc";
 
-// Polling costs a request every time. Fast enough to feel live while a run is
-// going, slow when there is nothing to watch, and stopped entirely when the tab
-// is in the background.
+// Polling is enabled only while a run is active. An idle tab makes no recurring
+// status requests and explicit triggers invalidate this query immediately.
 const POLL_RUNNING_MS = 6000;
-const POLL_IDLE_MS = 60000;
 
 function relativeTime(value: Date | string) {
   const seconds = Math.round((Date.now() - new Date(value).getTime()) / 1000);
@@ -31,7 +35,6 @@ function duration(ms: number) {
  */
 export default function PipelineActivity({ storeId }: { storeId?: string }) {
   const [open, setOpen] = useState(false);
-  const [pollMs, setPollMs] = useState<number>(POLL_IDLE_MS);
   const wrapRef = useRef<HTMLDivElement>(null);
   const utils = trpc.useUtils();
   const lastDoneRef = useRef(0);
@@ -39,27 +42,20 @@ export default function PipelineActivity({ storeId }: { storeId?: string }) {
   const { data } = trpc.pipeline.status.useQuery(
     storeId ? { storeId } : undefined,
     {
-    refetchInterval: pollMs,
-    refetchIntervalInBackground: false,
-    refetchOnWindowFocus: true,
+      refetchInterval: query =>
+        query.state.data?.running ? POLL_RUNNING_MS : false,
+      refetchIntervalInBackground: false,
+      refetchOnWindowFocus: true,
     }
   );
-
-  useEffect(() => {
-    setPollMs(data?.running ? POLL_RUNNING_MS : POLL_IDLE_MS);
-  }, [data?.running]);
 
   // Each finished product means new rows for whatever page is open.
   useEffect(() => {
     const done = data?.done ?? 0;
     if (done === lastDoneRef.current) return;
     lastDoneRef.current = done;
-    void utils.competitors.list.invalidate(
-      storeId ? { storeId } : undefined
-    );
-    void utils.competitors.stats.invalidate(
-      storeId ? { storeId } : undefined
-    );
+    void utils.competitors.list.invalidate(storeId ? { storeId } : undefined);
+    void utils.competitors.stats.invalidate(storeId ? { storeId } : undefined);
     void utils.products.list.invalidate(storeId ? { storeId } : undefined);
     void utils.products.stats.invalidate(storeId ? { storeId } : undefined);
     void utils.recommendations.list.invalidate(
@@ -143,6 +139,9 @@ export default function PipelineActivity({ storeId }: { storeId?: string }) {
                       key={`${String(entry.at)}-${index}`}
                       className={index === 0 ? "is-latest" : undefined}
                     >
+                      {entry.event
+                        ? `${entry.event.replace(/_/g, " ")} · `
+                        : ""}
                       {entry.detail}
                     </li>
                   ))}

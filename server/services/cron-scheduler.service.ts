@@ -16,6 +16,102 @@ interface ScheduledJob {
   handler: () => Promise<void>;
   lastRun: number;
   running: boolean;
+  runOnStartup: boolean;
+  daily?: {
+    hour: number;
+    minute: number;
+    timeZone: string;
+  };
+}
+
+type SchedulerTimer = ReturnType<typeof setTimeout>;
+
+function zonedParts(date: Date, timeZone: string) {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone,
+    calendar: "gregory",
+    numberingSystem: "latn",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hourCycle: "h23",
+  }).formatToParts(date);
+  const values = new Map(
+    parts
+      .filter(part => part.type !== "literal")
+      .map(part => [part.type, Number(part.value)])
+  );
+  return {
+    year: values.get("year") ?? 0,
+    month: values.get("month") ?? 0,
+    day: values.get("day") ?? 0,
+    hour: values.get("hour") ?? 0,
+    minute: values.get("minute") ?? 0,
+    second: values.get("second") ?? 0,
+  };
+}
+
+function timezoneOffsetMs(date: Date, timeZone: string): number {
+  const parts = zonedParts(date, timeZone);
+  const asUtc = Date.UTC(
+    parts.year,
+    parts.month - 1,
+    parts.day,
+    parts.hour,
+    parts.minute,
+    parts.second
+  );
+  return asUtc - date.getTime();
+}
+
+function localDateToUtc(
+  year: number,
+  month: number,
+  day: number,
+  hour: number,
+  minute: number,
+  timeZone: string
+): number {
+  const localAsUtc = Date.UTC(year, month - 1, day, hour, minute, 0, 0);
+  const firstGuess =
+    localAsUtc - timezoneOffsetMs(new Date(localAsUtc), timeZone);
+  return localAsUtc - timezoneOffsetMs(new Date(firstGuess), timeZone);
+}
+
+/** Return the next wall-clock occurrence of a daily job in its configured TZ. */
+export function getNextDailyRunAt(
+  now: Date,
+  hour: number,
+  minute: number,
+  timeZone: string
+): number {
+  const current = zonedParts(now, timeZone);
+  let target = localDateToUtc(
+    current.year,
+    current.month,
+    current.day,
+    hour,
+    minute,
+    timeZone
+  );
+
+  if (target <= now.getTime()) {
+    const tomorrow = new Date(
+      Date.UTC(current.year, current.month - 1, current.day + 1)
+    );
+    target = localDateToUtc(
+      tomorrow.getUTCFullYear(),
+      tomorrow.getUTCMonth() + 1,
+      tomorrow.getUTCDate(),
+      hour,
+      minute,
+      timeZone
+    );
+  }
+  return target;
 }
 
 // ─── Scheduler ───────────────────────────────────────────────────────────────
@@ -25,11 +121,41 @@ export class CronScheduler {
   private started = false;
   private intervalTimers = new Set<ReturnType<typeof setInterval>>();
   private startupTimers = new Set<ReturnType<typeof setTimeout>>();
+  private dailyTimers = new Set<SchedulerTimer>();
   private activeRuns = new Set<Promise<void>>();
 
-  register(name: string, intervalMs: number, handler: () => Promise<void>) {
-    this.jobs.push({ name, intervalMs, handler, lastRun: 0, running: false });
+  register(
+    name: string,
+    intervalMs: number,
+    handler: () => Promise<void>,
+    options: { runOnStartup?: boolean } = {}
+  ) {
+    this.jobs.push({
+      name,
+      intervalMs,
+      handler,
+      lastRun: 0,
+      running: false,
+      runOnStartup: options.runOnStartup ?? true,
+    });
     logger.info({ name, intervalMs }, "Cron job registered");
+  }
+
+  registerDaily(
+    name: string,
+    schedule: { hour: number; minute: number; timeZone: string },
+    handler: () => Promise<void>
+  ) {
+    this.jobs.push({
+      name,
+      intervalMs: 24 * 60 * 60 * 1000,
+      handler,
+      lastRun: 0,
+      running: false,
+      runOnStartup: false,
+      daily: schedule,
+    });
+    logger.info({ name, schedule }, "Daily cron job registered");
   }
 
   start() {
@@ -38,17 +164,23 @@ export class CronScheduler {
     logger.info({ jobs: this.jobs.length }, "Cron scheduler started");
 
     for (const job of this.jobs) {
-      const stagger = this.jobs.indexOf(job) * 5000;
-      const startupTimer = setTimeout(() => {
-        this.startupTimers.delete(startupTimer);
-        void this.runJobOnStartup(job);
-      }, stagger);
-      this.startupTimers.add(startupTimer);
-      const intervalTimer = setInterval(
-        () => void this.runJob(job),
-        job.intervalMs
-      );
-      this.intervalTimers.add(intervalTimer);
+      if (job.daily) {
+        this.scheduleDaily(job);
+      } else {
+        if (job.runOnStartup) {
+          const stagger = this.jobs.indexOf(job) * 5000;
+          const startupTimer = setTimeout(() => {
+            this.startupTimers.delete(startupTimer);
+            void this.runJobOnStartup(job);
+          }, stagger);
+          this.startupTimers.add(startupTimer);
+        }
+        const intervalTimer = setInterval(
+          () => void this.runJob(job),
+          job.intervalMs
+        );
+        this.intervalTimers.add(intervalTimer);
+      }
     }
   }
 
@@ -56,8 +188,10 @@ export class CronScheduler {
     if (!this.started) return;
     this.startupTimers.forEach(timer => clearTimeout(timer));
     this.intervalTimers.forEach(timer => clearInterval(timer));
+    this.dailyTimers.forEach(timer => clearTimeout(timer));
     this.startupTimers.clear();
     this.intervalTimers.clear();
+    this.dailyTimers.clear();
     this.started = false;
 
     if (this.activeRuns.size > 0) {
@@ -69,6 +203,35 @@ export class CronScheduler {
     }
 
     logger.info("Cron scheduler stopped");
+  }
+
+  private scheduleDaily(job: ScheduledJob) {
+    if (!this.started || !job.daily) return;
+    const nextRunAt = getNextDailyRunAt(
+      new Date(),
+      job.daily.hour,
+      job.daily.minute,
+      job.daily.timeZone
+    );
+    const timer = setTimeout(
+      () => {
+        this.dailyTimers.delete(timer);
+        // Schedule from the wall clock before doing work so a long run does not
+        // shift the daily schedule or create a catch-up loop.
+        this.scheduleDaily(job);
+        void this.runJob(job);
+      },
+      Math.max(1_000, nextRunAt - Date.now())
+    );
+    this.dailyTimers.add(timer);
+    logger.info(
+      {
+        job: job.name,
+        nextRunAt: new Date(nextRunAt).toISOString(),
+        timeZone: job.daily.timeZone,
+      },
+      "Daily cron job scheduled"
+    );
   }
 
   /**
@@ -163,56 +326,53 @@ export const cronScheduler = new CronScheduler();
 
 // ─── Register Jobs ───────────────────────────────────────────────────────────
 
+if (ENV.priceRefreshEnabled) {
+  cronScheduler.registerDaily(
+    "price_monitor",
+    {
+      hour: ENV.priceRefreshHour,
+      minute: ENV.priceRefreshMinute,
+      timeZone: ENV.priceRefreshTimezone,
+    },
+    async () => {
+      if (jobQueueService.isEnabled) {
+        await jobQueueService.withLock(
+          "scheduler:price-monitor",
+          24 * 60 * 60 * 1000 - 30_000,
+          async () => {
+            await jobQueueService.enqueuePriceMonitoring();
+          }
+        );
+        return;
+      }
+      // Re-read the competitor pages we already know about. Discovery is not
+      // repeated here: it is the expensive call and runs once per product.
+      const { pipelineService } = await import("./pipeline.service");
+      await pipelineService.refreshPrices();
+    }
+  );
+} else {
+  logger.info("Daily price refresh is disabled");
+}
+
 cronScheduler.register(
-  "price_monitor",
-  ENV.monitoringIntervalHours * 60 * 60 * 1000,
+  "scraper_improvement_analysis",
+  ENV.scraperImprovementIntervalHours * 60 * 60 * 1000,
   async () => {
     if (jobQueueService.isEnabled) {
       await jobQueueService.withLock(
-        "scheduler:price-monitor",
-        Math.max(ENV.monitoringIntervalHours * 3_600_000 - 30_000, 60_000),
+        "scheduler:scraper-improvement",
+        300_000,
         async () => {
-          await jobQueueService.enqueuePriceMonitoring();
+          await jobQueueService.enqueueAiAnalysis();
         }
       );
       return;
     }
-    // Re-read the competitor pages we already know about. Discovery is not
-    // repeated here: it is the expensive call and runs once per product.
-    const { pipelineService } = await import("./pipeline.service");
-    await pipelineService.refreshPrices();
-  }
-);
-
-cronScheduler.register(
-  "competitor_discovery",
-  24 * 60 * 60 * 1000,
-  async () => {
-    const database = await requireDb();
-    const allUsers = await database.select({ id: users.id }).from(users);
-    if (jobQueueService.isEnabled) {
-      await Promise.all(
-        allUsers.map(user => jobQueueService.enqueueCompetitorDiscovery(user.id))
-      );
-      return;
-    }
-    const concurrency = Math.min(4, Math.max(1, ENV.maxConcurrentScrapes));
-    for (let offset = 0; offset < allUsers.length; offset += concurrency) {
-      const batch = allUsers.slice(offset, offset + concurrency);
-      await Promise.all(
-        batch.map(async user => {
-          try {
-            const { pipelineService } = await import("./pipeline.service");
-            await pipelineService.runForUser(user.id);
-          } catch (err) {
-            logger.warn(
-              { userId: user.id, err },
-              "Auto-discovery failed for user"
-            );
-          }
-        })
-      );
-    }
+    const { scraperImprovementService } = await import(
+      "./scraper-improvement.service"
+    );
+    await scraperImprovementService.analyzePendingFailures();
   }
 );
 

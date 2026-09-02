@@ -18,6 +18,7 @@ import {
 } from "../../drizzle/schema";
 import { eq, and, or, inArray } from "drizzle-orm";
 import { encryptToken } from "../_core/sdk";
+import { logger } from "../_core/logger";
 import { toPublicShopifyStore } from "../_core/public-views";
 import { entitlementService } from "../services/entitlement.service";
 import { getOrCreateAccountShopConnection, getOrCreateShop } from "../services/shop.service";
@@ -102,7 +103,6 @@ export const productRouter = router({
     .input(
       z.object({
         csv: z.string().min(1).max(5_000_000),
-        runPipeline: z.boolean().optional(),
         storeId: z.string().uuid().optional(),
       })
     )
@@ -177,15 +177,24 @@ export const productRouter = router({
       await entitlementService.assertCanAdd(ctx.user!.id, "products");
       const imported = await productService.bulkUpsertProducts(toInsert as never);
 
-      // Same trigger as a Shopify sync: importing products starts the chain.
-      if (input.runPipeline !== false) {
-        const uid = ctx.user!.id;
-        void import("../services/pipeline.service")
-          .then(({ pipelineService }) =>
-            pipelineService.runForUser(uid, 50, undefined, input.storeId)
+      // A successful import is an explicit trigger. Use the resolved store ID
+      // so an import without an explicit store cannot accidentally run the
+      // pipeline across every store owned by the account.
+      const uid = ctx.user!.id;
+      void import("../services/pipeline.service")
+        .then(({ pipelineService }) =>
+          pipelineService.runForUser(uid, 50, undefined, storeId)
+        )
+        .catch(err =>
+          logger.error(
+            {
+              userId: uid,
+              storeId,
+              error: err instanceof Error ? err.message : String(err),
+            },
+            "CSV-triggered pipeline failed"
           )
-          .catch(() => undefined);
-      }
+        );
 
       return {
         imported,

@@ -6,8 +6,9 @@
  * pull the price out, store the result, then recommend a price.
  *
  * Cost shape (matters, the free tiers are small):
- *  - Discovery uses SerpAPI and runs ONCE per product. Never on a schedule.
- *  - Monitoring re-scrapes stored URLs with Firecrawl. That is the hourly job.
+ *  - Discovery uses at most two targeted SerpAPI searches per product. Never
+ *    on a schedule; the second search runs only when the first is insufficient.
+ *  - Monitoring re-scrapes stored URLs with Firecrawl. That is the daily job.
  *  - MAX_COMPETITOR_URLS caps how many pages one product can ever cost.
  */
 import { and, eq } from "drizzle-orm";
@@ -30,6 +31,13 @@ import { pricingEngine } from "./pricing-engine.service";
 import { pricingRulesService } from "./pricing-rules.service";
 import { activityService } from "./activity.service";
 import { getOrCreateShop, normalizeShopDomain } from "./shop.service";
+import { extractModelTokens } from "./product-content-extraction";
+import {
+  serpApiService,
+  SerpApiRequestError,
+  type SerpApiFailureDiagnostic,
+  type SerpApiFailureCategory,
+} from "./serpapi.service";
 
 /**
  * The run is unattended on a cron, so a single product that never returns
@@ -67,12 +75,33 @@ export const PIPELINE_ACTIONS = {
   runFinished: "pipeline_run_finished",
 } as const;
 
+export const PIPELINE_EVENTS = {
+  syncStarted: "SYNC_STARTED",
+  productDiscovery: "PRODUCT_DISCOVERY",
+  competitorDiscovery: "COMPETITOR_DISCOVERY",
+  matching: "MATCHING",
+  scrapeStarted: "SCRAPE_STARTED",
+  extractionStarted: "EXTRACTION_STARTED",
+  aiFallback: "AI_FALLBACK",
+  competitorPriceFound: "COMPETITOR_PRICE_FOUND",
+  competitorRejected: "COMPETITOR_REJECTED",
+  productFailed: "PRODUCT_FAILED",
+  syncCompleted: "SYNC_COMPLETED",
+  syncFailed: "SYNC_FAILED",
+} as const;
+
 /**
  * A line for the activity log, in the words a merchant would use rather than
  * the internals. One product used to produce two rows over eighty seconds,
  * which read as nothing happening; this is what fills that gap.
  */
-async function step(userId: string, productId: string, detail: string) {
+async function step(
+  userId: string,
+  productId: string,
+  detail: string,
+  event?: string,
+  metadata?: Record<string, unknown>
+) {
   try {
     await activityService.log({
       userId,
@@ -80,6 +109,7 @@ async function step(userId: string, productId: string, detail: string) {
       entityType: "product",
       entityId: productId,
       detail,
+      metadata: event ? { pipelineEvent: event, ...metadata } : metadata,
     });
   } catch {
     // Narrating progress must never be the thing that breaks a run.
@@ -90,6 +120,50 @@ async function step(userId: string, productId: string, detail: string) {
 const TRIVIAL_CHANGE = 0.01;
 
 export const MAX_COMPETITOR_URLS = 3;
+
+type PipelineRunResult = {
+  products: PipelineProductResult[];
+  totals: Record<string, number>;
+};
+
+const activePipelineRuns = new Map<string, Promise<PipelineRunResult>>();
+
+function pipelineRunKey(
+  userId: string,
+  countryOverride: string | null | undefined,
+  storeId: string | undefined
+) {
+  return `${userId}:${storeId ?? "all"}:${countryOverride ?? "default"}`;
+}
+
+export function summarizePipelineResults(
+  productRows: Array<{ id: string }>,
+  results: PipelineProductResult[]
+): Record<string, number> {
+  const totals: Record<string, number> = {
+    products: productRows.length,
+    discovered: 0,
+    scraped: 0,
+    matched: 0,
+    recommended: 0,
+    failed:
+      productRows.length -
+      results.length +
+      results.filter(result => Boolean(result.searchFailure)).length,
+  };
+
+  for (const result of results) {
+    totals.discovered += result.discovered;
+    totals.scraped += result.scraped;
+    totals.matched += result.matched;
+    totals.recommended += result.recommendedPrice != null ? 1 : 0;
+    if (result.searchFailure) {
+      totals[result.searchFailure] = (totals[result.searchFailure] ?? 0) + 1;
+    }
+  }
+
+  return totals;
+}
 
 /** Localised search parameters. Prices are only useful if they are the prices
  *  a shopper in the merchant's own market would actually see. */
@@ -116,15 +190,23 @@ export const LOCALES: Record<string, SearchLocale> = {
 
 /** Currency is the best signal we hold about which market a store sells into. */
 const CURRENCY_TO_COUNTRY: Record<string, string> = {
-  USD: "US", GBP: "GB", EUR: "FR", CAD: "CA", AUD: "AU",
-  JPY: "JP", BRL: "BR", INR: "IN", MAD: "MA",
+  USD: "US",
+  GBP: "GB",
+  EUR: "FR",
+  CAD: "CA",
+  AUD: "AU",
+  JPY: "JP",
+  BRL: "BR",
+  INR: "IN",
+  MAD: "MA",
 };
 
 export function resolveLocale(
   country?: string | null,
   currency?: string | null
 ): SearchLocale {
-  if (country && LOCALES[country.toUpperCase()]) return LOCALES[country.toUpperCase()];
+  if (country && LOCALES[country.toUpperCase()])
+    return LOCALES[country.toUpperCase()];
   if (currency) {
     const mapped = CURRENCY_TO_COUNTRY[currency.toUpperCase()];
     if (mapped && LOCALES[mapped]) return LOCALES[mapped];
@@ -132,6 +214,7 @@ export function resolveLocale(
   return LOCALES.US;
 }
 const SERP_QUERIES_PER_PRODUCT = 2;
+const MIN_CANDIDATES_TO_SKIP_FALLBACK_QUERY = 2;
 /** Try more domains than we keep: protected sites fail and we move on. */
 const CANDIDATE_POOL = 4;
 
@@ -145,6 +228,23 @@ export interface PipelineProductResult {
   recommendedPrice: number | null;
   marginProtectionApplied: boolean;
   skipped?: string;
+  searchFailure?: SerpApiFailureCategory | "product_not_found";
+  searchDiagnostic?: SerpApiFailureDiagnostic;
+  diagnostics: {
+    candidateUrls: string[];
+    matchedUrls: string[];
+    rejected: Array<{
+      url: string;
+      domain: string;
+      reason: string;
+      price: number | null;
+      confidence: number | null;
+    }>;
+    priceCandidates: number;
+    searchQueries: number;
+    searchCacheHits: number;
+    searchDeduplicated: number;
+  };
 }
 
 interface Candidate {
@@ -152,6 +252,15 @@ interface Candidate {
   domain: string;
   title: string;
   sourceName: string;
+}
+
+interface CandidateDiscoveryResult {
+  candidates: Candidate[];
+  failureCategory?: SerpApiFailureCategory | "product_not_found";
+  failureDiagnostic?: SerpApiFailureDiagnostic;
+  queriesAttempted: number;
+  cacheHits: number;
+  deduplicated: number;
 }
 
 function hostOf(url: string): string | null {
@@ -164,20 +273,42 @@ function hostOf(url: string): string | null {
 
 /** Domains that are never competitors: marketplaces of reviews, video, social. */
 const EXCLUDED = new Set([
-  "youtube.com", "m.youtube.com", "reddit.com", "facebook.com", "instagram.com",
-  "twitter.com", "x.com", "pinterest.com", "tiktok.com", "wikipedia.org",
-  "quora.com", "medium.com",
+  "youtube.com",
+  "m.youtube.com",
+  "reddit.com",
+  "facebook.com",
+  "instagram.com",
+  "twitter.com",
+  "x.com",
+  "pinterest.com",
+  "tiktok.com",
+  "wikipedia.org",
+  "quora.com",
+  "medium.com",
 ]);
 
 /** Find candidate competitor product pages via SerpAPI Google Shopping. */
-async function discoverCandidates(
-  productTitle: string,
+export async function discoverCandidates(
+  product: {
+    title: string;
+    vendor?: string | null;
+    sku?: string | null;
+    barcode?: string | null;
+  },
   ownDomain: string | null,
   locale: SearchLocale
-): Promise<Candidate[]> {
+): Promise<CandidateDiscoveryResult> {
   if (!ENV.serpApiKey && !ENV.serperApiKey) {
-    logger.warn("Pipeline: no search provider configured (SERPER_API_KEY or SERP_API_KEY), discovery skipped");
-    return [];
+    logger.warn(
+      "Pipeline: no search provider configured (SERPER_API_KEY or SERP_API_KEY), discovery skipped"
+    );
+    return {
+      candidates: [],
+      failureCategory: "authentication_error",
+      queriesAttempted: 0,
+      cacheHits: 0,
+      deduplicated: 0,
+    };
   }
 
   // Organic search results, not Shopping. Shopping only returns Google's own
@@ -186,14 +317,27 @@ async function discoverCandidates(
   //
   // Provider: Serper if configured (roughly 10-30x cheaper per query than
   // SerpApi, and a far larger free allowance), otherwise SerpApi.
-  const queries = [`${productTitle} buy`, productTitle].slice(
-    0,
-    SERP_QUERIES_PER_PRODUCT
-  );
+  const modelTokens = extractModelTokens(product.title).slice(0, 3);
+  const identity = [product.vendor, product.title].filter(Boolean).join(" ");
+  const queries = Array.from(
+    new Set([
+      `${identity} buy`,
+      modelTokens.length > 0
+        ? `${product.vendor ?? ""} ${modelTokens.join(" ")} price`.trim()
+        : product.title,
+    ])
+  ).slice(0, SERP_QUERIES_PER_PRODUCT);
   const byDomain = new Map<string, Candidate>();
   const useSerper = Boolean(ENV.serperApiKey);
+  let queriesAttempted = 0;
+  let cacheHits = 0;
+  let deduplicated = 0;
+  let failureCategory: SerpApiFailureCategory | undefined;
+  let failureDiagnostic: SerpApiFailureDiagnostic | undefined;
 
-  for (const q of queries) {
+  for (let queryIndex = 0; queryIndex < queries.length; queryIndex++) {
+    const q = queries[queryIndex];
+    queriesAttempted++;
     let organic: any[] = [];
 
     try {
@@ -208,31 +352,46 @@ async function discoverCandidates(
           signal: AbortSignal.timeout(45000),
         });
         if (!resp.ok) {
-          logger.warn({ status: resp.status, q }, "Pipeline: Serper request failed");
+          logger.warn(
+            { status: resp.status, q },
+            "Pipeline: Serper request failed"
+          );
           continue;
         }
         organic = (await resp.json())?.organic ?? [];
       } else {
-        const url =
-          "https://serpapi.com/search.json?" +
-          new URLSearchParams({
-            engine: "google",
-            q,
-            gl: locale.gl,
-            hl: locale.hl,
-            google_domain: locale.googleDomain,
-            num: "20",
-            api_key: ENV.serpApiKey,
-          }).toString();
-        const resp = await fetch(url, { signal: AbortSignal.timeout(45000) });
-        if (!resp.ok) {
-          logger.warn({ status: resp.status, q }, "Pipeline: SerpApi request failed");
-          continue;
-        }
-        organic = (await resp.json())?.organic_results ?? [];
+        const result = await serpApiService.search({
+          query: q,
+          locale,
+        });
+        organic = result.organicResults as any[];
+        cacheHits += result.cacheHit ? 1 : 0;
+        deduplicated += result.deduplicated ? 1 : 0;
       }
     } catch (err) {
-      logger.warn({ err, q, provider: useSerper ? "serper" : "serpapi" }, "Pipeline: search threw");
+      if (err instanceof SerpApiRequestError) {
+        failureCategory = err.category;
+        failureDiagnostic = err.toDiagnostic();
+        logger.warn(
+          { ...failureDiagnostic, q },
+          "Pipeline: SerpApi request failed"
+        );
+      } else {
+        failureCategory = "provider_error";
+        logger.warn(
+          {
+            message: err instanceof Error ? err.message : String(err),
+            q,
+            provider: useSerper ? "serper" : "serpapi",
+            source: "application_logic",
+          },
+          "Pipeline: search threw"
+        );
+      }
+      // A second query cannot repair authentication, quota, or upstream
+      // throttling. Stop here and let the product result expose the reason.
+      if (!useSerper || failureCategory) break;
+      logger.warn({ q }, "Pipeline: search query failed, trying next query");
       continue;
     }
 
@@ -242,6 +401,18 @@ async function discoverCandidates(
       const host = hostOf(link);
       if (!host || EXCLUDED.has(host)) continue;
       if (ownDomain && host === ownDomain) continue;
+      try {
+        const path = new URL(link).pathname.toLowerCase();
+        if (
+          /\/(?:search|collections?|categories?|category|blog|reviews?|stores?|brands?|pages?)\b/.test(
+            path
+          )
+        ) {
+          continue;
+        }
+      } catch {
+        continue;
+      }
       if (byDomain.has(host)) continue;
       byDomain.set(host, {
         url: link,
@@ -251,10 +422,27 @@ async function discoverCandidates(
       });
       if (byDomain.size >= CANDIDATE_POOL) break;
     }
-    if (byDomain.size >= CANDIDATE_POOL) break;
+    if (
+      byDomain.size >= CANDIDATE_POOL ||
+      (queryIndex === 0 &&
+        byDomain.size >= MIN_CANDIDATES_TO_SKIP_FALLBACK_QUERY)
+    ) {
+      break;
+    }
   }
 
-  return Array.from(byDomain.values());
+  return {
+    candidates: Array.from(byDomain.values()),
+    failureCategory:
+      failureCategory ??
+      (queriesAttempted > 0 && byDomain.size === 0
+      ? "product_not_found"
+      : undefined),
+    failureDiagnostic,
+    queriesAttempted,
+    cacheHits,
+    deduplicated,
+  };
 }
 
 /**
@@ -291,23 +479,37 @@ async function scrapePage(url: string): Promise<string | null> {
         Authorization: `Bearer ${ENV.firecrawlApiKey}`,
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({ url, formats: ["markdown"] }),
+      body: JSON.stringify({ url, formats: ["html", "markdown"] }),
       signal: AbortSignal.timeout(60000),
     });
     if (!resp.ok) {
-      logger.warn({ status: resp.status, url }, "Pipeline: Firecrawl scrape failed");
+      logger.warn(
+        { status: resp.status, url },
+        "Pipeline: Firecrawl scrape failed"
+      );
       return null;
     }
     const j: any = await resp.json();
+    const html: string | null = j?.data?.html ?? null;
     const md: string | null = j?.data?.markdown ?? null;
-    if (md && md.length > 500) {
-      logger.debug({ url, chars: md.length }, "Pipeline: scraped via Firecrawl");
-      return md;
+    const content = html && html.length > 500 ? html : md;
+    if (content && content.length > 500) {
+      logger.debug(
+        { url, chars: content.length, format: html ? "html" : "markdown" },
+        "Pipeline: scraped via Firecrawl"
+      );
+      return content;
     }
-    logger.warn({ url, chars: md?.length ?? 0 }, "Pipeline: Firecrawl returned nothing, trying Playwright");
+    logger.warn(
+      { url, chars: md?.length ?? 0 },
+      "Pipeline: Firecrawl returned nothing, trying Playwright"
+    );
     return await playwrightScrape(url);
   } catch (err) {
-    logger.warn({ err, url }, "Pipeline: Firecrawl scrape threw, trying Playwright");
+    logger.warn(
+      { err, url },
+      "Pipeline: Firecrawl scrape threw, trying Playwright"
+    );
     return await playwrightScrape(url);
   }
 }
@@ -334,10 +536,13 @@ async function playwrightScrape(url: string): Promise<string | null> {
     const page = await context.newPage();
     await page.goto(url, { waitUntil: "domcontentloaded", timeout: 45000 });
     await page.waitForTimeout(2000);
-    const text = await page.evaluate(() => document.body?.innerText ?? "");
-    if (text && text.length > 500) {
-      logger.debug({ url, chars: text.length }, "Pipeline: scraped via Playwright");
-      return text;
+    const html = await page.content();
+    if (html && html.length > 500) {
+      logger.debug(
+        { url, chars: html.length, format: "html" },
+        "Pipeline: scraped via Playwright"
+      );
+      return html;
     }
     return null;
   } catch (err) {
@@ -355,8 +560,12 @@ async function playwrightScrape(url: string): Promise<string | null> {
  * own price, which would poison every recommendation built on it.
  */
 function pageHasPrice(content: string): boolean {
-  return /(?:[$£€]\s?\d[\d,]*(?:\.\d{2})?)|(?:\d[\d,]*\.\d{2}\s?(?:USD|EUR|GBP))/i.test(
-    content
+  return (
+    /(?:[$£€]\s?\d[\d,.]*)|(?:\d[\d,.]*\s?(?:USD|EUR|GBP|CAD|AUD|MAD|JPY|CHF)\b)/i.test(
+      content
+    ) ||
+    /["']price["']\s*:\s*["']?\d[\d,.]*/i.test(content) ||
+    /(?:product:price:amount|itemprop=["']price["'])[^>\n]*\d/i.test(content)
   );
 }
 
@@ -452,13 +661,46 @@ export const pipelineService = {
       competitorPrices: [],
       recommendedPrice: null,
       marginProtectionApplied: false,
+      diagnostics: {
+        candidateUrls: [],
+        matchedUrls: [],
+        rejected: [],
+        priceCandidates: 0,
+        searchQueries: 0,
+        searchCacheHits: 0,
+        searchDeduplicated: 0,
+      },
+    };
+
+    const rejectCandidate = async (
+      candidate: Candidate,
+      reason: string,
+      extraction?: { price?: number | null; confidence?: number | null }
+    ) => {
+      base.diagnostics.rejected.push({
+        url: candidate.url,
+        domain: candidate.domain,
+        reason,
+        price: extraction?.price ?? null,
+        confidence: extraction?.confidence ?? null,
+      });
+      await step(
+        userId,
+        productId,
+        `${candidate.domain} rejected: ${reason.replace(/_/g, " ")}`,
+        PIPELINE_EVENTS.competitorRejected,
+        { url: candidate.url, reason }
+      );
     };
 
     let ownDomain: string | null = null;
     let storeCurrency: string | null = null;
     if (product.storeId) {
       const store = await database
-        .select({ domain: shops.normalizedDomain, currency: accountShopConnections.currency })
+        .select({
+          domain: shops.normalizedDomain,
+          currency: accountShopConnections.currency,
+        })
         .from(accountShopConnections)
         .innerJoin(shops, eq(accountShopConnections.shopId, shops.id))
         .where(eq(accountShopConnections.id, product.storeId))
@@ -468,34 +710,59 @@ export const pipelineService = {
     }
 
     // Search the merchant's own market, not always the US.
-    const locale = resolveLocale(countryOverride, storeCurrency ?? product.currency);
+    const locale = resolveLocale(
+      countryOverride,
+      storeCurrency ?? product.currency
+    );
     logger.info(
       { productId, country: locale.country, gl: locale.gl, hl: locale.hl },
       "Pipeline: searching in locale"
     );
 
-    await step(userId, productId, `Searching the ${locale.country} market`);
-    const candidates = await discoverCandidates(product.title, ownDomain, locale);
+    await step(
+      userId,
+      productId,
+      `Searching the ${locale.country} market`,
+      PIPELINE_EVENTS.productDiscovery
+    );
+    const discovery = await discoverCandidates(product, ownDomain, locale);
+    const candidates = discovery.candidates;
+    base.searchFailure = discovery.failureCategory;
+    base.searchDiagnostic = discovery.failureDiagnostic;
+    base.diagnostics.searchQueries = discovery.queriesAttempted;
+    base.diagnostics.searchCacheHits = discovery.cacheHits;
+    base.diagnostics.searchDeduplicated = discovery.deduplicated;
     base.discovered = candidates.length;
+    base.diagnostics.candidateUrls = candidates.map(candidate => candidate.url);
     if (candidates.length === 0) {
       await step(userId, productId, "No shops found selling this");
-      base.skipped = "no candidates found";
+      base.skipped = base.searchFailure
+        ? `search ${base.searchFailure}`
+        : "no candidates found";
       return base;
     }
     await step(
       userId,
       productId,
-      `Found ${candidates.length} possible shop${candidates.length === 1 ? "" : "s"}`
+      `Found ${candidates.length} possible shop${candidates.length === 1 ? "" : "s"}`,
+      PIPELINE_EVENTS.competitorDiscovery,
+      { candidateCount: candidates.length }
     );
 
     const prices: number[] = [];
 
     for (const cand of candidates) {
       if (base.matched >= MAX_COMPETITOR_URLS) break;
-      await step(userId, productId, `Reading ${cand.domain}`);
+      await step(
+        userId,
+        productId,
+        `Reading ${cand.domain}`,
+        PIPELINE_EVENTS.scrapeStarted,
+        { url: cand.url }
+      );
       const content = await scrapePage(cand.url);
       if (!content) {
-        await step(userId, productId, `${cand.domain} could not be read`);
+        await rejectCandidate(cand, "scrape_failed");
         continue;
       }
       base.scraped++;
@@ -506,9 +773,16 @@ export const pipelineService = {
           { url: cand.url },
           "Pipeline: no price on page (likely blocked), skipping AI call"
         );
+        await rejectCandidate(cand, "no_price_on_page");
         continue;
       }
-      await step(userId, productId, `Checking if ${cand.domain} sells the same thing`);
+      await step(
+        userId,
+        productId,
+        `Checking if ${cand.domain} sells the same thing`,
+        PIPELINE_EVENTS.matching,
+        { url: cand.url, contentChars: content.length }
+      );
 
       const competitor = await findOrCreateCompetitor(
         userId,
@@ -518,8 +792,18 @@ export const pipelineService = {
       if (!competitor) continue;
 
       let extraction;
+      let validated: Awaited<
+        ReturnType<typeof aiExtractionService.extractAndValidate>
+      >;
       try {
-        const validated = await aiExtractionService.extractAndValidate({
+        await step(
+          userId,
+          productId,
+          `Extracting product and price from ${cand.domain}`,
+          PIPELINE_EVENTS.extractionStarted,
+          { url: cand.url }
+        );
+        validated = await aiExtractionService.extractAndValidate({
           merchantProduct: {
             id: product.id,
             title: product.title,
@@ -530,25 +814,50 @@ export const pipelineService = {
             category: product.category,
             price: product.price,
           },
-          competitorPageContent: content.slice(0, 12000),
+          // Keep the successful scrape in this job context. The extraction
+          // service hashes the full payload, runs structured extraction first,
+          // and reduces it only if an LLM is required.
+          competitorPageContent: content,
           competitorUrl: cand.url,
           competitorDomain: cand.domain,
           competitorId: competitor.id,
         });
         extraction = validated.extraction;
+        if (
+          !validated.modelUsed?.startsWith("deterministic:") ||
+          validated.modelUsed === "deterministic:pending-ai"
+        ) {
+          await step(
+            userId,
+            productId,
+            `AI fallback used for ${cand.domain}`,
+            PIPELINE_EVENTS.aiFallback,
+            { url: cand.url, model: validated.modelUsed ?? null }
+          );
+        }
       } catch (err) {
         logger.warn({ err, url: cand.url }, "Pipeline: AI extraction failed");
-        await step(userId, productId, `Could not read ${cand.domain} properly`);
+        await rejectCandidate(cand, "extraction_failed");
         continue;
       }
+
+      base.diagnostics.priceCandidates += extraction.price != null ? 1 : 0;
 
       if (
         !extraction.isMatch ||
         extraction.price == null ||
         extraction.price <= 0 ||
-        extraction.confidence < ENV.matchConfidenceThreshold
+        !extraction.currency ||
+        !validated.passedThreshold
       ) {
-        await step(userId, productId, `${cand.domain} sells something different`);
+        const reason = !extraction.isMatch
+          ? "product_not_match"
+          : extraction.price == null || extraction.price <= 0
+            ? "no_valid_price"
+            : !extraction.currency
+              ? "missing_currency"
+              : "low_confidence";
+        await rejectCandidate(cand, reason, extraction);
         continue;
       }
 
@@ -561,11 +870,7 @@ export const pipelineService = {
         (extraction.price < merchantPrice * 0.25 ||
           extraction.price > merchantPrice * 4)
       ) {
-        await step(
-          userId,
-          productId,
-          `Ignored an implausible price at ${cand.domain}`
-        );
+        await rejectCandidate(cand, "implausible_price", extraction);
         logger.warn(
           { url: cand.url, price: extraction.price, merchantPrice },
           "Pipeline: extracted price outside plausible band, rejecting"
@@ -578,20 +883,25 @@ export const pipelineService = {
           { url: cand.url, price: extraction.price },
           "Pipeline: extracted price is not present on the page, rejecting"
         );
-        await step(
-          userId,
-          productId,
-          `Discarded a price not shown on ${cand.domain}`
-        );
+        await rejectCandidate(cand, "price_not_present_on_page", extraction);
         continue;
       }
 
       base.matched++;
       prices.push(extraction.price);
+      base.diagnostics.matchedUrls.push(cand.url);
       await step(
         userId,
         productId,
-        `${cand.domain} sells it for $${extraction.price.toFixed(2)}`
+        `${cand.domain} sells it for $${extraction.price.toFixed(2)}`,
+        PIPELINE_EVENTS.competitorPriceFound,
+        {
+          url: cand.url,
+          price: extraction.price,
+          currency: extraction.currency,
+          confidence: extraction.confidence,
+          source: extraction.deterministicMatch ? "deterministic" : "ai",
+        }
       );
 
       const existingLink = await database.query.competitorProducts.findFirst({
@@ -610,9 +920,11 @@ export const pipelineService = {
             competitorProductUrl: cand.url,
             competitorProductTitle: extraction.title ?? cand.title,
             matchScore: extraction.confidence,
-            matchMethod: "ai",
+            matchMethod: extraction.deterministicMatch ? "deterministic" : "ai",
+            currency: extraction.currency || "USD",
             lastScrapedAt: new Date(),
             isActive: true,
+            isVerified: true,
           })
           .where(eq(competitorProducts.id, existingLink.id));
         competitorProductId = existingLink.id;
@@ -627,7 +939,7 @@ export const pipelineService = {
             price: String(extraction.price),
             currency: extraction.currency || "USD",
             matchScore: extraction.confidence,
-            matchMethod: "ai",
+            matchMethod: extraction.deterministicMatch ? "deterministic" : "ai",
             isVerified: true,
             isActive: true,
             lastScrapedAt: new Date(),
@@ -677,7 +989,11 @@ export const pipelineService = {
       // merchant's dashboard.
       await database
         .update(recommendations)
-        .set({ status: "dismissed", dismissedAt: new Date(), updatedAt: new Date() })
+        .set({
+          status: "dismissed",
+          dismissedAt: new Date(),
+          updatedAt: new Date(),
+        })
         .where(
           and(
             eq(recommendations.productId, product.id),
@@ -738,7 +1054,10 @@ export const pipelineService = {
       .innerJoin(products, eq(products.id, competitorProducts.productId))
       .where(
         userId
-          ? and(eq(products.userId, userId), eq(competitorProducts.isActive, true))
+          ? and(
+              eq(products.userId, userId),
+              eq(competitorProducts.isActive, true)
+            )
           : eq(competitorProducts.isActive, true)
       );
 
@@ -761,14 +1080,17 @@ export const pipelineService = {
             title: link.merchantTitle,
             price: link.merchantPrice,
           },
-          competitorPageContent: content.slice(0, 12000),
+          competitorPageContent: content,
           competitorUrl: link.url,
           competitorDomain: hostOf(link.url) ?? "",
           competitorId: link.competitorId,
         });
         price = validated.extraction.price;
       } catch (err) {
-        logger.warn({ err, url: link.url }, "Pipeline refresh: extraction failed");
+        logger.warn(
+          { err, url: link.url },
+          "Pipeline refresh: extraction failed"
+        );
         continue;
       }
 
@@ -777,7 +1099,8 @@ export const pipelineService = {
         price == null ||
         price <= 0 ||
         !priceAppearsOnPage(price, content) ||
-        (merchantPrice > 0 && (price < merchantPrice * 0.25 || price > merchantPrice * 4))
+        (merchantPrice > 0 &&
+          (price < merchantPrice * 0.25 || price > merchantPrice * 4))
       ) {
         continue;
       }
@@ -798,7 +1121,10 @@ export const pipelineService = {
       });
     }
 
-    logger.info({ checked, updated, changed }, "Pipeline: price refresh complete");
+    logger.info(
+      { checked, updated, changed },
+      "Pipeline: price refresh complete"
+    );
     return { checked, updated, changed };
   },
 
@@ -873,7 +1199,10 @@ export const pipelineService = {
 
     if (!resp.ok) {
       const detail = await resp.text().catch(() => "");
-      logger.error({ status: resp.status, detail }, "Pipeline: price push failed");
+      logger.error(
+        { status: resp.status, detail },
+        "Pipeline: price push failed"
+      );
       throw new Error(`Shopify rejected the price update (${resp.status})`);
     }
 
@@ -902,10 +1231,41 @@ export const pipelineService = {
     limit = 50,
     countryOverride?: string | null,
     storeId?: string
-  ): Promise<{ products: PipelineProductResult[]; totals: Record<string, number> }> {
+  ): Promise<PipelineRunResult> {
+    const key = pipelineRunKey(userId, countryOverride, storeId);
+    const active = activePipelineRuns.get(key);
+    if (active) {
+      logger.info(
+        { userId, storeId: storeId ?? null },
+        "Pipeline run already active; reusing it"
+      );
+      return active;
+    }
+
+    const run = this.runForUserInternal(
+      userId,
+      limit,
+      countryOverride,
+      storeId
+    );
+    activePipelineRuns.set(key, run);
+    try {
+      return await run;
+    } finally {
+      if (activePipelineRuns.get(key) === run) activePipelineRuns.delete(key);
+    }
+  },
+
+  async runForUserInternal(
+    userId: string,
+    limit = 50,
+    countryOverride?: string | null,
+    storeId?: string
+  ): Promise<PipelineRunResult> {
     const database = await db.getDb();
     if (!database) throw new Error("Database not available");
 
+    const serpApiMetricsBefore = serpApiService.getMetrics();
     const rows = await database
       .select({ id: products.id, title: products.title })
       .from(products)
@@ -924,7 +1284,11 @@ export const pipelineService = {
       action: PIPELINE_ACTIONS.runStarted,
       entityType: "pipeline",
       detail: `Checking ${rows.length} products`,
-      metadata: { total: rows.length, connectionId: storeId ?? null },
+      metadata: {
+        total: rows.length,
+        connectionId: storeId ?? null,
+        pipelineEvent: PIPELINE_EVENTS.syncStarted,
+      },
     });
 
     const results: PipelineProductResult[] = [];
@@ -952,6 +1316,12 @@ export const pipelineService = {
           metadata: {
             matched: result.matched,
             scraped: result.scraped,
+            discovered: result.discovered,
+            searchFailure: result.searchFailure ?? null,
+            searchDiagnostic: result.searchDiagnostic ?? null,
+            priceCandidates: result.diagnostics.priceCandidates,
+            diagnostics: result.diagnostics,
+            connectionId: storeId ?? null,
             recommendedPrice: result.recommendedPrice,
             marginProtectionApplied: result.marginProtectionApplied,
             skipped: result.skipped ?? null,
@@ -967,26 +1337,68 @@ export const pipelineService = {
           detail: r.title,
           metadata: { failed: true },
         });
+        await activityService.log({
+          userId,
+          action: PIPELINE_ACTIONS.productStep,
+          entityType: "product",
+          entityId: r.id,
+          detail: `${r.title} failed during sync`,
+          metadata: {
+            pipelineEvent: PIPELINE_EVENTS.productFailed,
+            connectionId: storeId ?? null,
+          },
+        });
       }
     }
 
-    const totals = results.reduce(
-      (acc, r) => ({
-        products: acc.products + 1,
-        discovered: acc.discovered + r.discovered,
-        scraped: acc.scraped + r.scraped,
-        matched: acc.matched + r.matched,
-        recommended: acc.recommended + (r.recommendedPrice != null ? 1 : 0),
-      }),
-      { products: 0, discovered: 0, scraped: 0, matched: 0, recommended: 0 }
-    );
+    const totals = summarizePipelineResults(rows, results);
+    const serpApiMetricsAfter = serpApiService.getMetrics();
+    totals.serpapi_requests =
+      serpApiMetricsAfter.requestsAttempted -
+      serpApiMetricsBefore.requestsAttempted;
+    totals.serpapi_successes =
+      serpApiMetricsAfter.successfulRequests -
+      serpApiMetricsBefore.successfulRequests;
+    totals.serpapi_rate_limited =
+      serpApiMetricsAfter.rateLimited - serpApiMetricsBefore.rateLimited;
+    totals.serpapi_quota_exhausted =
+      serpApiMetricsAfter.quotaExhausted -
+      serpApiMetricsBefore.quotaExhausted;
+    totals.serpapi_timeouts =
+      serpApiMetricsAfter.timeouts - serpApiMetricsBefore.timeouts;
+    totals.serpapi_network_errors =
+      serpApiMetricsAfter.networkErrors -
+      serpApiMetricsBefore.networkErrors;
+    totals.serpapi_authentication_errors =
+      serpApiMetricsAfter.authenticationErrors -
+      serpApiMetricsBefore.authenticationErrors;
+    totals.serpapi_other_4xx =
+      serpApiMetricsAfter.other4xx - serpApiMetricsBefore.other4xx;
+    totals.serpapi_server_errors =
+      serpApiMetricsAfter.serverErrors - serpApiMetricsBefore.serverErrors;
+    totals.serpapi_provider_errors =
+      serpApiMetricsAfter.providerErrors -
+      serpApiMetricsBefore.providerErrors;
+    totals.serpapi_retries =
+      serpApiMetricsAfter.retries - serpApiMetricsBefore.retries;
+    totals.serpapi_cache_hits =
+      serpApiMetricsAfter.cacheHits - serpApiMetricsBefore.cacheHits;
+    totals.serpapi_deduplicated =
+      serpApiMetricsAfter.deduplicated - serpApiMetricsBefore.deduplicated;
+    totals.serpapi_backoff_ms =
+      serpApiMetricsAfter.backoffMs - serpApiMetricsBefore.backoffMs;
 
     await activityService.log({
       userId,
       action: PIPELINE_ACTIONS.runFinished,
       entityType: "pipeline",
       detail: `${totals.recommended} recommendations from ${totals.products} products`,
-      metadata: { ...totals, durationMs: Date.now() - startedAt },
+      metadata: {
+        ...totals,
+        durationMs: Date.now() - startedAt,
+        connectionId: storeId ?? null,
+        pipelineEvent: PIPELINE_EVENTS.syncCompleted,
+      },
     });
 
     logger.info({ userId, ...totals }, "Pipeline: run complete");

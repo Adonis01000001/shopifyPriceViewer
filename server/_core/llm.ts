@@ -78,8 +78,12 @@ export type InvokeParams = {
   baseUrl?: string;
   /** Override API key (e.g., OpenRouter key) */
   apiKey?: string;
+  /** Lock the request to one provider instead of selecting from environment state. */
+  provider?: LLMProvider;
   /** Force a specific model, bypassing env defaults. Used by the fallback rotation. */
   modelOverride?: string;
+  /** Validate a provider response before accepting it. Invalid output falls through to the next model. */
+  resultValidator?: (result: InvokeResult) => void;
 };
 
 export type ToolCall = {
@@ -119,10 +123,203 @@ export type JsonSchema = {
 
 export type OutputSchema = JsonSchema;
 
+export type LLMProvider = "openai" | "openrouter";
+
 export type ResponseFormat =
   | { type: "text" }
   | { type: "json_object" }
   | { type: "json_schema"; json_schema: JsonSchema };
+
+export type LLMFailureCategory =
+  | "temporary_rate_limit"
+  | "daily_quota_exhausted"
+  | "model_failed"
+  | "validation_failed";
+
+export interface ModelState {
+  model: string;
+  unavailableUntil?: number;
+  reason?: "daily_quota_exhausted";
+}
+
+export interface LLMAttemptDiagnostic {
+  model: string;
+  category: LLMFailureCategory | "unavailable";
+  status?: number;
+  message: string;
+}
+
+export class LLMRequestError extends Error {
+  readonly status: number;
+  readonly rateLimitRemaining?: number;
+  readonly rateLimitReset?: string;
+  readonly responseBody: string;
+
+  constructor(options: {
+    status: number;
+    statusText: string;
+    responseBody: string;
+    rateLimitRemaining?: number;
+    rateLimitReset?: string;
+  }) {
+    super(`LLM invoke failed: ${options.status} ${options.statusText}`);
+    this.name = "LLMRequestError";
+    this.status = options.status;
+    this.responseBody = options.responseBody;
+    this.rateLimitRemaining = options.rateLimitRemaining;
+    this.rateLimitReset = options.rateLimitReset;
+  }
+}
+
+export class LLMValidationError extends Error {
+  constructor(message = "LLM response failed validation") {
+    super(message);
+    this.name = "LLMValidationError";
+  }
+}
+
+export class AllLLMModelsFailedError extends Error {
+  readonly code = "ALL_LLM_MODELS_FAILED";
+  readonly attempts: LLMAttemptDiagnostic[];
+
+  constructor(attempts: LLMAttemptDiagnostic[]) {
+    super(
+      `All usable LLM models failed (${attempts
+        .map(attempt => `${attempt.model}:${attempt.category}`)
+        .join(", ")})`
+    );
+    this.name = "AllLLMModelsFailedError";
+    this.attempts = attempts;
+  }
+}
+
+class Semaphore {
+  private active = 0;
+  private readonly waiters: Array<() => void> = [];
+
+  constructor(private readonly limit: number) {}
+
+  async run<T>(work: () => Promise<T>): Promise<T> {
+    if (this.active >= this.limit) {
+      await new Promise<void>(resolve => this.waiters.push(resolve));
+    }
+    this.active++;
+    try {
+      return await work();
+    } finally {
+      this.active--;
+      this.waiters.shift()?.();
+    }
+  }
+}
+
+const llmSemaphore = new Semaphore(ENV.llmMaxConcurrency);
+const modelStates = new Map<string, ModelState>();
+const llmMetrics = {
+  requests: 0,
+  successes: 0,
+  failures: 0,
+  rateLimits: 0,
+  dailyQuotaFailures: 0,
+  fallbackUsage: 0,
+};
+
+export function getLLMMetrics() {
+  return { ...llmMetrics };
+}
+
+export function parseRateLimitReset(
+  value: string | undefined
+): number | undefined {
+  if (!value) return undefined;
+  const numeric = Number(value);
+  if (Number.isFinite(numeric) && numeric > 0) {
+    return numeric < 10_000_000_000 ? numeric * 1000 : numeric;
+  }
+  const parsed = Date.parse(value);
+  return Number.isFinite(parsed) ? parsed : undefined;
+}
+
+function findNestedHeader(
+  value: unknown,
+  headerName: string
+): string | undefined {
+  if (!value || typeof value !== "object") return undefined;
+  for (const [key, nested] of Object.entries(
+    value as Record<string, unknown>
+  )) {
+    if (key.toLowerCase() === headerName && nested != null)
+      return String(nested);
+    const found = findNestedHeader(nested, headerName);
+    if (found) return found;
+  }
+  return undefined;
+}
+
+function resetTimestampFromError(error: unknown): number | undefined {
+  if (!(error instanceof LLMRequestError)) return undefined;
+  const direct = parseRateLimitReset(error.rateLimitReset);
+  if (direct) return direct;
+  try {
+    return parseRateLimitReset(
+      findNestedHeader(JSON.parse(error.responseBody), "x-ratelimit-reset")
+    );
+  } catch {
+    const unescaped = error.responseBody.replace(/\\"/g, '"');
+    const match = unescaped.match(
+      /x-ratelimit-reset["']?\s*[:=]\s*["']?([^,"'\s}]+)/i
+    );
+    return parseRateLimitReset(match?.[1]);
+  }
+}
+
+export function getModelState(model: string, now = Date.now()): ModelState {
+  const state = modelStates.get(model);
+  if (state?.unavailableUntil && state.unavailableUntil <= now) {
+    modelStates.delete(model);
+    return { model };
+  }
+  return state ? { ...state } : { model };
+}
+
+export function resetLLMRuntimeStateForTests(): void {
+  modelStates.clear();
+  Object.keys(llmMetrics).forEach(key => {
+    llmMetrics[key as keyof typeof llmMetrics] = 0;
+  });
+}
+
+function safeErrorMessage(error: unknown): string {
+  const message = error instanceof Error ? error.message : String(error);
+  return message
+    .replace(/Bearer\s+[^\s"']+/gi, "Bearer [redacted]")
+    .replace(/\bsk-[A-Za-z0-9_-]+\b/g, "[redacted]")
+    .slice(0, 300);
+}
+
+export function classifyLLMFailure(error: unknown): LLMFailureCategory {
+  if (error instanceof LLMValidationError) return "validation_failed";
+
+  const status = (error as { status?: number } | undefined)?.status;
+  const requestError = error instanceof LLMRequestError ? error : undefined;
+  const text =
+    `${safeErrorMessage(error)} ${requestError?.responseBody ?? ""}`.toLowerCase();
+  const remainingIsZero = requestError?.rateLimitRemaining === 0;
+  const dailyQuotaSignal =
+    remainingIsZero ||
+    /free[-_ ]?models?[-_ ]?per[-_ ]?day/.test(text) ||
+    /openrouter[-_ ]?free[-_ ]?tier[-_ ]?daily/.test(text) ||
+    /daily\s+(?:rate\s+)?limit/.test(text) ||
+    /daily\s+quota/.test(text) ||
+    /quota[^.]{0,40}(?:day|daily|reset)/.test(text) ||
+    /x-ratelimit-remaining["']?\s*[:=]\s*["']?0\b/.test(
+      text.replace(/\\"/g, '"')
+    );
+
+  if (status === 429 && dailyQuotaSignal) return "daily_quota_exhausted";
+  if (status === 429) return "temporary_rate_limit";
+  return "model_failed";
+}
 
 const ensureArray = (
   value: MessageContent | MessageContent[]
@@ -223,7 +420,14 @@ const normalizeToolChoice = (
   return toolChoice;
 };
 
-const resolveApiUrl = (overrideBaseUrl?: string) => {
+const resolveApiUrl = (overrideBaseUrl?: string, provider?: LLMProvider) => {
+  if (provider === "openai") {
+    return "https://api.openai.com/v1/chat/completions";
+  }
+  if (provider === "openrouter") {
+    const base = (overrideBaseUrl || ENV.openrouterBaseUrl).replace(/\/+$/, "");
+    return `${base}/chat/completions`;
+  }
   if (overrideBaseUrl) {
     const base = overrideBaseUrl.replace(/\/+$/, "");
     return `${base}/chat/completions`;
@@ -235,11 +439,21 @@ const resolveApiUrl = (overrideBaseUrl?: string) => {
   return `${base}/chat/completions`;
 };
 
-const assertApiKey = (overrideKey?: string) => {
-  const key = overrideKey || ENV.openaiApiKey || ENV.openrouterApiKey;
+const assertApiKey = (overrideKey?: string, provider?: LLMProvider) => {
+  const key =
+    overrideKey ||
+    (provider === "openai"
+      ? ENV.openaiApiKey
+      : provider === "openrouter"
+        ? ENV.openrouterApiKey
+        : ENV.openaiApiKey || ENV.openrouterApiKey);
   if (!key) {
     throw new Error(
-      "No API key configured. Set OPENAI_API_KEY or OPENROUTER_API_KEY."
+      provider === "openai"
+        ? "No OpenAI API key configured. Set OPENAI_API_KEY."
+        : provider === "openrouter"
+          ? "No OpenRouter API key configured. Set OPENROUTER_API_KEY."
+          : "No API key configured. Set OPENAI_API_KEY or OPENROUTER_API_KEY."
     );
   }
   return key;
@@ -291,7 +505,7 @@ const normalizeResponseFormat = ({
 };
 
 export async function invokeLLM(params: InvokeParams): Promise<InvokeResult> {
-  const apiKey = assertApiKey(params.apiKey);
+  const apiKey = assertApiKey(params.apiKey, params.provider);
 
   const {
     messages,
@@ -305,10 +519,14 @@ export async function invokeLLM(params: InvokeParams): Promise<InvokeResult> {
     baseUrl,
   } = params;
 
-  const useOpenRouter = baseUrl || (!ENV.openaiApiKey && !!ENV.openrouterApiKey);
+  const useOpenRouter = Boolean(
+    params.provider === "openrouter" ||
+      (params.provider !== "openai" &&
+        (baseUrl || (!ENV.openaiApiKey && !!ENV.openrouterApiKey)))
+  );
   const model =
     params.modelOverride ??
-    (useOpenRouter ? ENV.openrouterModel : "gemini-2.5-flash");
+    (useOpenRouter ? ENV.openrouterModel : ENV.openaiModel);
 
   const payload: Record<string, unknown> = {
     model,
@@ -327,11 +545,8 @@ export async function invokeLLM(params: InvokeParams): Promise<InvokeResult> {
     payload.tool_choice = normalizedToolChoice;
   }
 
-  payload.max_tokens = 32768;
-
-  if (!useOpenRouter) {
-    payload.thinking = { budget_tokens: 128 };
-  }
+  const maxTokens = params.maxTokens ?? params.max_tokens ?? 32768;
+  payload[useOpenRouter ? "max_tokens" : "max_completion_tokens"] = maxTokens;
 
   const normalizedResponseFormat = normalizeResponseFormat({
     responseFormat,
@@ -350,67 +565,172 @@ export async function invokeLLM(params: InvokeParams): Promise<InvokeResult> {
   };
 
   if (useOpenRouter) {
-    headers["HTTP-Referer"] = "http://localhost:3000";
+    headers["HTTP-Referer"] = ENV.appUrl;
     headers["X-Title"] = "Shopify Price Intelligence";
   }
 
-  const response = await fetch(resolveApiUrl(baseUrl), {
-    method: "POST",
-    headers,
-    body: JSON.stringify(payload),
-    // The pipeline runs unattended on a cron. Without this, one hung
-    // connection stalls the whole run indefinitely.
-    signal: AbortSignal.timeout(LLM_REQUEST_TIMEOUT_MS),
+  return llmSemaphore.run(async () => {
+    llmMetrics.requests++;
+    try {
+      const response = await fetch(resolveApiUrl(baseUrl, params.provider), {
+        method: "POST",
+        headers,
+        body: JSON.stringify(payload),
+        // The pipeline runs unattended on a cron. Without this, one hung
+        // connection stalls the whole run indefinitely.
+        signal: AbortSignal.timeout(LLM_REQUEST_TIMEOUT_MS),
+      });
+
+      if (!response.ok) {
+        const responseBody = (await response.text()).slice(0, 4000);
+        const remainingHeader = response.headers.get("x-ratelimit-remaining");
+        const remaining =
+          remainingHeader == null ? undefined : Number(remainingHeader);
+        throw new LLMRequestError({
+          status: response.status,
+          statusText: response.statusText,
+          responseBody,
+          rateLimitRemaining: Number.isFinite(remaining)
+            ? remaining
+            : undefined,
+          rateLimitReset:
+            response.headers.get("x-ratelimit-reset") ?? undefined,
+        });
+      }
+
+      const result = (await response.json()) as InvokeResult;
+      llmMetrics.successes++;
+      return result;
+    } catch (error) {
+      llmMetrics.failures++;
+      throw error;
+    }
   });
-
-  if (!response.ok) {
-    const errorText = await response.text();
-    const err = new Error(
-      `LLM invoke failed: ${response.status} ${response.statusText} – ${errorText}`
-    ) as Error & { status?: number };
-    err.status = response.status;
-    throw err;
-  }
-
-  return (await response.json()) as InvokeResult;
 }
 
 /**
- * Free models share an upstream pool and return 429 often. Try each configured
- * model in turn before giving up, so one busy provider does not stall a run.
- * Set OPENROUTER_MODELS to a comma-separated list to control the order.
+ * Try each configured model in turn before giving up, so one unavailable model
+ * does not stall a run. Set OPENAI_MODELS or OPENROUTER_MODELS to a
+ * comma-separated list to control the order for the selected provider.
  */
 export async function invokeLLMWithFallback(
   params: InvokeParams
 ): Promise<InvokeResult> {
-  const candidates = ENV.openrouterModels.length
-    ? ENV.openrouterModels
-    : [ENV.openrouterModel];
+  const useOpenRouter = Boolean(
+    params.provider === "openrouter" ||
+      (params.provider !== "openai" &&
+        (params.baseUrl || (!ENV.openaiApiKey && !!ENV.openrouterApiKey)))
+  );
+  const configuredCandidates = params.modelOverride
+    ? [params.modelOverride]
+    : useOpenRouter
+      ? ENV.openrouterModels.length
+        ? ENV.openrouterModels
+        : [ENV.openrouterModel]
+      : ENV.openaiModels.length
+        ? ENV.openaiModels
+        : [ENV.openaiModel];
+  const candidates = Array.from(new Set(configuredCandidates));
+  const diagnostics: LLMAttemptDiagnostic[] = [];
+  let attemptedModelCount = 0;
 
-  let lastErr: unknown;
   for (const model of candidates) {
-    // Free models share an upstream pool, so 429 is usually transient rather
-    // than a reason to abandon a model that returns the right shape.
-    for (let attempt = 0; attempt < 3; attempt++) {
+    const now = Date.now();
+    const state = getModelState(model, now);
+    if (state.unavailableUntil && state.unavailableUntil > now) {
+      diagnostics.push({
+        model,
+        category: "unavailable",
+        message: `unavailable until ${new Date(state.unavailableUntil).toISOString()}`,
+      });
+      logger.warn(
+        {
+          model,
+          reason: state.reason,
+          resetAt: new Date(state.unavailableUntil).toISOString(),
+          action: "skipping_model",
+        },
+        "LLM model unavailable"
+      );
+      continue;
+    }
+
+    if (attemptedModelCount > 0 || diagnostics.length > 0) {
+      llmMetrics.fallbackUsage++;
+      logger.info({ model, reason: "previous_model_failed" }, "LLM fallback");
+    }
+    attemptedModelCount++;
+
+    for (let attempt = 0; attempt <= ENV.llmMaxRetries; attempt++) {
       try {
-        return await invokeLLM({ ...params, modelOverride: model });
-      } catch (err) {
-        lastErr = err;
-        const status = (err as { status?: number })?.status;
-        const timedOut = (err as Error)?.name === "TimeoutError";
-        if (timedOut) break; // this model is not answering: next one
-        if (status !== 429) {
-          if (status === 402 || status === 404) break; // model gone: next one
-          throw err;
+        const result = await invokeLLM({ ...params, modelOverride: model });
+        params.resultValidator?.(result);
+        return result;
+      } catch (error) {
+        const category = classifyLLMFailure(error);
+        const status = (error as { status?: number } | undefined)?.status;
+        diagnostics.push({
+          model,
+          category,
+          status,
+          message: safeErrorMessage(error),
+        });
+
+        if (category === "daily_quota_exhausted") {
+          llmMetrics.rateLimits++;
+          llmMetrics.dailyQuotaFailures++;
+          const headerReset = resetTimestampFromError(error);
+          const resetAt =
+            headerReset && headerReset > now
+              ? headerReset
+              : now + ENV.llmQuotaFallbackCooldownMs;
+          modelStates.set(model, {
+            model,
+            unavailableUntil: resetAt,
+            reason: "daily_quota_exhausted",
+          });
+          logger.warn(
+            {
+              model,
+              reason: "daily_quota_exhausted",
+              resetAt: new Date(resetAt).toISOString(),
+              action: "skipping_model",
+            },
+            "LLM model quota exhausted"
+          );
+          break;
         }
-        if (attempt < 2) {
-          const waitMs = 1500 * Math.pow(2, attempt);
-          logger.warn({ model, attempt: attempt + 1, waitMs }, "LLM: rate limited, backing off");
-          await new Promise(r => setTimeout(r, waitMs));
+
+        if (category === "temporary_rate_limit") {
+          llmMetrics.rateLimits++;
+          if (attempt < ENV.llmMaxRetries) {
+            const waitMs = ENV.llmBackoffBaseMs * Math.pow(2, attempt);
+            logger.warn(
+              { model, attempt: attempt + 1, waitMs, reason: category },
+              "LLM temporarily rate limited"
+            );
+            await new Promise(resolve => setTimeout(resolve, waitMs));
+            continue;
+          }
         }
+
+        // Provider/model failures and malformed model output are not made more
+        // reliable by repeating the same request. Move to the next model.
+        break;
       }
     }
-    logger.warn({ model }, "LLM: giving up on model, trying next");
   }
-  throw lastErr;
+
+  logger.error(
+    {
+      models: candidates,
+      failures: diagnostics.map(({ model, category, status }) => ({
+        model,
+        category,
+        status,
+      })),
+    },
+    "All LLM extraction models failed"
+  );
+  throw new AllLLMModelsFailedError(diagnostics);
 }

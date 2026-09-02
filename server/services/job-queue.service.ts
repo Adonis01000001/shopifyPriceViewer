@@ -13,6 +13,8 @@ export type QueueName =
 export type UserJobPayload = {
   userId?: string;
   reportRunId?: string;
+  analysisKind?: "scraper-improvement";
+  failureId?: string;
   requestedAt: string;
 };
 
@@ -70,9 +72,7 @@ export const jobQueueService = {
   queueNames,
 
   async enqueuePriceMonitoring(userId?: string) {
-    const bucket = Math.floor(
-      Date.now() / (ENV.monitoringIntervalHours * 3_600_000)
-    );
+    const bucket = Math.floor(Date.now() / 86_400_000);
     return enqueue(
       "price-monitoring",
       `price-monitoring:${userId ?? "all"}:${bucket}`,
@@ -97,9 +97,11 @@ export const jobQueueService = {
     });
   },
 
-  async enqueueAiAnalysis(userId: string) {
-    return enqueue("ai-analysis", `ai-analysis:${userId}:${Date.now()}`, {
-      userId,
+  async enqueueAiAnalysis(failureId?: string) {
+    const bucket = Math.floor(Date.now() / 300_000);
+    return enqueue("ai-analysis", `scraper-improvement:${bucket}`, {
+      analysisKind: "scraper-improvement",
+      failureId,
       requestedAt: new Date().toISOString(),
     });
   },
@@ -107,13 +109,7 @@ export const jobQueueService = {
   async withLock<T>(key: string, ttlMs: number, work: () => Promise<T>) {
     if (!redis) return work();
     const token = randomUUID();
-    const acquired = await redis.set(
-      `lock:${key}`,
-      token,
-      "PX",
-      ttlMs,
-      "NX"
-    );
+    const acquired = await redis.set(`lock:${key}`, token, "PX", ttlMs, "NX");
     if (acquired !== "OK") return null;
     try {
       return await work();

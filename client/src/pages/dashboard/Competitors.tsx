@@ -593,7 +593,7 @@ function AddProductDialog({
   );
 }
 
-// ─── Feed Panel Component (with polling + price changes) ─────────────────────
+// ─── Feed Panel Component (with explicit refresh + price changes) ────────────
 
 function CompetitorFeed({
   competitorId,
@@ -613,7 +613,7 @@ function CompetitorFeed({
     dataUpdatedAt,
   } = trpc.competitors.feed.useQuery(
     { competitorId, storeId: selectedShopId ?? undefined },
-    { refetchInterval: 15000, refetchIntervalInBackground: false }
+    { refetchOnWindowFocus: true }
   );
 
   const utils = trpc.useUtils();
