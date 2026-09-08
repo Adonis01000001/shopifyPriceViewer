@@ -1,3 +1,4 @@
+import { useState, type FormEvent } from "react";
 import { useRoute, useLocation } from "wouter";
 import { trpc } from "@/lib/trpc";
 import { cn } from "@/lib/utils";
@@ -11,10 +12,21 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { PageSkeleton } from "@/components/dashboard/PageSkeleton";
 import { PricingRecommendationWidget } from "@/components/dashboard/PricingRecommendationWidget";
 import { ProductEvidence } from "@/components/dashboard/ProductEvidence";
 import { getStoreDashboardPath, useShopContext } from "@/contexts/ShopContext";
+import { toast } from "sonner";
 
 
 const statusConfig: Record<string, { label: string; className: string }> = {
@@ -45,6 +57,40 @@ export default function ProductDetail() {
   const { selectedShopId } = useShopContext();
   const productId = scopedParams?.id ?? legacyParams?.id;
   const productsPath = getStoreDashboardPath(selectedShopId ?? "", "/products");
+  const [manualDialogOpen, setManualDialogOpen] = useState(false);
+  const [manualUrl, setManualUrl] = useState("");
+  const [manualPrice, setManualPrice] = useState("");
+  const [manualFormError, setManualFormError] = useState<string | null>(null);
+
+  const utils = trpc.useUtils();
+  const addManualProduct = trpc.competitors.addManualProduct.useMutation({
+    onSuccess: async () => {
+      await Promise.all([
+        utils.products.getById.invalidate({
+          id: productId ?? "",
+          storeId: selectedShopId ?? undefined,
+        }),
+        utils.products.getCompetitorPrices.invalidate({
+          productId: productId ?? "",
+          storeId: selectedShopId ?? undefined,
+        }),
+        utils.pipeline.productEvidence.invalidate({
+          productId: productId ?? "",
+          storeId: selectedShopId ?? undefined,
+        }),
+      ]);
+      setManualDialogOpen(false);
+      setManualUrl("");
+      setManualPrice("");
+      setManualFormError(null);
+      toast.success("Competitor price added");
+    },
+    onError: error => {
+      const message = error.message || "Could not add competitor price";
+      setManualFormError(message);
+      toast.error(message);
+    },
+  });
 
   const {
     data: product,
@@ -55,10 +101,44 @@ export default function ProductDetail() {
     { enabled: !!productId }
   );
 
-  const { data: competitorPrices } = trpc.products.getCompetitorPrices.useQuery(
+  const {
+    data: competitorPrices,
+    isLoading: competitorPricesLoading,
+    isError: competitorPricesError,
+    refetch: refetchCompetitorPrices,
+  } = trpc.products.getCompetitorPrices.useQuery(
     { productId: productId ?? "", storeId: selectedShopId ?? undefined },
     { enabled: !!productId }
   );
+
+  const submitManualProduct = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setManualFormError(null);
+
+    let parsedUrl: URL;
+    try {
+      parsedUrl = new URL(manualUrl.trim());
+    } catch {
+      setManualFormError("Enter a valid shop or product URL.");
+      return;
+    }
+    if (parsedUrl.protocol !== "http:" && parsedUrl.protocol !== "https:") {
+      setManualFormError("The URL must use http or https.");
+      return;
+    }
+    if (!/^\d+(\.\d{1,2})?$/.test(manualPrice.trim()) || Number(manualPrice) <= 0) {
+      setManualFormError("Enter a price greater than zero, with up to two decimals.");
+      return;
+    }
+    if (!productId) return;
+
+    addManualProduct.mutate({
+      productId,
+      competitorUrl: parsedUrl.toString(),
+      price: manualPrice.trim(),
+      storeId: selectedShopId ?? undefined,
+    });
+  };
 
   if (error) {
     return (
@@ -179,7 +259,23 @@ export default function ProductDetail() {
             </Badge>
           </div>
           <div className="divide-y divide-outline-variant/20">
-            {competitorPrices && competitorPrices.length > 0 ? (
+            {competitorPricesLoading ? (
+              <div className="px-5 py-12 text-center text-[14px] text-muted-foreground">
+                Loading shops…
+              </div>
+            ) : competitorPricesError ? (
+              <div className="flex flex-col items-center gap-3 px-5 py-12 text-center text-[14px] text-muted-foreground">
+                <p>We could not load the shops checked for this product.</p>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => void refetchCompetitorPrices()}
+                >
+                  Try again
+                </Button>
+              </div>
+            ) : competitorPrices && competitorPrices.length > 0 ? (
               competitorPrices.map(cp => {
                 const myPrice = Number(product.price);
                 const cpPrice = Number(cp.price);
@@ -198,13 +294,19 @@ export default function ProductDetail() {
                         <span className="text-[13px] text-muted-foreground">
                           {cp.competitorName}
                         </span>
-                        <span
-                          className="text-[12px] font-mono text-muted-foreground"
-                          title="How sure we are this is the same product"
-                        >
-                          {Math.round(Number(cp.matchScore) * 100)}% sure it is
-                          the same product
-                        </span>
+                        {cp.matchMethod === "manual" ? (
+                          <span className="text-[12px] text-amber-300">
+                            Price supplied manually · not independently verified
+                          </span>
+                        ) : (
+                          <span
+                            className="text-[12px] font-mono text-muted-foreground"
+                            title="How sure we are this is the same product"
+                          >
+                            {Math.round(Number(cp.matchScore) * 100)}% sure it is
+                            the same product
+                          </span>
+                        )}
                       </div>
                     </div>
                     <div className="text-right shrink-0 ml-4">
@@ -243,15 +345,91 @@ export default function ProductDetail() {
                   </div>
                 );
               })
-            ) : (
-              <div className="px-5 py-12 text-center text-[14px] text-muted-foreground">
-                No shop was found selling this exact product. The list below
-                shows every shop we looked at and why each was ruled out.
+            ) : competitorPrices ? (
+              <div className="flex flex-col items-center gap-4 px-5 py-12 text-center text-[14px] text-muted-foreground">
+                <p>
+                  No shop was found selling this exact product. The list below
+                  shows every shop we looked at and why each was ruled out.
+                </p>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => {
+                    setManualFormError(null);
+                    setManualDialogOpen(true);
+                  }}
+                >
+                  I know a shop that sells this
+                </Button>
               </div>
-            )}
+            ) : null}
           </div>
         </div>
       </div>
+
+      <Dialog
+        open={manualDialogOpen}
+        onOpenChange={open => {
+          if (!addManualProduct.isPending) setManualDialogOpen(open);
+          if (!open) setManualFormError(null);
+        }}
+      >
+        <DialogContent className="sm:max-w-[440px]">
+          <DialogHeader>
+            <DialogTitle>Add a shop price</DialogTitle>
+            <DialogDescription>
+              Paste the product page you are looking at and enter the price
+              shown there. This price will be marked as manually supplied.
+            </DialogDescription>
+          </DialogHeader>
+          <form onSubmit={submitManualProduct} className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="manual-competitor-url">Shop/product page URL</Label>
+              <Input
+                id="manual-competitor-url"
+                type="url"
+                value={manualUrl}
+                onChange={event => setManualUrl(event.target.value)}
+                placeholder="https://shop.example.com/product"
+                disabled={addManualProduct.isPending}
+                required
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="manual-competitor-price">Price</Label>
+              <Input
+                id="manual-competitor-price"
+                type="number"
+                min="0.01"
+                step="0.01"
+                value={manualPrice}
+                onChange={event => setManualPrice(event.target.value)}
+                placeholder="0.00"
+                disabled={addManualProduct.isPending}
+                required
+              />
+            </div>
+            {manualFormError && (
+              <p className="text-sm text-[var(--destructive)]" role="alert">
+                {manualFormError}
+              </p>
+            )}
+            <DialogFooter>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setManualDialogOpen(false)}
+                disabled={addManualProduct.isPending}
+              >
+                Cancel
+              </Button>
+              <Button type="submit" disabled={addManualProduct.isPending}>
+                {addManualProduct.isPending ? "Adding…" : "Add price"}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
 
       {/* The working behind the suggestion */}
       <ProductEvidence productId={product.id} storeId={selectedShopId ?? undefined} />

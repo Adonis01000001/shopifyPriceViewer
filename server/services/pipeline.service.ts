@@ -30,7 +30,7 @@ import { aiExtractionService } from "./ai-extraction.service";
 import { pricingEngine } from "./pricing-engine.service";
 import { pricingRulesService } from "./pricing-rules.service";
 import { activityService } from "./activity.service";
-import { getOrCreateShop, normalizeShopDomain } from "./shop.service";
+import { findOrCreateCompetitor } from "./competitor.service";
 import { extractModelTokens } from "./product-content-extraction";
 import {
   serpApiService,
@@ -214,7 +214,7 @@ export function resolveLocale(
   return LOCALES.US;
 }
 const SERP_QUERIES_PER_PRODUCT = 2;
-const MIN_CANDIDATES_TO_SKIP_FALLBACK_QUERY = 2;
+const MIN_STRONG_CANDIDATES_TO_SKIP_FALLBACK_QUERY = 2;
 /** Try more domains than we keep: protected sites fail and we move on. */
 const CANDIDATE_POOL = 4;
 
@@ -239,6 +239,14 @@ export interface PipelineProductResult {
       reason: string;
       price: number | null;
       confidence: number | null;
+      candidateTitle: string;
+      candidateRelevance: number;
+      pageClassification?: ProductPageClassification;
+      extractedTitle?: string | null;
+      currency?: string | null;
+      titleSimilarity?: number | null;
+      variantSimilarity?: number | null;
+      deterministicMatch?: boolean;
     }>;
     priceCandidates: number;
     searchQueries: number;
@@ -252,6 +260,7 @@ interface Candidate {
   domain: string;
   title: string;
   sourceName: string;
+  relevance: number;
 }
 
 interface CandidateDiscoveryResult {
@@ -271,6 +280,99 @@ function hostOf(url: string): string | null {
   }
 }
 
+const SEARCH_STOP_WORDS = new Set([
+  "and",
+  "for",
+  "the",
+  "with",
+  "wireless",
+  "portable",
+  "bluetooth",
+  "headphones",
+  "speaker",
+  "camera",
+  "product",
+]);
+
+function searchTokens(value: string | null | undefined): string[] {
+  return Array.from(
+    new Set(
+      String(value ?? "")
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, " ")
+        .split(/\s+/)
+        .filter(token => token.length >= 2 && !SEARCH_STOP_WORDS.has(token))
+    )
+  );
+}
+
+/** Keep the full product identity in both searches. The old focused query
+ * dropped the product type and retained only model-like tokens, which turned
+ * e.g. "Kindle Paperwhite 16GB" into "Amazon 16gb price". */
+export function buildProductSearchQueries(product: {
+  title: string;
+  vendor?: string | null;
+}): string[] {
+  const title = product.title.trim();
+  const vendor = product.vendor?.trim() ?? "";
+  const identity =
+    vendor && title.toLowerCase().startsWith(vendor.toLowerCase())
+      ? title
+      : [vendor, title].filter(Boolean).join(" ").trim();
+  return Array.from(
+    new Set([`${identity} buy`, `${identity} price`].filter(Boolean))
+  ).slice(0, SERP_QUERIES_PER_PRODUCT);
+}
+
+/** Search-result URL filtering is deliberately conservative: a product path
+ * is allowed to reach scraping, while known listing, review, and support
+ * paths are removed before they consume scraping/LLM work. */
+export function isNonProductSearchUrl(url: string): boolean {
+  try {
+    const parsed = new URL(url);
+    const path = parsed.pathname.toLowerCase();
+    const host = parsed.hostname.replace(/^www\./, "").toLowerCase();
+    if (host.startsWith("support.") || host === "cnet.com") return true;
+    if (
+      /\/(?:search|s|collections?|categories?|category|blog|reviews?|stores?|brands?|pages?|clp|site|b|most-wished-for|shopping\/pl|goto)(?:\/|$)/.test(
+        path
+      )
+    ) {
+      return true;
+    }
+    if (/\/shop\/(?!products?(?:\/|$))/i.test(path)) return true;
+    if (/(?:^|\/)\b(?:best|review|support|manual|compare)\b/i.test(path)) {
+      return true;
+    }
+    return false;
+  } catch {
+    return true;
+  }
+}
+
+function candidateRelevance(
+  product: { title: string; vendor?: string | null },
+  url: string,
+  resultTitle: string
+): number {
+  const haystack = `${resultTitle} ${url}`.toLowerCase();
+  const identityTokens = searchTokens(
+    [product.vendor, product.title].filter(Boolean).join(" ")
+  );
+  const modelTokens = extractModelTokens(product.title);
+  const identityMatches = identityTokens.filter(token => haystack.includes(token));
+  const modelMatches = modelTokens.filter(token => haystack.includes(token));
+  let score = Math.min(identityMatches.length, 5);
+  score += Math.min(modelMatches.length * 2, 6);
+  if (/(?:\/products?\/|\/dp\/|\/p\/|\/item\/|\/itm\/|\/ip\/)/i.test(url)) {
+    score += 2;
+  }
+  if (/\b(?:review|support|manual|category|collection|best)\b/i.test(resultTitle)) {
+    score -= 5;
+  }
+  return score;
+}
+
 /** Domains that are never competitors: marketplaces of reviews, video, social. */
 const EXCLUDED = new Set([
   "youtube.com",
@@ -286,6 +388,13 @@ const EXCLUDED = new Set([
   "quora.com",
   "medium.com",
 ]);
+
+function isExcludedDomain(host: string): boolean {
+  return (
+    EXCLUDED.has(host) ||
+    Array.from(EXCLUDED).some(domain => host.endsWith(`.${domain}`))
+  );
+}
 
 /** Find candidate competitor product pages via SerpAPI Google Shopping. */
 export async function discoverCandidates(
@@ -317,16 +426,7 @@ export async function discoverCandidates(
   //
   // Provider: Serper if configured (roughly 10-30x cheaper per query than
   // SerpApi, and a far larger free allowance), otherwise SerpApi.
-  const modelTokens = extractModelTokens(product.title).slice(0, 3);
-  const identity = [product.vendor, product.title].filter(Boolean).join(" ");
-  const queries = Array.from(
-    new Set([
-      `${identity} buy`,
-      modelTokens.length > 0
-        ? `${product.vendor ?? ""} ${modelTokens.join(" ")} price`.trim()
-        : product.title,
-    ])
-  ).slice(0, SERP_QUERIES_PER_PRODUCT);
+  const queries = buildProductSearchQueries(product);
   const byDomain = new Map<string, Candidate>();
   const useSerper = Boolean(ENV.serperApiKey);
   let queriesAttempted = 0;
@@ -399,40 +499,36 @@ export async function discoverCandidates(
       const link: string | undefined = r.link;
       if (!link) continue;
       const host = hostOf(link);
-      if (!host || EXCLUDED.has(host)) continue;
+      if (!host || isExcludedDomain(host)) continue;
       if (ownDomain && host === ownDomain) continue;
-      try {
-        const path = new URL(link).pathname.toLowerCase();
-        if (
-          /\/(?:search|collections?|categories?|category|blog|reviews?|stores?|brands?|pages?)\b/.test(
-            path
-          )
-        ) {
-          continue;
-        }
-      } catch {
-        continue;
-      }
-      if (byDomain.has(host)) continue;
+      if (isNonProductSearchUrl(link)) continue;
+      const title = String(r.title ?? "");
+      const relevance = candidateRelevance(product, link, title);
+      const existing = byDomain.get(host);
+      if (existing && existing.relevance >= relevance) continue;
       byDomain.set(host, {
         url: link,
         domain: host,
-        title: String(r.title ?? ""),
+        title,
         sourceName: host.split(".")[0].replace(/^\w/, c => c.toUpperCase()),
+        relevance,
       });
-      if (byDomain.size >= CANDIDATE_POOL) break;
     }
+    const strongCandidates = Array.from(byDomain.values()).filter(
+      candidate => candidate.relevance >= 5
+    ).length;
     if (
-      byDomain.size >= CANDIDATE_POOL ||
       (queryIndex === 0 &&
-        byDomain.size >= MIN_CANDIDATES_TO_SKIP_FALLBACK_QUERY)
+        strongCandidates >= MIN_STRONG_CANDIDATES_TO_SKIP_FALLBACK_QUERY)
     ) {
       break;
     }
   }
 
   return {
-    candidates: Array.from(byDomain.values()),
+    candidates: Array.from(byDomain.values())
+      .sort((left, right) => right.relevance - left.relevance)
+      .slice(0, CANDIDATE_POOL),
     failureCategory:
       failureCategory ??
       (queriesAttempted > 0 && byDomain.size === 0
@@ -569,6 +665,65 @@ function pageHasPrice(content: string): boolean {
   );
 }
 
+export type ProductPageClassification =
+  | "confirmed_product"
+  | "probable_product"
+  | "non_product";
+
+/**
+ * A missing regex-detectable price is not enough to prove that a page is
+ * blocked or irrelevant. Product pages can hide the price in client state or
+ * render it in a format the lightweight detector does not recognize. Only
+ * pages with multiple product signals are allowed through to AI; assignment
+ * still requires a literal price match in the original content below.
+ */
+export function classifyProductPage(
+  content: string,
+  url?: string
+): ProductPageClassification {
+  if (url && isNonProductSearchUrl(url)) return "non_product";
+
+  const productJsonLdCount = Array.from(
+    content.matchAll(/"@type"\s*:\s*"?Product\b/gi)
+  ).length;
+  const structuredProduct =
+    /application\/ld\+json[\s\S]{0,12000}"@type"\s*:\s*(?:"Product"|\[[^\]]*"Product")/i.test(
+      content
+    ) ||
+    /(?:itemtype|data-product-type|product:price:amount|shopify_product)/i.test(
+      content
+    );
+  const productInteraction =
+    /(?:add to (?:cart|bag)|buy now|select (?:options|variant)|choose (?:options|variant)|sku|availability|in stock|out of stock)/i.test(
+      content
+    );
+  const productTitle =
+    /<(?:h1|title)\b[^>]*>[^<]{3,200}<\/(?:h1|title)>/i.test(content) ||
+    /(?:og:title|twitter:title|product:title)/i.test(content);
+  const productPath = /\/(?:products?|items?|dp|p|ip|itm)\b/i.test(url ?? "");
+  const price = pageHasPrice(content);
+  if (structuredProduct && productJsonLdCount <= 1) return "confirmed_product";
+  if (
+    productJsonLdCount > 1 &&
+    !(productTitle && productInteraction && price && productPath)
+  ) {
+    return "non_product";
+  }
+  if (
+    (productTitle && productInteraction) ||
+    (productPath && productInteraction) ||
+    (productTitle && price) ||
+    (productPath && price)
+  ) {
+    return "probable_product";
+  }
+  return "non_product";
+}
+
+export function pageLooksLikeProductPage(content: string, url?: string): boolean {
+  return classifyProductPage(content, url) !== "non_product";
+}
+
 /**
  * The extracted price must literally appear on the page. This is the single
  * cheapest defence against hallucination, prompt echo and mis-parsing: if the
@@ -583,58 +738,6 @@ function priceAppearsOnPage(price: number, content: string): boolean {
     (Number.isInteger(price) && normalized.includes(whole + ".00")) ||
     normalized.includes(whole + ".")
   );
-}
-
-async function findOrCreateCompetitor(
-  userId: string,
-  domain: string,
-  name: string
-) {
-  const database = await db.getDb();
-  if (!database) throw new Error("Database not available");
-
-  const normalizedDomain = normalizeShopDomain(domain);
-  const shop = await getOrCreateShop(normalizedDomain, { database });
-  const existing = await database.query.competitors.findFirst({
-    where: eq(competitors.shopId, shop.id),
-  });
-  if (existing) {
-    await database
-      .insert(accountCompetitorConnections)
-      .values({ userId, competitorId: existing.id, isActive: true })
-      .onConflictDoUpdate({
-        target: [
-          accountCompetitorConnections.userId,
-          accountCompetitorConnections.competitorId,
-        ],
-        set: { isActive: true, updatedAt: new Date() },
-      });
-    return existing;
-  }
-
-  const [created] = await database
-    .insert(competitors)
-    .values({
-      shopId: shop.id,
-      name,
-      domain: normalizedDomain,
-      status: "active",
-      productsTracked: 0,
-      avgPriceDiff: "0.00",
-      scrapeStatus: "pending",
-    })
-    .returning();
-  await database
-    .insert(accountCompetitorConnections)
-    .values({ userId, competitorId: created.id, isActive: true })
-    .onConflictDoUpdate({
-      target: [
-        accountCompetitorConnections.userId,
-        accountCompetitorConnections.competitorId,
-      ],
-      set: { isActive: true, updatedAt: new Date() },
-    });
-  return created;
 }
 
 export const pipelineService = {
@@ -675,7 +778,16 @@ export const pipelineService = {
     const rejectCandidate = async (
       candidate: Candidate,
       reason: string,
-      extraction?: { price?: number | null; confidence?: number | null }
+      extraction?: {
+        price?: number | null;
+        confidence?: number | null;
+        title?: string | null;
+        currency?: string | null;
+        titleSimilarity?: number | null;
+        variantSimilarity?: number | null;
+        deterministicMatch?: boolean;
+        pageClassification?: ProductPageClassification;
+      }
     ) => {
       base.diagnostics.rejected.push({
         url: candidate.url,
@@ -683,13 +795,32 @@ export const pipelineService = {
         reason,
         price: extraction?.price ?? null,
         confidence: extraction?.confidence ?? null,
+        candidateTitle: candidate.title,
+        candidateRelevance: candidate.relevance,
+        pageClassification: extraction?.pageClassification,
+        extractedTitle: extraction?.title,
+        currency: extraction?.currency,
+        titleSimilarity: extraction?.titleSimilarity,
+        variantSimilarity: extraction?.variantSimilarity,
+        deterministicMatch: extraction?.deterministicMatch,
       });
       await step(
         userId,
         productId,
         `${candidate.domain} rejected: ${reason.replace(/_/g, " ")}`,
         PIPELINE_EVENTS.competitorRejected,
-        { url: candidate.url, reason }
+        {
+          url: candidate.url,
+          reason,
+          candidateTitle: candidate.title,
+          candidateRelevance: candidate.relevance,
+          pageClassification: extraction?.pageClassification,
+          extractedTitle: extraction?.title,
+          currency: extraction?.currency,
+          titleSimilarity: extraction?.titleSimilarity,
+          variantSimilarity: extraction?.variantSimilarity,
+          deterministicMatch: extraction?.deterministicMatch,
+        }
       );
     };
 
@@ -767,14 +898,26 @@ export const pipelineService = {
       }
       base.scraped++;
 
-      if (!pageHasPrice(content)) {
-        await step(userId, productId, `${cand.domain} showed no price`);
-        logger.info(
-          { url: cand.url },
-          "Pipeline: no price on page (likely blocked), skipping AI call"
+      const pageClassification = classifyProductPage(content, cand.url);
+      if (pageClassification === "non_product") {
+        await step(
+          userId,
+          productId,
+          `${cand.domain} is not a product detail page`
         );
-        await rejectCandidate(cand, "no_price_on_page");
+        logger.info(
+          { url: cand.url, pageClassification },
+          "Pipeline: non-product page skipped before extraction"
+        );
+        await rejectCandidate(cand, "not_product_page", { pageClassification });
         continue;
+      }
+      if (!pageHasPrice(content)) {
+        await step(userId, productId, `${cand.domain} showed no usable product price`);
+        logger.info(
+          { url: cand.url, pageClassification },
+          "Pipeline: product page has no detectable price; allowing AI inspection"
+        );
       }
       await step(
         userId,
@@ -813,6 +956,11 @@ export const pipelineService = {
             vendor: product.vendor,
             category: product.category,
             price: product.price,
+            gtin: product.gtin,
+            mpn: product.mpn,
+            modelNumber: product.modelNumber,
+            productType: product.productType,
+            tags: product.tags,
           },
           // Keep the successful scrape in this job context. The extraction
           // service hashes the full payload, runs structured extraction first,
@@ -821,6 +969,8 @@ export const pipelineService = {
           competitorUrl: cand.url,
           competitorDomain: cand.domain,
           competitorId: competitor.id,
+          candidateTitle: cand.title,
+          pageClassification,
         });
         extraction = validated.extraction;
         if (
@@ -857,7 +1007,10 @@ export const pipelineService = {
             : !extraction.currency
               ? "missing_currency"
               : "low_confidence";
-        await rejectCandidate(cand, reason, extraction);
+        await rejectCandidate(cand, reason, {
+          ...extraction,
+          pageClassification,
+        });
         continue;
       }
 
@@ -870,7 +1023,10 @@ export const pipelineService = {
         (extraction.price < merchantPrice * 0.25 ||
           extraction.price > merchantPrice * 4)
       ) {
-        await rejectCandidate(cand, "implausible_price", extraction);
+        await rejectCandidate(cand, "implausible_price", {
+          ...extraction,
+          pageClassification,
+        });
         logger.warn(
           { url: cand.url, price: extraction.price, merchantPrice },
           "Pipeline: extracted price outside plausible band, rejecting"
@@ -883,7 +1039,10 @@ export const pipelineService = {
           { url: cand.url, price: extraction.price },
           "Pipeline: extracted price is not present on the page, rejecting"
         );
-        await rejectCandidate(cand, "price_not_present_on_page", extraction);
+        await rejectCandidate(cand, "price_not_present_on_page", {
+          ...extraction,
+          pageClassification,
+        });
         continue;
       }
 
@@ -1070,7 +1229,11 @@ export const pipelineService = {
       checked++;
 
       const content = await scrapePage(link.url);
-      if (!content || !pageHasPrice(content)) continue;
+      if (
+        !content ||
+        (!pageHasPrice(content) && !pageLooksLikeProductPage(content, link.url))
+      )
+        continue;
 
       let price: number | null = null;
       try {

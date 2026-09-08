@@ -213,6 +213,23 @@ export const competitorRouter = router({
       return product;
     }),
 
+  addManualProduct: protectedProcedure
+    .input(
+      z.object({
+        productId: z.string().uuid(),
+        competitorUrl: z.string().url(),
+        price: z
+          .string()
+          .regex(/^\d+(\.\d{1,2})?$/)
+          .refine(value => Number(value) > 0, "Price must be greater than zero"),
+        currency: z.string().length(3).default("USD"),
+        storeId: z.string().uuid().optional(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      return competitorService.addManualProduct(ctx.user!.id, input);
+    }),
+
   // ── Scrape competitor site for products ──────────────────────────────────
   updateProduct: protectedProcedure
     .input(

@@ -60,37 +60,53 @@ export function ProductEvidence({ productId, storeId }: { productId: string; sto
           Loading…
         </div>
       ) : steps.length === 0 ? (
-        <div className="px-5 py-8 text-center text-[14px] text-muted-foreground">
-          This product has not been checked yet. It is checked once a day, and
-          the shops we looked at will be listed here afterwards.
+        <div className="space-y-3 px-5 py-8 text-center text-[14px] text-muted-foreground">
+          {data?.manualPriceAdded && (
+            <p className="text-left text-[13px] text-amber-300">
+              A price was added manually by the merchant. It has not been
+              independently verified.
+            </p>
+          )}
+          <p>
+            This product has not been checked yet. It is checked once a day,
+            and the shops we looked at will be listed here afterwards.
+          </p>
         </div>
       ) : (
-        <ol className="divide-y divide-outline-variant/20">
-          {steps.map((s, i) => {
-            const kind = classify(s.detail);
-            const { icon: Icon, className } = MARK[kind];
-            return (
-              <li
-                key={`${s.at}-${i}`}
-                className="flex items-start gap-3 px-5 py-2.5"
-              >
-                <Icon className={cn("mt-0.5 h-4 w-4 shrink-0", className)} />
-                <span
-                  className={cn(
-                    "text-[14px]",
-                    kind === "match"
-                      ? "font-medium"
-                      : kind === "look"
-                        ? "text-muted-foreground"
-                        : ""
-                  )}
+        <>
+          {data?.manualPriceAdded && (
+            <div className="border-b border-outline-variant/20 px-5 py-3 text-[13px] text-amber-300">
+              Price added manually by the merchant — not independently
+              verified.
+            </div>
+          )}
+          <ol className="divide-y divide-outline-variant/20">
+            {steps.map((s, i) => {
+              const kind = classify(s.detail);
+              const { icon: Icon, className } = MARK[kind];
+              return (
+                <li
+                  key={`${s.at}-${i}`}
+                  className="flex items-start gap-3 px-5 py-2.5"
                 >
-                  {s.detail}
-                </span>
-              </li>
-            );
-          })}
-        </ol>
+                  <Icon className={cn("mt-0.5 h-4 w-4 shrink-0", className)} />
+                  <span
+                    className={cn(
+                      "text-[14px]",
+                      kind === "match"
+                        ? "font-medium"
+                        : kind === "look"
+                          ? "text-muted-foreground"
+                          : ""
+                    )}
+                  >
+                    {s.detail}
+                  </span>
+                </li>
+              );
+            })}
+          </ol>
+        </>
       )}
     </div>
   );

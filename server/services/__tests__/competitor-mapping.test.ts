@@ -9,9 +9,13 @@ import {
   accountShopConnections,
   accountCompetitorConnections,
   competitors,
+  priceHistory,
 } from "../../../drizzle/schema";
 import { requireDb } from "../../_core/db-assert";
-import { getOrCreateAccountShopConnection, getOrCreateShop } from "../shop.service";
+import {
+  addManualCompetitorProduct,
+} from "../competitor.service";
+import { getOrCreateAccountShopConnection, getOrCreateShop, normalizeShopDomain } from "../shop.service";
 
 async function createUser(email: string): Promise<string> {
   const db = await requireDb();
@@ -154,4 +158,67 @@ describe("competitor product mappings", () => {
     });
   });
 
+  it("reuses an existing competitor and records a manual price", async () => {
+    const product = await productService.create({
+      userId,
+      storeId,
+      title: "Manual Mapping Product",
+      price: "29.99",
+    });
+    const competitor = await createCompetitor(userId, "Reusable Market");
+
+    const result = await addManualCompetitorProduct(userId, {
+      productId: product.id,
+      competitorUrl: `https://www.${competitor.domain}/products/item`,
+      price: "27.49",
+      storeId,
+    });
+
+    expect(result).toMatchObject({
+      competitorId: competitor.id,
+      productId: product.id,
+      price: "27.49",
+      matchMethod: "manual",
+      isVerified: false,
+    });
+
+    const history = await dbRowsForManualPrice(result.id);
+    expect(history).toHaveLength(1);
+    expect(history[0].source).toBe("manual");
+  });
+
+  it("rolls back a newly created competitor when adding its product fails", async () => {
+    const domain = `rollback-${Date.now()}-${Math.random().toString(36).slice(2)}.example.com`;
+
+    await expect(
+      addManualCompetitorProduct(userId, {
+        productId: "00000000-0000-0000-0000-000000000099",
+        competitorUrl: `https://${domain}/product`,
+        price: "12.00",
+        storeId,
+      })
+    ).rejects.toMatchObject({ code: "NOT_FOUND" });
+
+    const db = await requireDb();
+    const normalizedDomain = normalizeShopDomain(domain);
+    const competitorRows = await db
+      .select({ id: competitors.id })
+      .from(competitors)
+      .where(eq(competitors.domain, normalizedDomain));
+    const shopRows = await db
+      .select({ id: shops.id })
+      .from(shops)
+      .where(eq(shops.normalizedDomain, normalizedDomain));
+    expect(competitorRows).toHaveLength(0);
+    expect(shopRows).toHaveLength(0);
+  });
+
 });
+
+async function dbRowsForManualPrice(competitorProductId: string) {
+  const db = await requireDb();
+  return db
+    .select({ source: priceHistory.source })
+    .from(priceHistory)
+    .where(eq(priceHistory.competitorProductId, competitorProductId));
+}

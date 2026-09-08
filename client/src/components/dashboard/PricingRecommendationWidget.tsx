@@ -1,8 +1,19 @@
-import { useMemo, useEffect } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useLocation } from "wouter";
 import { trpc } from "@/lib/trpc";
 import { useShopContext } from "@/contexts/ShopContext";
 import { cn } from "@/lib/utils";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { toast } from "sonner";
 import {
   TrendingDown,
   TrendingUp,
@@ -33,20 +44,45 @@ export function PricingRecommendationWidget({
   productId,
 }: PricingRecommendationWidgetProps) {
   const { selectedShopId } = useShopContext();
+  const utils = trpc.useUtils();
+  const [changeDialogOpen, setChangeDialogOpen] = useState(false);
+  const [changeError, setChangeError] = useState<string | null>(null);
+  const [preparedRecommendation, setPreparedRecommendation] = useState<{
+    id: string;
+    recommendedPrice: number;
+  } | null>(null);
   const {
     data: ensuredAnalysis,
     isError: hasEnsureError,
     isPending: isEnsuringAnalysis,
     mutate: ensureAnalysis,
   } = trpc.pricingEngine.ensureAnalysis.useMutation();
-  const generateMutation =
-    trpc.pricingEngine.generateRecommendation.useMutation();
+  const generateMutation = trpc.pricingEngine.generateRecommendation.useMutation({
+    onSuccess: () => {
+      void utils.recommendations.getByProduct.invalidate({
+        productId,
+        storeId: selectedShopId ?? undefined,
+      });
+    },
+  });
+  const persistedRecommendations =
+    trpc.recommendations.getByProduct.useQuery(
+      { productId, storeId: selectedShopId ?? undefined },
+      { enabled: !!productId }
+    );
+  const implementMutation = trpc.recommendations.implement.useMutation();
 
   useEffect(() => {
     if (productId && !ensuredAnalysis) {
       ensureAnalysis({ productId, storeId: selectedShopId ?? undefined });
     }
   }, [ensureAnalysis, ensuredAnalysis, productId, selectedShopId]);
+
+  useEffect(() => {
+    setPreparedRecommendation(null);
+    setChangeDialogOpen(false);
+    setChangeError(null);
+  }, [productId, selectedShopId]);
 
   const result = ensuredAnalysis;
   const snapshot = result?.marketSnapshot ?? null;
@@ -103,12 +139,107 @@ export function PricingRecommendationWidget({
   const suggested = recommendation?.recommendedPrice ?? null;
   const yours = snapshot?.merchantPrice ?? 0;
   const floor = recommendation?.minimumAllowedPrice ?? 0;
+  const persistedRecommendation =
+    suggested == null
+      ? null
+      : persistedRecommendations.data?.find(
+          candidate =>
+            candidate.status === "pending" &&
+            Math.abs(Number(candidate.recommendedPrice) - suggested) < 0.01
+        ) ?? null;
+  const isPriceChangePending =
+    generateMutation.isPending || implementMutation.isPending;
   const direction =
     suggested == null || Math.abs(suggested - yours) < 0.01
       ? "hold"
       : suggested < yours
         ? "cut"
         : "rise";
+
+  const handleConfirmPriceChange = async () => {
+    if (suggested == null || isPriceChangePending) return;
+
+    setChangeError(null);
+
+    try {
+      let recommendationId: string | undefined =
+        persistedRecommendation?.id;
+      if (
+        !recommendationId &&
+        preparedRecommendation &&
+        Math.abs(preparedRecommendation.recommendedPrice - suggested) < 0.01
+      ) {
+        recommendationId = preparedRecommendation.id;
+      }
+      const generatedRecommendation = generateMutation.data?.recommendation;
+      if (
+        !recommendationId &&
+        generatedRecommendation?.id &&
+        Math.abs(Number(generatedRecommendation.recommendedPrice) - suggested) <
+          0.01
+      ) {
+        recommendationId = generatedRecommendation.id;
+      }
+      if (!recommendationId) {
+        const generated = await generateMutation.mutateAsync({
+          productId,
+          storeId: selectedShopId ?? undefined,
+        });
+        recommendationId = generated.recommendation?.id;
+        if (recommendationId && generated.recommendation) {
+          setPreparedRecommendation({
+            id: recommendationId,
+            recommendedPrice: Number(generated.recommendation.recommendedPrice),
+          });
+        }
+      }
+
+      if (!recommendationId) {
+        throw new Error("Could not prepare this recommendation for Shopify.");
+      }
+
+      await implementMutation.mutateAsync({
+        id: recommendationId,
+        pushToStore: true,
+        storeId: selectedShopId ?? undefined,
+      });
+
+      await Promise.all([
+        utils.products.getById.invalidate({
+          id: productId,
+          storeId: selectedShopId ?? undefined,
+        }),
+        utils.products.list.invalidate(
+          selectedShopId ? { storeId: selectedShopId } : undefined
+        ),
+        utils.recommendations.getByProduct.invalidate({
+          productId,
+          storeId: selectedShopId ?? undefined,
+        }),
+        utils.recommendations.list.invalidate(
+          selectedShopId ? { storeId: selectedShopId } : undefined
+        ),
+        utils.recommendations.stats.invalidate(
+          selectedShopId ? { storeId: selectedShopId } : undefined
+        ),
+        utils.pricingEngine.dashboardStats.invalidate(
+          selectedShopId ? { storeId: selectedShopId } : undefined
+        ),
+        utils.intelligence.actionCenter.invalidate(),
+      ]);
+
+      setChangeDialogOpen(false);
+      setPreparedRecommendation(null);
+      toast.success(`Price updated in Shopify: $${suggested.toFixed(2)}`);
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : "Could not update the price in Shopify.";
+      setChangeError(message);
+      toast.error(`Price was not changed: ${message}`);
+    }
+  };
 
   return (
     <div className="space-y-4">
@@ -227,9 +358,22 @@ export function PricingRecommendationWidget({
               .
             </p>
           )}
+          {suggested != null && (
+            <button
+              type="button"
+              className="w-full rounded bg-primary px-4 py-2.5 text-[14px] font-semibold text-primary-foreground transition-all hover:brightness-110 disabled:opacity-50"
+              onClick={() => {
+                setChangeError(null);
+                setChangeDialogOpen(true);
+              }}
+              disabled={isPriceChangePending}
+            >
+              Change my price to ${suggested.toFixed(2)}
+            </button>
+          )}
           <button
             type="button"
-            className="w-full rounded bg-primary px-4 py-2.5 text-[14px] font-semibold text-primary-foreground transition-all hover:brightness-110 disabled:opacity-50"
+            className="w-full rounded border border-outline-variant bg-transparent px-4 py-2.5 text-[14px] font-semibold text-foreground transition-all hover:bg-surface-container-high disabled:opacity-50"
             onClick={() =>
               generateMutation.mutate({
                 productId,
@@ -257,6 +401,59 @@ export function PricingRecommendationWidget({
           )}
         </div>
       </div>
+
+      <AlertDialog
+        open={changeDialogOpen}
+        onOpenChange={open => {
+          if (!isPriceChangePending) {
+            setChangeDialogOpen(open);
+            if (open) setChangeError(null);
+          }
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Change your shop price?</AlertDialogTitle>
+            <AlertDialogDescription>
+              We&apos;ll update this product&apos;s price in your connected Shopify
+              shop. The change will be visible to shoppers.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <div className="rounded-md border border-outline-variant bg-surface-container-lowest px-4 py-3">
+            <p className="text-[14px] text-muted-foreground">
+              Current price:{" "}
+              <span className="font-mono font-semibold text-foreground">
+                ${yours.toFixed(2)}
+              </span>
+            </p>
+            <p className="mt-1 text-[14px] text-muted-foreground">
+              New price:{" "}
+              <span className="font-mono font-semibold text-primary">
+                ${suggested?.toFixed(2) ?? "—"}
+              </span>
+            </p>
+          </div>
+          {changeError && (
+            <p className="text-sm text-[var(--destructive)]" role="alert">
+              {changeError}
+            </p>
+          )}
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isPriceChangePending}>
+              Cancel
+            </AlertDialogCancel>
+            <AlertDialogAction
+              disabled={isPriceChangePending || suggested == null}
+              onClick={event => {
+                event.preventDefault();
+                void handleConfirmPriceChange();
+              }}
+            >
+              {isPriceChangePending ? "Updating Shopify…" : "Change price"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

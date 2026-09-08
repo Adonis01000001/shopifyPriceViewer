@@ -11,6 +11,7 @@ import {
   ne,
 } from "drizzle-orm";
 import { requireDb } from "../_core/db-assert";
+import type { AppDatabase, AppDatabaseTransaction } from "../db";
 import { TRPCError } from "@trpc/server";
 import {
   competitors,
@@ -28,10 +29,16 @@ import {
 } from "../../drizzle/schema";
 import { getOrCreateShop, normalizeShopDomain } from "./shop.service";
 
-async function assertOwnedStore(userId: string, storeId?: string) {
+type CompetitorDatabase = AppDatabase | AppDatabaseTransaction;
+
+async function assertOwnedStore(
+  userId: string,
+  storeId?: string,
+  database?: CompetitorDatabase
+) {
   if (!storeId) return;
-  const database = await requireDb();
-  const [connection] = await database
+  const db = database ?? (await requireDb());
+  const [connection] = await db
     .select({ id: accountShopConnections.id })
     .from(accountShopConnections)
     .where(and(eq(accountShopConnections.id, storeId), eq(accountShopConnections.userId, userId), eq(accountShopConnections.isActive, true)))
@@ -39,14 +46,14 @@ async function assertOwnedStore(userId: string, storeId?: string) {
   if (!connection) throw new TRPCError({ code: "FORBIDDEN", message: "Store not found" });
 }
 
-export async function findOrCreateCompetitor(
+async function resolveCompetitorWithDatabase(
+  database: CompetitorDatabase,
   userId: string,
   rawDomain: string,
   name: string,
   storeId?: string
 ): Promise<Competitor> {
-  const database = await requireDb();
-  await assertOwnedStore(userId, storeId);
+  await assertOwnedStore(userId, storeId, database);
   const domain = normalizeShopDomain(rawDomain);
   const shop = await getOrCreateShop(domain, { database });
   const [existing] = await database
@@ -93,6 +100,161 @@ export async function findOrCreateCompetitor(
       set: { isActive: true, updatedAt: new Date() },
     });
   return created;
+}
+
+export async function findOrCreateCompetitor(
+  userId: string,
+  rawDomain: string,
+  name: string,
+  storeId?: string
+): Promise<Competitor> {
+  const database = await requireDb();
+  return resolveCompetitorWithDatabase(
+    database,
+    userId,
+    rawDomain,
+    name,
+    storeId
+  );
+}
+
+async function recalcTrackedCountWithDatabase(
+  database: CompetitorDatabase,
+  competitorId: string
+): Promise<void> {
+  const [{ count }] = await database
+    .select({ count: sql<number>`count(*)::int` })
+    .from(competitorProducts)
+    .where(eq(competitorProducts.competitorId, competitorId));
+  await database
+    .update(competitors)
+    .set({ productsTracked: count, updatedAt: new Date() })
+    .where(eq(competitors.id, competitorId));
+}
+
+async function addProductWithDatabase(
+  database: CompetitorDatabase,
+  userId: string,
+  data: InsertCompetitorProduct & { storeId?: string }
+): Promise<CompetitorProduct> {
+  const { storeId, ...linkData } = data;
+  await assertOwnedStore(userId, storeId, database);
+  const [ownedCompetitor] = await database
+    .select({ id: competitors.id })
+    .from(competitors)
+    .where(
+      and(
+        eq(competitors.id, data.competitorId),
+        inArray(
+          competitors.id,
+          database
+            .select({ id: accountCompetitorConnections.competitorId })
+            .from(accountCompetitorConnections)
+            .where(
+              and(
+                eq(accountCompetitorConnections.userId, userId),
+                eq(accountCompetitorConnections.isActive, true)
+              )
+            )
+        )
+      )
+    )
+    .limit(1);
+  if (!ownedCompetitor) {
+    throw new TRPCError({
+      code: "NOT_FOUND",
+      message: "Competitor not found",
+    });
+  }
+  if (data.productId) {
+    const [ownedProduct] = await database
+      .select({ id: products.id })
+      .from(products)
+      .where(
+        and(
+          eq(products.id, data.productId),
+          eq(products.userId, userId),
+          storeId ? eq(products.storeId, storeId) : undefined
+        )
+      )
+      .limit(1);
+    if (!ownedProduct) {
+      throw new TRPCError({
+        code: "NOT_FOUND",
+        message: "Product not found",
+      });
+    }
+  }
+  const [existingLink] = await database
+    .select({ id: competitorProducts.id })
+    .from(competitorProducts)
+    .where(
+      and(
+        eq(competitorProducts.competitorId, data.competitorId),
+        eq(competitorProducts.productId, data.productId)
+      )
+    )
+    .limit(1);
+  if (existingLink) {
+    throw new TRPCError({
+      code: "CONFLICT",
+      message: "This product is already linked to that competitor",
+    });
+  }
+  const result = await database
+    .insert(competitorProducts)
+    .values(linkData)
+    .returning();
+  if (!result[0]) throw new Error("Failed to add competitor product");
+
+  if (data.productId) {
+    await database.insert(priceHistory).values({
+      productId: data.productId,
+      competitorProductId: result[0].id,
+      price: linkData.price,
+      currency: linkData.currency ?? "USD",
+      source: "manual",
+    });
+  }
+  await recalcTrackedCountWithDatabase(database, data.competitorId);
+  return result[0];
+}
+
+export type ManualCompetitorProductInput = {
+  productId: string;
+  competitorUrl: string;
+  price: string;
+  currency?: string;
+  storeId?: string;
+};
+
+export async function addManualCompetitorProduct(
+  userId: string,
+  input: ManualCompetitorProductInput
+): Promise<CompetitorProduct> {
+  const database = await requireDb();
+  return database.transaction(async transaction => {
+    const competitor = await resolveCompetitorWithDatabase(
+      transaction,
+      userId,
+      input.competitorUrl,
+      normalizeShopDomain(input.competitorUrl),
+      input.storeId
+    );
+    return addProductWithDatabase(transaction, userId, {
+      competitorId: competitor.id,
+      productId: input.productId,
+      competitorProductUrl: input.competitorUrl,
+      competitorProductTitle: normalizeShopDomain(input.competitorUrl),
+      price: input.price,
+      currency: input.currency ?? "USD",
+      matchScore: 1,
+      matchMethod: "manual",
+      isVerified: false,
+      isActive: true,
+      storeId: input.storeId,
+    });
+  });
 }
 
 /**
@@ -480,89 +642,14 @@ export const competitorService = {
     data: InsertCompetitorProduct & { storeId?: string }
   ): Promise<CompetitorProduct> {
     const database = await requireDb();
-    const { storeId, ...linkData } = data;
-    await assertOwnedStore(userId, storeId);
-    const [ownedCompetitor] = await database
-      .select({ id: competitors.id })
-      .from(competitors)
-      .where(
-        and(
-          eq(competitors.id, data.competitorId),
-          inArray(
-            competitors.id,
-            database
-              .select({ id: accountCompetitorConnections.competitorId })
-              .from(accountCompetitorConnections)
-              .where(
-                and(
-                  eq(accountCompetitorConnections.userId, userId),
-                  eq(accountCompetitorConnections.isActive, true)
-                )
-              )
-          )
-        )
-      )
-      .limit(1);
-    if (!ownedCompetitor) {
-      throw new TRPCError({
-        code: "NOT_FOUND",
-        message: "Competitor not found",
-      });
-    }
-    if (data.productId) {
-      const [ownedProduct] = await database
-        .select({ id: products.id })
-        .from(products)
-        .where(
-          and(
-            eq(products.id, data.productId),
-            eq(products.userId, userId),
-            storeId ? eq(products.storeId, storeId) : undefined
-          )
-        )
-        .limit(1);
-      if (!ownedProduct) {
-        throw new TRPCError({
-          code: "NOT_FOUND",
-          message: "Product not found",
-        });
-      }
-    }
-    const [existingLink] = await database
-      .select({ id: competitorProducts.id })
-      .from(competitorProducts)
-      .where(
-        and(
-          eq(competitorProducts.competitorId, data.competitorId),
-          eq(competitorProducts.productId, data.productId)
-        )
-      )
-      .limit(1);
-    if (existingLink) {
-      throw new TRPCError({
-        code: "CONFLICT",
-        message: "This product is already linked to that competitor",
-      });
-    }
-    const result = await database
-      .insert(competitorProducts)
-      .values(linkData)
-      .returning();
-    // Record initial price in price history
-    if (data.productId) {
-      await database.insert(priceHistory).values({
-        productId: data.productId,
-        competitorProductId: result[0].id,
-        price: linkData.price,
-        currency: linkData.currency ?? "USD",
-        source: "manual",
-      });
-    }
-    // Recalculate productsTracked
-    if (data.competitorId) {
-      await this.recalcTrackedCount(data.competitorId);
-    }
-    return result[0];
+    return addProductWithDatabase(database, userId, data);
+  },
+
+  async addManualProduct(
+    userId: string,
+    input: ManualCompetitorProductInput
+  ): Promise<CompetitorProduct> {
+    return addManualCompetitorProduct(userId, input);
   },
 
   async removeProduct(
@@ -611,14 +698,7 @@ export const competitorService = {
 
   async recalcTrackedCount(competitorId: string): Promise<void> {
     const database = await requireDb();
-    const [{ count }] = await database
-      .select({ count: sql<number>`count(*)::int` })
-      .from(competitorProducts)
-      .where(eq(competitorProducts.competitorId, competitorId));
-    await database
-      .update(competitors)
-      .set({ productsTracked: count, updatedAt: new Date() })
-      .where(eq(competitors.id, competitorId));
+    await recalcTrackedCountWithDatabase(database, competitorId);
   },
 
   async updateProduct(

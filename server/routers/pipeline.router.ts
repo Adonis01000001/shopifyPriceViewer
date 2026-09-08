@@ -5,6 +5,7 @@ import { requireDb } from "../_core/db-assert";
 import {
   activityLogs,
   accountShopConnections,
+  competitorProducts,
   products,
 } from "../../drizzle/schema";
 import { PIPELINE_ACTIONS } from "../services/pipeline.service";
@@ -350,6 +351,21 @@ export const pipelineRouter = router({
         .orderBy(desc(activityLogs.createdAt))
         .limit(200);
 
+      const [manualPrice] = await database
+        .select({ id: competitorProducts.id })
+        .from(competitorProducts)
+        .innerJoin(products, eq(competitorProducts.productId, products.id))
+        .where(
+          and(
+            eq(competitorProducts.productId, input.productId),
+            eq(products.userId, ctx.user!.id),
+            input.storeId ? eq(products.storeId, input.storeId) : undefined,
+            eq(competitorProducts.matchMethod, "manual"),
+            eq(competitorProducts.isActive, true)
+          )
+        )
+        .limit(1);
+
       // Newest first. Each pass opens with the market line, so everything up
       // to and including the first one found is the most recent pass.
       const latest: typeof rows = [];
@@ -361,6 +377,7 @@ export const pipelineRouter = router({
 
       return {
         checkedAt: latest[latest.length - 1]?.createdAt ?? null,
+        manualPriceAdded: Boolean(manualPrice),
         steps: latest.map(r => ({ detail: r.detail ?? "", at: r.createdAt })),
       };
     }),

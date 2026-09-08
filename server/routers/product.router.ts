@@ -387,6 +387,8 @@ export const productRouter = router({
           currency: competitorProducts.currency,
           url: competitorProducts.competitorProductUrl,
           matchScore: competitorProducts.matchScore,
+          matchMethod: competitorProducts.matchMethod,
+          isVerified: competitorProducts.isVerified,
           lastScrapedAt: competitorProducts.lastScrapedAt,
         })
         .from(competitorProducts)

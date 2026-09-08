@@ -82,6 +82,8 @@ export type InvokeParams = {
   provider?: LLMProvider;
   /** Force a specific model, bypassing env defaults. Used by the fallback rotation. */
   modelOverride?: string;
+  /** Cap retries for a caller without changing the global provider policy. */
+  maxRetries?: number;
   /** Validate a provider response before accepting it. Invalid output falls through to the next model. */
   resultValidator?: (result: InvokeResult) => void;
 };
@@ -99,6 +101,10 @@ export type InvokeResult = {
   id: string;
   created: number;
   model: string;
+  /** Model requested from the provider, before any provider-side routing. */
+  requestedModel?: string;
+  /** Model reported by the provider response, when available. */
+  actualModel?: string;
   choices: Array<{
     index: number;
     message: {
@@ -133,8 +139,11 @@ export type ResponseFormat =
 export type LLMFailureCategory =
   | "temporary_rate_limit"
   | "daily_quota_exhausted"
+  | "timeout"
+  | "network_error"
   | "model_failed"
-  | "validation_failed";
+  | "validation_failed"
+  | "configuration_error";
 
 export interface ModelState {
   model: string;
@@ -144,6 +153,10 @@ export interface ModelState {
 
 export interface LLMAttemptDiagnostic {
   model: string;
+  requestedModel?: string;
+  actualModel?: string;
+  attempt?: number;
+  outcome?: string;
   category: LLMFailureCategory | "unavailable";
   status?: number;
   message: string;
@@ -172,9 +185,17 @@ export class LLMRequestError extends Error {
 }
 
 export class LLMValidationError extends Error {
-  constructor(message = "LLM response failed validation") {
+  readonly retryable: boolean;
+  readonly outcome?: string;
+
+  constructor(
+    message = "LLM response failed validation",
+    options?: { retryable?: boolean; outcome?: string }
+  ) {
     super(message);
     this.name = "LLMValidationError";
+    this.retryable = options?.retryable ?? false;
+    this.outcome = options?.outcome;
   }
 }
 
@@ -184,9 +205,11 @@ export class AllLLMModelsFailedError extends Error {
 
   constructor(attempts: LLMAttemptDiagnostic[]) {
     super(
-      `All usable LLM models failed (${attempts
-        .map(attempt => `${attempt.model}:${attempt.category}`)
-        .join(", ")})`
+      attempts.find(attempt => attempt.category === "configuration_error")
+        ?.message ??
+        `All usable LLM models failed (${attempts
+          .map(attempt => `${attempt.model}:${attempt.category}`)
+          .join(", ")})`
     );
     this.name = "AllLLMModelsFailedError";
     this.attempts = attempts;
@@ -300,6 +323,15 @@ function safeErrorMessage(error: unknown): string {
 export function classifyLLMFailure(error: unknown): LLMFailureCategory {
   if (error instanceof LLMValidationError) return "validation_failed";
 
+  if (
+    error instanceof Error &&
+    /No (?:OpenAI|OpenRouter) API key configured\. Set [A-Z_]+\./.test(
+      error.message
+    )
+  ) {
+    return "configuration_error";
+  }
+
   const status = (error as { status?: number } | undefined)?.status;
   const requestError = error instanceof LLMRequestError ? error : undefined;
   const text =
@@ -318,6 +350,22 @@ export function classifyLLMFailure(error: unknown): LLMFailureCategory {
 
   if (status === 429 && dailyQuotaSignal) return "daily_quota_exhausted";
   if (status === 429) return "temporary_rate_limit";
+  if (
+    error instanceof Error &&
+    (error.name === "AbortError" ||
+      /timeout|timed out|deadline exceeded/i.test(error.message))
+  ) {
+    return "timeout";
+  }
+  if (
+    error instanceof TypeError ||
+    (error instanceof Error &&
+      /fetch failed|network|econnreset|enotfound|eai_again|socket hang up/i.test(
+        error.message
+      ))
+  ) {
+    return "network_error";
+  }
   return "model_failed";
 }
 
@@ -599,8 +647,17 @@ export async function invokeLLM(params: InvokeParams): Promise<InvokeResult> {
       }
 
       const result = (await response.json()) as InvokeResult;
+      const actualModel =
+        typeof result.model === "string" && result.model.length > 0
+          ? result.model
+          : undefined;
       llmMetrics.successes++;
-      return result;
+      return {
+        ...result,
+        model: actualModel ?? model,
+        requestedModel: model,
+        actualModel,
+      };
     } catch (error) {
       llmMetrics.failures++;
       throw error;
@@ -634,6 +691,20 @@ export async function invokeLLMWithFallback(
   const diagnostics: LLMAttemptDiagnostic[] = [];
   let attemptedModelCount = 0;
 
+  const configuredApiKey =
+    params.apiKey || (useOpenRouter ? ENV.openrouterApiKey : ENV.openaiApiKey);
+  if (!configuredApiKey) {
+    const keyName = useOpenRouter ? "OPENROUTER_API_KEY" : "OPENAI_API_KEY";
+    const message = `AI extraction unavailable: ${keyName} is not configured`;
+    throw new AllLLMModelsFailedError(
+      candidates.map(model => ({
+        model,
+        category: "configuration_error" as const,
+        message,
+      }))
+    );
+  }
+
   for (const model of candidates) {
     const now = Date.now();
     const state = getModelState(model, now);
@@ -661,9 +732,14 @@ export async function invokeLLMWithFallback(
     }
     attemptedModelCount++;
 
-    for (let attempt = 0; attempt <= ENV.llmMaxRetries; attempt++) {
+    const maxRetries = Math.max(
+      0,
+      Math.min(ENV.llmMaxRetries, params.maxRetries ?? ENV.llmMaxRetries)
+    );
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      let result: InvokeResult | undefined;
       try {
-        const result = await invokeLLM({ ...params, modelOverride: model });
+        result = await invokeLLM({ ...params, modelOverride: model });
         params.resultValidator?.(result);
         return result;
       } catch (error) {
@@ -671,6 +747,11 @@ export async function invokeLLMWithFallback(
         const status = (error as { status?: number } | undefined)?.status;
         diagnostics.push({
           model,
+          requestedModel: model,
+          actualModel: result?.actualModel,
+          attempt: attempt + 1,
+          outcome:
+            error instanceof LLMValidationError ? error.outcome : undefined,
           category,
           status,
           message: safeErrorMessage(error),
@@ -703,7 +784,7 @@ export async function invokeLLMWithFallback(
 
         if (category === "temporary_rate_limit") {
           llmMetrics.rateLimits++;
-          if (attempt < ENV.llmMaxRetries) {
+          if (attempt < maxRetries) {
             const waitMs = ENV.llmBackoffBaseMs * Math.pow(2, attempt);
             logger.warn(
               { model, attempt: attempt + 1, waitMs, reason: category },
@@ -712,6 +793,35 @@ export async function invokeLLMWithFallback(
             await new Promise(resolve => setTimeout(resolve, waitMs));
             continue;
           }
+        }
+
+        if (
+          category === "validation_failed" &&
+          error instanceof LLMValidationError &&
+          (error.outcome === "AI_PRODUCT_FOUND_VALIDATION_REJECTED" ||
+            error.outcome === "AI_PRICE_AMBIGUOUS")
+        ) {
+          throw new AllLLMModelsFailedError(diagnostics);
+        }
+
+        if (
+          category === "validation_failed" &&
+          error instanceof LLMValidationError &&
+          error.retryable &&
+          attempt < maxRetries
+        ) {
+          const waitMs = ENV.llmBackoffBaseMs * Math.pow(2, attempt);
+          logger.warn(
+            {
+              model,
+              attempt: attempt + 1,
+              waitMs,
+              reason: error.outcome ?? "structured_output_format",
+            },
+            "LLM structured output retry"
+          );
+          await new Promise(resolve => setTimeout(resolve, waitMs));
+          continue;
         }
 
         // Provider/model failures and malformed model output are not made more

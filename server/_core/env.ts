@@ -400,21 +400,21 @@ export const ENV = {
   // Serper - cheaper Google search provider. Preferred over SerpApi when set.
   serperApiKey: process.env.SERPER_API_KEY ?? "",
 
-  // OpenAI — AI validation + extraction
+  // OpenAI — retained for callers that explicitly select OpenAI
   openaiApiKey: process.env.OPENAI_API_KEY ?? "",
   openaiModel: process.env.OPENAI_MODEL ?? "gpt-5.6-luna",
   openaiModels: parseModelList(process.env.OPENAI_MODELS),
 
-  // OpenRouter remains available for non-product-extraction workloads that
-  // explicitly opt into it. Product extraction is provider-locked to OpenAI.
+  // OpenRouter — product extraction provider and other OpenAI-compatible work
   openrouterModels: parseModelList(process.env.OPENROUTER_MODELS),
 
-  // OpenRouter — alternative LLM provider (OpenAI-compatible, free models available)
+  // OpenRouter — OpenAI-compatible provider with free model routing available
   openrouterApiKey: process.env.OPENROUTER_API_KEY ?? "",
   openrouterBaseUrl:
     process.env.OPENROUTER_BASE_URL ?? "https://openrouter.ai/api/v1",
   openrouterModel:
-    process.env.OPENROUTER_MODEL ?? "mistralai/mistral-7b-instruct:free",
+    process.env.OPENROUTER_MODEL ??
+    "nvidia/nemotron-3-super-120b-a12b:free",
   llmMaxConcurrency,
   llmMaxRetries,
   llmBackoffBaseMs,

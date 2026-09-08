@@ -42,11 +42,34 @@ export interface ExtractionInput {
     vendor?: string | null;
     category?: string | null;
     price?: string | null;
+    gtin?: string | null;
+    mpn?: string | null;
+    modelNumber?: string | null;
+    productType?: string | null;
+    tags?: string | null;
   };
   competitorPageContent: string;
   competitorUrl: string;
   competitorDomain: string;
   competitorId?: string;
+  candidateTitle?: string | null;
+  pageClassification?: string | null;
+}
+
+export type PriceAssociation = "exact" | "strong" | "ambiguous" | "unknown";
+
+export interface ExtractedPriceEvidence {
+  amount: number;
+  currency: string;
+  association: PriceAssociation;
+}
+
+export interface ExtractedProductCandidate {
+  title: string | null;
+  brand: string | null;
+  model: string | null;
+  variant: string | null;
+  prices: ExtractedPriceEvidence[];
 }
 
 export interface ExtractionResult {
@@ -64,6 +87,14 @@ export interface ExtractionResult {
   description: string | null;
   features: string[];
   reasoning: string;
+  targetProductFound: boolean;
+  brand: string | null;
+  model: string | null;
+  generation: string | null;
+  capacity: string | null;
+  variant: string | null;
+  priceAssociation: PriceAssociation;
+  productCandidates: ExtractedProductCandidate[];
   /** A conservative, non-LLM identity confirmation from structured evidence. */
   deterministicMatch?: boolean;
 }
@@ -79,6 +110,20 @@ export type ExtractionFailureCode =
   | "DETERMINISTIC_EXTRACTION_FAILED"
   | "LLM_VALIDATION_FAILED"
   | "ALL_LLM_MODELS_FAILED";
+
+export type AIExtractionOutcome =
+  | "AI_SUCCESS"
+  | "AI_API_ERROR"
+  | "AI_RATE_LIMIT"
+  | "AI_TIMEOUT"
+  | "AI_EMPTY_RESPONSE"
+  | "AI_MALFORMED_JSON"
+  | "AI_SCHEMA_VALIDATION_ERROR"
+  | "AI_PRODUCT_NOT_FOUND"
+  | "AI_PRODUCT_FOUND_VALIDATION_REJECTED"
+  | "AI_PRICE_AMBIGUOUS"
+  | "AI_PRICE_MISSING"
+  | "FINAL_MATCH";
 
 export class ExtractionPipelineError extends Error {
   constructor(
@@ -108,6 +153,7 @@ const extractionMetrics = {
   cacheHits: 0,
   contentCharsBefore: 0,
   contentCharsAfter: 0,
+  outcomes: {} as Record<AIExtractionOutcome, number>,
 };
 
 export function getExtractionMetrics() {
@@ -117,6 +163,7 @@ export function getExtractionMetrics() {
     deterministicSources: { ...extractionMetrics.deterministicSources },
     resolutionStates: { ...extractionMetrics.resolutionStates },
     failureReasons: { ...extractionMetrics.failureReasons },
+    outcomes: { ...extractionMetrics.outcomes },
     llmExtractionPercentage:
       extractionMetrics.llmRequests /
       Math.max(1, extractionMetrics.deterministicAttempts),
@@ -126,6 +173,125 @@ export function getExtractionMetrics() {
   };
 }
 
+function aiFailureCategory(error: unknown): string {
+  if (error instanceof LLMValidationError) return "validation_failed";
+  if (error instanceof AllLLMModelsFailedError) {
+    const categories = error.attempts.map(attempt => attempt.category);
+    return (
+      categories.find(category => category === "configuration_error") ??
+      categories.find(category => category === "daily_quota_exhausted") ??
+      categories.find(category => category === "temporary_rate_limit") ??
+      categories[0] ??
+      "all_models_failed"
+    );
+  }
+  return "all_models_failed";
+}
+
+function aiOutcomeForValidation(error: unknown): AIExtractionOutcome {
+  if (error instanceof LLMValidationError) {
+    if (error.outcome === "AI_EMPTY_RESPONSE") return "AI_EMPTY_RESPONSE";
+    if (error.outcome === "AI_MALFORMED_JSON") return "AI_MALFORMED_JSON";
+    if (error.outcome === "AI_SCHEMA_VALIDATION_ERROR") {
+      return "AI_SCHEMA_VALIDATION_ERROR";
+    }
+    if (error.outcome === "AI_PRODUCT_FOUND_VALIDATION_REJECTED") {
+      return "AI_PRODUCT_FOUND_VALIDATION_REJECTED";
+    }
+    if (error.outcome === "AI_PRICE_AMBIGUOUS") {
+      return "AI_PRICE_AMBIGUOUS";
+    }
+    if (/no JSON object/i.test(error.message)) return "AI_EMPTY_RESPONSE";
+    if (/not valid JSON|JSON object|parse/i.test(error.message)) {
+      return "AI_MALFORMED_JSON";
+    }
+    if (/identity|variant|conflict|threshold/i.test(error.message)) {
+      return "AI_PRODUCT_FOUND_VALIDATION_REJECTED";
+    }
+    return "AI_SCHEMA_VALIDATION_ERROR";
+  }
+
+  if (error instanceof AllLLMModelsFailedError) {
+    const validation = error.attempts.find(
+      attempt => attempt.category === "validation_failed"
+    );
+    if (validation?.outcome) {
+      return validation.outcome as AIExtractionOutcome;
+    }
+    if (validation) {
+      return aiOutcomeForValidation(new LLMValidationError(validation.message));
+    }
+    if (error.attempts.some(attempt => attempt.category === "timeout")) {
+      return "AI_TIMEOUT";
+    }
+    if (
+      error.attempts.some(attempt =>
+        ["temporary_rate_limit", "daily_quota_exhausted"].includes(
+          attempt.category
+        )
+      )
+    ) {
+      return "AI_RATE_LIMIT";
+    }
+  }
+
+  return "AI_API_ERROR";
+}
+
+function aiFailureOutcome(error: unknown): AIExtractionOutcome {
+  if (error instanceof LLMValidationError) {
+    return aiOutcomeForValidation(error);
+  }
+  if (error instanceof AllLLMModelsFailedError) {
+    return aiOutcomeForValidation(error);
+  }
+  if (error instanceof Error && /JSON|schema|extraction value/i.test(error.message)) {
+    return aiOutcomeForValidation(
+      new LLMValidationError(error.message, {
+        retryable: true,
+        outcome: /no JSON object|not valid JSON/i.test(error.message)
+          ? "AI_MALFORMED_JSON"
+          : "AI_SCHEMA_VALIDATION_ERROR",
+      })
+    );
+  }
+  return "AI_API_ERROR";
+}
+
+function persistedOutcome(extraction: ExtractionResult): AIExtractionOutcome {
+  if (!extraction.isMatch) return "AI_PRODUCT_NOT_FOUND";
+  if (extraction.price == null) return "AI_PRICE_MISSING";
+  return extraction.confidence >= ENV.matchConfidenceThreshold
+    ? "FINAL_MATCH"
+    : "AI_PRODUCT_FOUND_VALIDATION_REJECTED";
+}
+
+function safeModelContent(content: string): string {
+  return content
+    .replace(/Bearer\s+[^\s"']+/gi, "Bearer [redacted]")
+    .replace(/\bsk-[A-Za-z0-9_-]+\b/g, "[redacted]")
+    .slice(0, 32_000);
+}
+
+function llmAttemptDiagnostics(error: unknown): Array<Record<string, unknown>> {
+  if (!(error instanceof AllLLMModelsFailedError)) return [];
+  return error.attempts.map(attempt => ({
+    model: attempt.model,
+    requestedModel: attempt.requestedModel ?? attempt.model,
+    actualModel: attempt.actualModel ?? null,
+    attempt: attempt.attempt ?? null,
+    outcome: attempt.outcome ?? null,
+    category: attempt.category,
+    status: attempt.status ?? null,
+    message: attempt.message,
+  }));
+}
+
+function recordOutcome(outcome: AIExtractionOutcome): void {
+  extractionMetrics.outcomes[outcome] =
+    (extractionMetrics.outcomes[outcome] ?? 0) + 1;
+}
+
 // ─── JSON Schema for Structured Output ───────────────────────────────────────
 
 const EXTRACTION_SCHEMA = {
@@ -133,6 +299,11 @@ const EXTRACTION_SCHEMA = {
   schema: {
     type: "object",
     properties: {
+      targetProductFound: {
+        type: "boolean",
+        description:
+          "Whether the exact requested product identity is represented on the candidate page",
+      },
       isMatch: {
         type: "boolean",
         description:
@@ -159,25 +330,28 @@ const EXTRACTION_SCHEMA = {
         type: "number",
         description: "How similar the variants are (color, size, storage)",
       },
-      price: { type: "number", description: "Current selling price" },
+      price: {
+        type: ["number", "null"],
+        description: "Current selling price for the target product only",
+      },
       currency: {
         type: "string",
         description: "Currency code (USD, EUR, GBP)",
       },
       salePrice: {
-        type: "number",
+        type: ["number", "null"],
         description: "Sale price if on sale, null if not",
       },
       originalPrice: {
-        type: "number",
+        type: ["number", "null"],
         description: "Original price before discount, null if not on sale",
       },
       title: {
-        type: "string",
+        type: ["string", "null"],
         description: "Product title from competitor page",
       },
       description: {
-        type: "string",
+        type: ["string", "null"],
         description: "Product description from competitor page",
       },
       features: {
@@ -189,8 +363,67 @@ const EXTRACTION_SCHEMA = {
         type: "string",
         description: "Brief explanation of match decision",
       },
+      brand: {
+        type: ["string", "null"],
+        description: "Brand of the target product represented on the page",
+      },
+      model: {
+        type: ["string", "null"],
+        description: "Model name or model number of the target product",
+      },
+      generation: {
+        type: ["string", "null"],
+        description: "Generation or revision, when explicitly present",
+      },
+      capacity: {
+        type: ["string", "null"],
+        description: "Capacity/storage/size attribute, when explicitly present",
+      },
+      variant: {
+        type: ["string", "null"],
+        description: "Requested product variant and important options",
+      },
+      priceAssociation: {
+        type: "string",
+        enum: ["exact", "strong", "ambiguous", "unknown"],
+        description:
+          "How confidently the selected price is tied to the target product",
+      },
+      products: {
+        type: "array",
+        description:
+          "Every relevant product candidate found on the page and the prices attached to each candidate",
+        items: {
+          type: "object",
+          additionalProperties: false,
+          properties: {
+            title: { type: ["string", "null"] },
+            brand: { type: ["string", "null"] },
+            model: { type: ["string", "null"] },
+            variant: { type: ["string", "null"] },
+            prices: {
+              type: "array",
+              items: {
+                type: "object",
+                additionalProperties: false,
+                properties: {
+                  amount: { type: "number" },
+                  currency: { type: "string" },
+                  association: {
+                    type: "string",
+                    enum: ["exact", "strong", "ambiguous", "unknown"],
+                  },
+                },
+                required: ["amount", "currency", "association"],
+              },
+            },
+          },
+          required: ["title", "brand", "model", "variant", "prices"],
+        },
+      },
     },
     required: [
+      "targetProductFound",
       "isMatch",
       "confidence",
       "matchConfidence",
@@ -205,7 +438,15 @@ const EXTRACTION_SCHEMA = {
       "description",
       "features",
       "reasoning",
+      "brand",
+      "model",
+      "generation",
+      "capacity",
+      "variant",
+      "priceAssociation",
+      "products",
     ],
+    additionalProperties: false,
   },
   strict: true,
 } as const;
@@ -218,16 +459,19 @@ function buildExtractionPrompt(input: ExtractionInput): {
 } {
   const { merchantProduct, competitorPageContent, competitorUrl } = input;
 
-  const system = `Return ONLY a single JSON object with EXACTLY these top-level keys and no others:
-isMatch (boolean), confidence (0-1), matchConfidence (0-1), skuMatchConfidence (0-1), titleSimilarity (0-1), variantSimilarity (0-1), price (number or null), currency (string), salePrice (number or null), originalPrice (number or null), title (string or null), description (string or null), features (array of strings), reasoning (string).
+  const system = `Return ONLY a single JSON object with EXACTLY the schema keys and no others. The response must include:
+targetProductFound, isMatch, confidence, matchConfidence, skuMatchConfidence, titleSimilarity, variantSimilarity, price, currency, salePrice, originalPrice, title, description, features, reasoning, brand, model, generation, capacity, variant, priceAssociation, and products.
 Do not nest these under any other key. Do not wrap them in objects such as "match" or "competitor". Do not add commentary before or after the JSON.
 "price" MUST be a number you literally read on the competitor page. If the page shows no price, set price to null. Never copy the merchant's own price.
 
 You are a product matching and price extraction AI. Analyze a competitor's product page and determine if it matches the merchant's product, then extract structured data.
 
 Rules:
-- The merchant product identity above is authoritative. Extract only the competitor listing for that exact product and requested variant.
-- Compare brand, model, SKU, storage, color, size, and variant details carefully.
+- The merchant product identity above is authoritative. Determine whether this exact target product is represented on the page; do not find a vaguely related product.
+- Prioritize evidence in this order: exact model number, exact product identifier, brand + model, brand + model + generation, brand + model + capacity/variant, near-exact title, structured Product data, then other supporting evidence.
+- Extract brand, model, generation, capacity/storage, and variant separately. Important differentiators include generation, capacity, storage, screen size, color, quantity, bundle contents, included accessories, wired/battery, regional version, and model number.
+- A title alone is not enough. JBL Flip 5 is not JBL Flip 6; Kindle Paperwhite 8GB is not Kindle Paperwhite 16GB; Ring Wired Doorbell 2nd Gen is not automatically Ring Video Doorbell.
+- The targetProductFound field means identity evidence exists. isMatch must be false when price, variant, identity, or evidence is insufficient.
 - iPhone 14 Blue 128GB MATCHES iPhone 14 Blue 128GB.
 - iPhone 14 Blue 128GB DOES NOT MATCH iPhone 14 Black 128GB (different color).
 - iPhone 14 Blue 128GB DOES NOT MATCH iPhone 14 Blue 256GB (different storage).
@@ -236,31 +480,40 @@ Rules:
 - Subscription, member, recurring, installment, shipping, and per-unit prices are not the target price unless the requested product itself is that subscription or unit-based product.
 - Extract the price for the requested product/variant only. Do not use the first price on the page.
 - Prefer a clearly identified sale price as the current price; keep compare-at/original price separate and never substitute it for the current price.
+- List every relevant product candidate in products and attach each observed price to the candidate it belongs to. Set priceAssociation to exact only when the selected price is explicitly associated with the target product. Use ambiguous or unknown when association cannot be proven; an ambiguous price must not be used for a match.
+- JSON-LD/schema.org Product fields (name, brand, model, sku, gtin, offers, price, priceCurrency, availability) are strong evidence, but still must agree with the target identity and deterministic validation.
 - Do not infer or calculate a price that is not explicitly supported by the supplied page content.
-- If exact identity, variant, currency, or current price cannot be established with sufficient confidence, set isMatch to false and price to null rather than guessing.
+- If exact identity, variant, currency, or current price cannot be established with sufficient confidence, set targetProductFound/isMatch appropriately, use priceAssociation ambiguous or unknown, and set price to null rather than guessing.
 - Extract current price, sale price (if on sale), and original price.
 - Return ONLY valid JSON matching the schema. No markdown.`;
 
-  const user = `## Merchant Product
+  const user = `## TARGET PRODUCT
 Title: ${merchantProduct.title}
 Brand: ${merchantProduct.vendor ?? "Unknown"}
+Model number: ${merchantProduct.modelNumber ?? "N/A"}
+MPN: ${merchantProduct.mpn ?? "N/A"}
+GTIN/barcode: ${merchantProduct.gtin ?? merchantProduct.barcode ?? "N/A"}
 SKU: ${merchantProduct.sku ?? "N/A"}
 Barcode: ${merchantProduct.barcode ?? "N/A"}
 Category: ${merchantProduct.category ?? "N/A"}
+Product type: ${merchantProduct.productType ?? "N/A"}
+Tags/variant hints: ${merchantProduct.tags ?? "N/A"}
 Current Price: ${merchantProduct.price ?? "N/A"}
 Description: ${(merchantProduct.description ?? "").slice(0, 500)}
 
-## Competitor Page URL
+## CANDIDATE PAGE
+URL:
 ${competitorUrl}
+Page classification: ${input.pageClassification ?? "unknown"}
 
-## Competitor Page Content
+Relevant page content, structured data, headings, metadata, variants, availability, and price blocks:
 ${competitorPageContent}
 
 ## Task
-1. Determine if the competitor product is an EXACT MATCH for the merchant product.
-2. Extract the price, currency, sale price, original price.
-3. Extract the product title, description, and key features.
-4. Provide confidence scores for each aspect.
+1. Decide whether the exact target product and requested variant are present.
+2. Extract identity attributes separately and enumerate relevant product candidates.
+3. Associate prices with the product candidate they belong to; never select the first, cheapest, or nearest price.
+4. Extract current, sale, original/compare-at price and currency only when supported by evidence.
 5. Return structured JSON only.`;
 
   return { system, user };
@@ -316,7 +569,11 @@ function parseExtractionResponse(raw: string): ExtractionResult {
   }
 
   const parsed = JSON.parse(jsonStr);
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    throw new Error("LLM response does not match the extraction schema");
+  }
   const required = [
+    "targetProductFound",
     "isMatch",
     "confidence",
     "matchConfidence",
@@ -331,16 +588,66 @@ function parseExtractionResponse(raw: string): ExtractionResult {
     "description",
     "features",
     "reasoning",
+    "brand",
+    "model",
+    "generation",
+    "capacity",
+    "variant",
+    "priceAssociation",
+    "products",
   ];
+  const nullableStrings = [
+    parsed.brand,
+    parsed.model,
+    parsed.generation,
+    parsed.capacity,
+    parsed.variant,
+    parsed.title,
+    parsed.description,
+  ];
+  const priceAssociations = ["exact", "strong", "ambiguous", "unknown"];
   if (
-    !parsed ||
-    typeof parsed !== "object" ||
     required.some(key => !Object.prototype.hasOwnProperty.call(parsed, key)) ||
+    typeof parsed.targetProductFound !== "boolean" ||
     typeof parsed.isMatch !== "boolean" ||
     typeof parsed.currency !== "string" ||
     typeof parsed.reasoning !== "string" ||
+    typeof parsed.priceAssociation !== "string" ||
+    !priceAssociations.includes(parsed.priceAssociation) ||
     !Array.isArray(parsed.features) ||
-    parsed.features.some((feature: unknown) => typeof feature !== "string")
+    parsed.features.some((feature: unknown) => typeof feature !== "string") ||
+    !Array.isArray(parsed.products) ||
+    nullableStrings.some(
+      value => value !== null && typeof value !== "string"
+    ) ||
+    parsed.products.some(
+      (candidate: unknown) =>
+        !candidate ||
+        typeof candidate !== "object" ||
+        !["title", "brand", "model", "variant", "prices"].every(key =>
+          Object.prototype.hasOwnProperty.call(candidate, key)
+        ) ||
+        [
+          (candidate as Record<string, unknown>).title,
+          (candidate as Record<string, unknown>).brand,
+          (candidate as Record<string, unknown>).model,
+          (candidate as Record<string, unknown>).variant,
+        ].some(value => value !== null && typeof value !== "string") ||
+        !Array.isArray((candidate as Record<string, unknown>).prices) ||
+        ((candidate as Record<string, unknown>).prices as unknown[]).some(
+          (price: unknown) => {
+            if (!price || typeof price !== "object") return true;
+            const item = price as Record<string, unknown>;
+            return (
+              typeof item.amount !== "number" ||
+              !Number.isFinite(item.amount) ||
+              typeof item.currency !== "string" ||
+              typeof item.association !== "string" ||
+              !priceAssociations.includes(item.association)
+            );
+          }
+        )
+    )
   ) {
     throw new Error("LLM response does not match the extraction schema");
   }
@@ -395,13 +702,38 @@ function parseExtractionResponse(raw: string): ExtractionResult {
     description: parsed.description ? String(parsed.description) : null,
     features: Array.isArray(parsed.features) ? parsed.features.map(String) : [],
     reasoning: String(parsed.reasoning || ""),
+    targetProductFound: Boolean(parsed.targetProductFound),
+    brand: parsed.brand == null ? null : String(parsed.brand),
+    model: parsed.model == null ? null : String(parsed.model),
+    generation: parsed.generation == null ? null : String(parsed.generation),
+    capacity: parsed.capacity == null ? null : String(parsed.capacity),
+    variant: parsed.variant == null ? null : String(parsed.variant),
+    priceAssociation: parsed.priceAssociation as PriceAssociation,
+    productCandidates: parsed.products.map(
+      (candidate: Record<string, unknown>) => ({
+        title: candidate.title == null ? null : String(candidate.title),
+        brand: candidate.brand == null ? null : String(candidate.brand),
+        model: candidate.model == null ? null : String(candidate.model),
+        variant: candidate.variant == null ? null : String(candidate.variant),
+        prices: (candidate.prices as Array<Record<string, unknown>>).map(
+          price => ({
+            amount: Number(price.amount),
+            currency: String(price.currency).toUpperCase(),
+            association: price.association as PriceAssociation,
+          })
+        ),
+      })
+    ),
     deterministicMatch: false,
   };
 }
 
 function contentFromResult(result: InvokeResult): string {
-  const content = result.choices[0]?.message?.content;
-  return typeof content === "string" ? content : JSON.stringify(content ?? "");
+  const content = Array.isArray(result?.choices)
+    ? result.choices[0]?.message?.content
+    : undefined;
+  if (content == null) return "";
+  return typeof content === "string" ? content : JSON.stringify(content);
 }
 
 function assertValidExtraction(extraction: ExtractionResult): void {
@@ -414,7 +746,8 @@ function assertValidExtraction(extraction: ExtractionResult): void {
   ];
   if (scores.some(score => !Number.isFinite(score) || score < 0 || score > 1)) {
     throw new LLMValidationError(
-      "Extraction contains invalid confidence scores"
+      "Extraction contains invalid confidence scores",
+      { retryable: true, outcome: "AI_SCHEMA_VALIDATION_ERROR" }
     );
   }
   for (const price of [
@@ -423,17 +756,92 @@ function assertValidExtraction(extraction: ExtractionResult): void {
     extraction.originalPrice,
   ]) {
     if (price != null && (!Number.isFinite(price) || price <= 0)) {
-      throw new LLMValidationError("Extraction contains an invalid price");
+      throw new LLMValidationError("Extraction contains an invalid price", {
+        retryable: true,
+        outcome: "AI_SCHEMA_VALIDATION_ERROR",
+      });
     }
   }
   if (!/^[A-Z]{3}$/.test(extraction.currency)) {
     throw new LLMValidationError(
-      "Extraction contains an invalid currency code"
+      "Extraction contains an invalid currency code",
+      { retryable: true, outcome: "AI_SCHEMA_VALIDATION_ERROR" }
     );
   }
   if (extraction.price != null && !extraction.title) {
     throw new LLMValidationError(
-      "Extraction with a price must include a product title"
+      "Extraction with a price must include a product title",
+      { retryable: true, outcome: "AI_SCHEMA_VALIDATION_ERROR" }
+    );
+  }
+}
+
+/**
+ * AI can resolve incomplete page evidence, but it cannot override a
+ * deterministic identity/variant conflict. The numeric title and variant
+ * guards mirror the conservative thresholds used by the deterministic
+ * matcher; the overall match-confidence threshold is still applied when the
+ * extraction is persisted and consumed by the pipeline.
+ */
+function assertAiIdentityConsistency(
+  extraction: ExtractionResult,
+  deterministicAssessment: ProductMatchAssessment | null
+): void {
+  if (!extraction.isMatch) return;
+
+  if (!extraction.targetProductFound) {
+    throw new LLMValidationError(
+      "AI marked a match without confirming that the target product is present",
+      { outcome: "AI_PRODUCT_FOUND_VALIDATION_REJECTED" }
+    );
+  }
+  if (extraction.priceAssociation !== "exact") {
+    throw new LLMValidationError(
+      "AI price is not explicitly associated with the target product",
+      { outcome: "AI_PRICE_AMBIGUOUS" }
+    );
+  }
+  if (extraction.price != null) {
+    const hasSupportingPriceEvidence = extraction.productCandidates.some(
+      candidate =>
+        candidate.prices.some(
+          price =>
+            price.association === "exact" &&
+            price.currency === extraction.currency &&
+            Math.abs(price.amount - extraction.price!) < 0.005
+        )
+    );
+    if (!hasSupportingPriceEvidence) {
+      throw new LLMValidationError(
+        "AI selected a price without matching candidate-level evidence",
+        { outcome: "AI_PRICE_AMBIGUOUS" }
+      );
+    }
+  }
+
+  if (extraction.titleSimilarity < 0.82) {
+    throw new LLMValidationError(
+      "AI match does not meet the deterministic title similarity threshold",
+      { outcome: "AI_PRODUCT_FOUND_VALIDATION_REJECTED" }
+    );
+  }
+  if (extraction.variantSimilarity !== 1) {
+    throw new LLMValidationError(
+      "AI match has an unresolved variant mismatch or ambiguity",
+      { outcome: "AI_PRODUCT_FOUND_VALIDATION_REJECTED" }
+    );
+  }
+
+  const deterministicConflict = deterministicAssessment?.resolution.failureReasons.some(
+    reason =>
+      reason === "product_conflict" ||
+      reason === "variant_ambiguity" ||
+      reason === "price_conflict"
+  );
+  if (deterministicConflict) {
+    throw new LLMValidationError(
+      "AI match conflicts with deterministic product evidence",
+      { outcome: "AI_PRODUCT_FOUND_VALIDATION_REJECTED" }
     );
   }
 }
@@ -445,7 +853,18 @@ function validateProviderResult(result: InvokeResult): void {
   } catch (error) {
     if (error instanceof LLMValidationError) throw error;
     throw new LLMValidationError(
-      error instanceof Error ? error.message : "LLM response is not valid JSON"
+      error instanceof Error ? error.message : "LLM response is not valid JSON",
+      {
+        retryable: true,
+        outcome:
+          contentFromResult(result).trim().length === 0
+            ? "AI_EMPTY_RESPONSE"
+            : /does not match|invalid extraction value/i.test(
+                  error instanceof Error ? error.message : ""
+                )
+              ? "AI_SCHEMA_VALIDATION_ERROR"
+              : "AI_MALFORMED_JSON",
+      }
     );
   }
 }
@@ -472,6 +891,14 @@ function deterministicResult(
     description: product.description,
     features: product.features,
     reasoning: `High-confidence deterministic extraction from ${product.source}`,
+    targetProductFound: match.isMatch,
+    brand: product.productIdentity.brand,
+    model: product.productIdentity.mpn,
+    generation: null,
+    capacity: null,
+    variant: null,
+    priceAssociation: "exact",
+    productCandidates: [],
     deterministicMatch: match.deterministicMatch,
   };
 }
@@ -496,6 +923,14 @@ function pendingDeterministicResult(
     description: product.description,
     features: product.features,
     reasoning: "Deterministic evidence preserved; AI resolution is pending",
+    targetProductFound: match.isMatch,
+    brand: product.productIdentity.brand,
+    model: product.productIdentity.mpn,
+    generation: null,
+    capacity: null,
+    variant: null,
+    priceAssociation: product.variantAmbiguous ? "ambiguous" : "unknown",
+    productCandidates: [],
     deterministicMatch: match.deterministicMatch,
   };
 }
@@ -527,6 +962,48 @@ function extractionFromRecord(record: AiExtraction): ExtractionResult {
       ? record.extractedFeatures.map(String)
       : [],
     reasoning: record.reasoning ?? "Cached extraction",
+    targetProductFound:
+      typeof (metadata as { targetProductFound?: unknown } | null)
+        ?.targetProductFound === "boolean"
+        ? Boolean(
+            (metadata as { targetProductFound?: unknown }).targetProductFound
+          )
+        : record.isMatch,
+    brand:
+      typeof (metadata as { brand?: unknown } | null)?.brand === "string"
+        ? String((metadata as { brand: unknown }).brand)
+        : null,
+    model:
+      typeof (metadata as { model?: unknown } | null)?.model === "string"
+        ? String((metadata as { model: unknown }).model)
+        : null,
+    generation:
+      typeof (metadata as { generation?: unknown } | null)?.generation ===
+      "string"
+        ? String((metadata as { generation: unknown }).generation)
+        : null,
+    capacity:
+      typeof (metadata as { capacity?: unknown } | null)?.capacity === "string"
+        ? String((metadata as { capacity: unknown }).capacity)
+        : null,
+    variant:
+      typeof (metadata as { variant?: unknown } | null)?.variant === "string"
+        ? String((metadata as { variant: unknown }).variant)
+        : null,
+    priceAssociation:
+      typeof (metadata as { priceAssociation?: unknown } | null)
+        ?.priceAssociation === "string"
+        ? ((metadata as { priceAssociation: PriceAssociation })
+            .priceAssociation ?? "unknown")
+        : record.isMatch
+          ? "exact"
+          : "unknown",
+    productCandidates: Array.isArray(
+      (metadata as { productCandidates?: unknown } | null)?.productCandidates
+    )
+      ? ((metadata as { productCandidates: ExtractedProductCandidate[] })
+          .productCandidates ?? [])
+      : [],
     deterministicMatch: metadata?.deterministicMatch === true,
   };
 }
@@ -777,6 +1254,14 @@ export const aiExtractionService = {
             priceCandidates: deterministic.priceCandidates.slice(0, 20),
             priceConflict: deterministic.priceConflict,
             variantAmbiguous: deterministic.variantAmbiguous,
+            targetProductFound: extraction.targetProductFound,
+            brand: extraction.brand,
+            model: extraction.model,
+            generation: extraction.generation,
+            capacity: extraction.capacity,
+            variant: extraction.variant,
+            priceAssociation: extraction.priceAssociation,
+            productCandidates: extraction.productCandidates,
           },
         });
       }
@@ -805,32 +1290,65 @@ export const aiExtractionService = {
         competitorPageContent: reducedContent,
       };
       const { system, user } = buildExtractionPrompt(promptInput);
+      let lastLLMResult: InvokeResult | undefined;
 
       try {
         const result = await invokeLLMWithFallback({
-          provider: "openai",
+          provider: "openrouter",
           messages: [
             { role: "system", content: system },
             { role: "user", content: user },
           ],
           outputSchema: EXTRACTION_SCHEMA,
+          maxRetries: 1,
           maxTokens: 2048,
-          resultValidator: validateProviderResult,
+          resultValidator: result => {
+            validateProviderResult(result);
+            assertAiIdentityConsistency(
+              parseExtractionResponse(contentFromResult(result)),
+              matchAssessment
+            );
+          },
         });
+        lastLLMResult = result;
         const rawContent = contentFromResult(result);
         const llmExtraction = parseExtractionResponse(rawContent);
         assertValidExtraction(llmExtraction);
+        assertAiIdentityConsistency(llmExtraction, matchAssessment);
+        const outcome = persistedOutcome(llmExtraction);
+        recordOutcome(outcome);
         extractionMetrics.llmSuccesses++;
 
         const persisted = await persistExtraction({
           input,
           extraction: llmExtraction,
-          modelUsed: result.model,
+          modelUsed: result.actualModel ?? result.model,
           tokensUsed: result.usage?.total_tokens,
           rawResponse: {
-            content: rawContent,
+            content: safeModelContent(rawContent),
             contentHash: hash,
             extractionSource: "llm",
+            provider: "openrouter",
+            aiStatus: "success",
+            status: "AI_SUCCESS",
+            aiModel: result.actualModel ?? result.model,
+            requestedModel: result.requestedModel ?? ENV.openrouterModel,
+            actualModel: result.actualModel ?? null,
+            outcome,
+            candidateUrl: input.competitorUrl,
+            productId: input.merchantProduct.id,
+            candidateTitle: input.candidateTitle ?? null,
+            pageClassification: input.pageClassification ?? null,
+            confidence: llmExtraction.confidence,
+            targetProductFound: llmExtraction.targetProductFound,
+            brand: llmExtraction.brand,
+            model: llmExtraction.model,
+            generation: llmExtraction.generation,
+            capacity: llmExtraction.capacity,
+            variant: llmExtraction.variant,
+            priceAssociation: llmExtraction.priceAssociation,
+            productCandidates: llmExtraction.productCandidates,
+            structuredOutputValid: true,
             ...learningContext,
             extractorVersion:
               deterministic?.extractorVersion ?? EXTRACTOR_VERSION,
@@ -861,13 +1379,23 @@ export const aiExtractionService = {
           reducedContent,
           aiDecision: {
             status: "resolved",
-            model: result.model,
+            model: result.actualModel ?? result.model,
+            requestedModel: result.requestedModel ?? ENV.openrouterModel,
+            actualModel: result.actualModel ?? null,
+            outcome,
             extraction: llmExtraction,
           },
         });
         return persisted;
       } catch (error) {
         extractionMetrics.llmFailures++;
+        const failureCategory = aiFailureCategory(error);
+        const outcome =
+          lastLLMResult && contentFromResult(lastLLMResult).trim().length === 0
+            ? "AI_EMPTY_RESPONSE"
+            : aiFailureOutcome(error);
+        const attempts = llmAttemptDiagnostics(error);
+        recordOutcome(outcome);
         if (deterministic && input.competitorId) {
           const pending = pendingDeterministicResult(
             input,
@@ -881,6 +1409,29 @@ export const aiExtractionService = {
             rawResponse: {
               contentHash: hash,
               extractionSource: "deterministic-pending-ai",
+              provider: "openrouter",
+              aiStatus: "error",
+              status: outcome,
+              aiErrorCategory: failureCategory,
+              outcome,
+              requestedModel:
+                lastLLMResult?.requestedModel ??
+                ENV.openrouterModels[0] ??
+                ENV.openrouterModel,
+              requestedModels:
+                ENV.openrouterModels.length > 0
+                  ? [...ENV.openrouterModels]
+                  : [ENV.openrouterModel],
+              actualModel:
+                lastLLMResult?.actualModel ??
+                (attempts.length === 1 ? attempts[0].actualModel ?? null : null),
+              candidateUrl: input.competitorUrl,
+              productId: input.merchantProduct.id,
+              candidateTitle: input.candidateTitle ?? null,
+              pageClassification: input.pageClassification ?? null,
+              aiConfidence: null,
+              attempts,
+              structuredOutputValid: false,
               ...learningContext,
               extractorVersion: deterministic.extractorVersion,
               needsAi: true,
@@ -899,6 +1450,8 @@ export const aiExtractionService = {
             {
               productId: input.merchantProduct.id,
               reason: "ai_unavailable",
+              provider: "openrouter",
+              aiErrorCategory: failureCategory,
               source: deterministic.source,
             },
             "Preserved deterministic evidence while AI extraction is pending"
@@ -911,10 +1464,9 @@ export const aiExtractionService = {
             reducedContent,
             aiDecision: {
               status: "failed",
-              category:
-                error instanceof LLMValidationError
-                  ? "validation_failed"
-                  : "all_models_failed",
+              category: failureCategory,
+              outcome,
+              attempts,
             },
           });
           return persisted;
@@ -927,10 +1479,9 @@ export const aiExtractionService = {
           reducedContent,
           aiDecision: {
             status: "failed",
-            category:
-              error instanceof LLMValidationError
-                ? "validation_failed"
-                : "all_models_failed",
+            category: failureCategory,
+            outcome,
+            attempts,
           },
         });
         const validationOnlyFailure =
@@ -948,7 +1499,11 @@ export const aiExtractionService = {
         }
         throw new ExtractionPipelineError(
           "ALL_LLM_MODELS_FAILED",
-          "All AI extraction models are currently unavailable",
+          failureCategory === "configuration_error"
+            ? error instanceof AllLLMModelsFailedError
+              ? error.message
+              : "AI extraction unavailable: OPENROUTER_API_KEY is not configured"
+            : "All AI extraction models are currently unavailable",
           error
         );
       }
