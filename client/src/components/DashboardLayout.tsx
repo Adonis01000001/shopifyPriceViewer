@@ -30,6 +30,7 @@ import { useLocation } from "wouter";
 import Papa from "papaparse";
 import { toast } from "sonner";
 import { trpc, type RouterOutputs } from "@/lib/trpc";
+import { formatPrice } from "@/lib/price";
 import PipelineActivity from "@/components/dashboard/PipelineActivity";
 import { useTheme } from "@/contexts/ThemeContext";
 import {
@@ -272,7 +273,7 @@ function DashboardLayoutContent({
       Title: product.title,
       SKU: product.sku ?? "",
       Category: product.category ?? "",
-      Price: Number(product.price).toFixed(2),
+      Price: formatPrice(product.price, product.currency ?? "USD"),
       "Compare At": product.compareAtPrice
         ? Number(product.compareAtPrice).toFixed(2)
         : "",
@@ -640,8 +641,7 @@ function DashboardLayoutContent({
                               {product.title}
                             </span>
                             <span className="app-search-result-meta">
-                              {product.sku || "No SKU"} · $
-                              {Number(product.price).toFixed(2)}
+                              {product.sku || "No SKU"} · {formatPrice(product.price, product.currency ?? "USD")}
                             </span>
                           </span>
                           <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />

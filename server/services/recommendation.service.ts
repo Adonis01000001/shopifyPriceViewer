@@ -1,5 +1,6 @@
-import { eq, and, desc, sql } from "drizzle-orm";
+import { eq, and, desc, inArray, sql } from "drizzle-orm";
 import { requireDb } from "../_core/db-assert";
+import type { AppDatabase } from "../db";
 import {
   recommendations,
   products,
@@ -14,6 +15,60 @@ import { pricingRulesService } from "./pricing-rules.service";
 
 function round(n: number): number {
   return Math.round(n * 100) / 100;
+}
+
+async function enrichMissingMarketFactors(
+  database: AppDatabase,
+  records: Recommendation[]
+): Promise<Recommendation[]> {
+  const recordsWithoutMarketFactors = records.filter(record => {
+    const factors = record.factors;
+    return !(
+      factors &&
+      typeof factors === "object" &&
+      !Array.isArray(factors) &&
+      (Array.isArray((factors as Record<string, unknown>).competitorPrices) ||
+        (factors as Record<string, unknown>).competitorCount != null)
+    );
+  });
+  if (recordsWithoutMarketFactors.length === 0) return records;
+
+  const productIds = recordsWithoutMarketFactors.map(record => record.productId);
+  const rows = await database
+    .select({ productId: competitorProducts.productId, price: competitorProducts.price })
+    .from(competitorProducts)
+    .where(
+      and(
+        inArray(competitorProducts.productId, productIds),
+        eq(competitorProducts.isActive, true)
+      )
+    );
+  const pricesByProduct = new Map<string, number[]>();
+  for (const row of rows) {
+    const price = Number(row.price);
+    if (!Number.isFinite(price) || price <= 0) continue;
+    const prices = pricesByProduct.get(row.productId) ?? [];
+    prices.push(price);
+    pricesByProduct.set(row.productId, prices);
+  }
+
+  return records.map(record => {
+    if (!recordsWithoutMarketFactors.includes(record)) return record;
+    const existingFactors =
+      record.factors && typeof record.factors === "object" && !Array.isArray(record.factors)
+        ? (record.factors as Record<string, unknown>)
+        : {};
+    const prices = pricesByProduct.get(record.productId) ?? [];
+    return {
+      ...record,
+      factors: {
+        ...existingFactors,
+        competitorPrices: prices,
+        competitorCount: prices.length,
+        avgCompetitorPrice: pricingEngine.calculateAverageCompetitorPrice(prices),
+      },
+    };
+  });
 }
 
 export const recommendationService = {
@@ -35,7 +90,10 @@ export const recommendationService = {
       .where(conditions.length > 0 ? and(...conditions) : undefined)
       .orderBy(desc(recommendations.createdAt))
       .limit(options?.limit ?? 200);
-    return rows.map(row => row.recommendations);
+    return enrichMissingMarketFactors(
+      database,
+      rows.map(row => row.recommendations)
+    );
   },
 
   async getByUserId(
@@ -54,7 +112,10 @@ export const recommendationService = {
       .where(and(...conditions))
       .orderBy(desc(recommendations.createdAt))
       .limit(options?.limit ?? 100);
-    return rows.map(row => row.recommendations);
+    return enrichMissingMarketFactors(
+      database,
+      rows.map(row => row.recommendations)
+    );
   },
 
   async getByProductId(
@@ -279,6 +340,7 @@ export const recommendationService = {
       currentPrice > 0 ? round((priceChange / currentPrice) * 100) : 0;
 
     const factors = {
+      competitorPrices: prices,
       competitorCount: prices.length,
       avgCompetitorPrice: recommendation!.avgCompetitorPrice,
       minCompetitorPrice: prices.length > 0 ? Math.min(...prices) : null,
@@ -297,6 +359,24 @@ export const recommendationService = {
       priceDiffFromAvg: null,
       priceDiffPercentFromAvg: null,
     };
+
+    // A new calculation replaces the current pending advice for this product.
+    // Without this, a manual competitor price (or a refreshed recommendation)
+    // could leave the Overview showing an older snapshot.
+    await database
+      .update(recommendations)
+      .set({
+        status: "dismissed",
+        dismissedAt: new Date(),
+        updatedAt: new Date(),
+      })
+      .where(
+        and(
+          eq(recommendations.productId, productId),
+          eq(recommendations.userId, userId),
+          eq(recommendations.status, "pending")
+        )
+      );
 
     return this.create({
       userId,

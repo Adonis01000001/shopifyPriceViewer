@@ -2,6 +2,7 @@ import { useState, type FormEvent } from "react";
 import { useRoute, useLocation } from "wouter";
 import { trpc } from "@/lib/trpc";
 import { cn } from "@/lib/utils";
+import { formatPrice } from "@/lib/price";
 import {
   ArrowLeft,
   Package,
@@ -58,6 +59,7 @@ export default function ProductDetail() {
   const productId = scopedParams?.id ?? legacyParams?.id;
   const productsPath = getStoreDashboardPath(selectedShopId ?? "", "/products");
   const [manualDialogOpen, setManualDialogOpen] = useState(false);
+  const [manualDataVersion, setManualDataVersion] = useState(0);
   const [manualUrl, setManualUrl] = useState("");
   const [manualPrice, setManualPrice] = useState("");
   const [manualFormError, setManualFormError] = useState<string | null>(null);
@@ -78,7 +80,20 @@ export default function ProductDetail() {
           productId: productId ?? "",
           storeId: selectedShopId ?? undefined,
         }),
+        utils.products.list.invalidate(
+          selectedShopId ? { storeId: selectedShopId } : undefined
+        ),
+        utils.recommendations.list.invalidate(),
+        utils.recommendations.stats.invalidate(),
+        utils.pricingEngine.analyzeAll.invalidate(
+          selectedShopId ? { storeId: selectedShopId } : undefined
+        ),
+        utils.pricingEngine.dashboardStats.invalidate(
+          selectedShopId ? { storeId: selectedShopId } : undefined
+        ),
+        utils.intelligence.actionCenter.invalidate(),
       ]);
+      setManualDataVersion(version => version + 1);
       setManualDialogOpen(false);
       setManualUrl("");
       setManualPrice("");
@@ -228,12 +243,12 @@ export default function ProductDetail() {
           </div>
           <div className="product-hero-price">
             <p className="font-mono text-3xl font-bold tracking-tight text-primary">
-              ${Number(product.price).toFixed(2)}
+              {formatPrice(product.price, product.currency ?? "USD")}
             </p>
             {product.compareAtPrice &&
               Number(product.compareAtPrice) > Number(product.price) && (
                 <p className="text-sm font-mono text-muted-foreground line-through">
-                  ${Number(product.compareAtPrice).toFixed(2)}
+                  {formatPrice(product.compareAtPrice, product.currency ?? "USD")}
                 </p>
               )}
           </div>
@@ -244,7 +259,10 @@ export default function ProductDetail() {
       <div className="grid gap-6 lg:grid-cols-2">
         {/* Left: Pricing Recommendation Widget */}
         <div className="space-y-6">
-          <PricingRecommendationWidget productId={product.id} />
+          <PricingRecommendationWidget
+            key={`${product.id}-${manualDataVersion}`}
+            productId={product.id}
+          />
         </div>
 
         {/* Right: Competitor Prices */}
@@ -276,75 +294,101 @@ export default function ProductDetail() {
                 </Button>
               </div>
             ) : competitorPrices && competitorPrices.length > 0 ? (
-              competitorPrices.map(cp => {
-                const myPrice = Number(product.price);
-                const cpPrice = Number(cp.price);
-                const diff = cpPrice - myPrice;
-                const diffPct = myPrice > 0 ? (diff / myPrice) * 100 : 0;
-                return (
-                  <div
-                    key={cp.id}
-                    className="flex items-center justify-between px-5 py-3 transition-colors hover:bg-surface-container-low"
+              <>
+                {competitorPrices.map(cp => {
+                  const myPrice = Number(product.price);
+                  const cpPrice = Number(cp.price);
+                  const diff = cpPrice - myPrice;
+                  const diffPct = myPrice > 0 ? (diff / myPrice) * 100 : 0;
+                  return (
+                    <div
+                      key={cp.id}
+                      className="flex items-center justify-between px-5 py-3 transition-colors hover:bg-surface-container-low"
+                    >
+                      <div className="min-w-0 flex-1">
+                        <p className="text-[14px] font-medium truncate">
+                          {cp.title || cp.competitorDomain || "Unknown"}
+                        </p>
+                        <div className="flex items-center gap-2 mt-0.5">
+                          <span className="text-[13px] text-muted-foreground">
+                            {cp.competitorName}
+                          </span>
+                          {cp.url && (
+                            <a
+                              href={cp.url}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="text-[12px] text-primary hover:underline truncate max-w-[220px]"
+                              title={cp.url}
+                            >
+                              View listing
+                            </a>
+                          )}
+                          {cp.matchMethod === "manual" ? (
+                            <span className="text-[12px] text-amber-300">
+                              Price supplied manually · not independently verified
+                            </span>
+                          ) : (
+                            <span
+                              className="text-[12px] font-mono text-muted-foreground"
+                              title="How sure we are this is the same product"
+                            >
+                              {Math.round(Number(cp.matchScore) * 100)}% sure it
+                              is the same product
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                      <div className="text-right shrink-0 ml-4">
+                        <p className="text-[14px] font-bold font-mono">
+                          ${cpPrice.toFixed(2)}
+                        </p>
+                        <div className="flex items-center gap-1 justify-end mt-0.5">
+                          {diff > 0 ? (
+                            <>
+                              <TrendingUp className="h-3 w-3 text-[var(--destructive)]" />
+                              <span className="text-[12px] font-mono text-[var(--destructive)]">
+                                +${diff.toFixed(2)}
+                              </span>
+                            </>
+                          ) : diff < 0 ? (
+                            <>
+                              <TrendingDown className="h-3 w-3 text-[var(--success)]" />
+                              <span className="text-[12px] font-mono text-[var(--success)]">
+                                -${Math.abs(diff).toFixed(2)}
+                              </span>
+                            </>
+                          ) : (
+                            <>
+                              <Minus className="h-3 w-3 text-muted-foreground" />
+                              <span className="text-[12px] font-mono text-muted-foreground">
+                                $0.00
+                              </span>
+                            </>
+                          )}
+                          <span className="text-[12px] font-mono text-muted-foreground">
+                            ({diffPct > 0 ? "+" : ""}
+                            {diffPct.toFixed(1)}%)
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+                <div className="border-t border-outline-variant/20 px-5 py-4">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => {
+                      setManualFormError(null);
+                      setManualDialogOpen(true);
+                    }}
+                    disabled={addManualProduct.isPending}
                   >
-                    <div className="min-w-0 flex-1">
-                      <p className="text-[14px] font-medium truncate">
-                        {cp.title || cp.competitorDomain || "Unknown"}
-                      </p>
-                      <div className="flex items-center gap-2 mt-0.5">
-                        <span className="text-[13px] text-muted-foreground">
-                          {cp.competitorName}
-                        </span>
-                        {cp.matchMethod === "manual" ? (
-                          <span className="text-[12px] text-amber-300">
-                            Price supplied manually · not independently verified
-                          </span>
-                        ) : (
-                          <span
-                            className="text-[12px] font-mono text-muted-foreground"
-                            title="How sure we are this is the same product"
-                          >
-                            {Math.round(Number(cp.matchScore) * 100)}% sure it is
-                            the same product
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                    <div className="text-right shrink-0 ml-4">
-                      <p className="text-[14px] font-bold font-mono">
-                        ${cpPrice.toFixed(2)}
-                      </p>
-                      <div className="flex items-center gap-1 justify-end mt-0.5">
-                        {diff > 0 ? (
-                          <>
-                            <TrendingUp className="h-3 w-3 text-[var(--destructive)]" />
-                            <span className="text-[12px] font-mono text-[var(--destructive)]">
-                              +${diff.toFixed(2)}
-                            </span>
-                          </>
-                        ) : diff < 0 ? (
-                          <>
-                            <TrendingDown className="h-3 w-3 text-[var(--success)]" />
-                            <span className="text-[12px] font-mono text-[var(--success)]">
-                              -${Math.abs(diff).toFixed(2)}
-                            </span>
-                          </>
-                        ) : (
-                          <>
-                            <Minus className="h-3 w-3 text-muted-foreground" />
-                            <span className="text-[12px] font-mono text-muted-foreground">
-                              $0.00
-                            </span>
-                          </>
-                        )}
-                        <span className="text-[12px] font-mono text-muted-foreground">
-                          ({diffPct > 0 ? "+" : ""}
-                          {diffPct.toFixed(1)}%)
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-                );
-              })
+                    + Add another shop
+                  </Button>
+                </div>
+              </>
             ) : competitorPrices ? (
               <div className="flex flex-col items-center gap-4 px-5 py-12 text-center text-[14px] text-muted-foreground">
                 <p>

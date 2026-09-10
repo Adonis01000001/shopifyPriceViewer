@@ -40,6 +40,7 @@ import { useLocation } from "wouter";
 import Papa from "papaparse";
 import { toast } from "sonner";
 import { useShopContext, getStoreDashboardPath } from "@/contexts/ShopContext";
+import { formatPrice } from "@/lib/price";
 
 // ─── Market Position Badge ───────────────────────────────────────────────────
 
@@ -254,10 +255,20 @@ export default function Products() {
   });
 
   const updateProductMutation = trpc.products.update.useMutation({
-    onSuccess: () => {
+    onSuccess: data => {
       toast.success("Price updated");
       setEditingPriceId(null);
-      refetch();
+      void Promise.all([
+        utils.products.list.invalidate(),
+        utils.products.getById.invalidate({
+          id: data.id,
+          storeId: selectedShopId ?? undefined,
+        }),
+        utils.pricingEngine.analyzeAll.invalidate(
+          selectedShopId ? { storeId: selectedShopId } : undefined
+        ),
+        refetch(),
+      ]);
       // A CSV import starts a run too; nudge the indicator to notice now.
       utils.pipeline.status.invalidate();
     },
@@ -320,7 +331,7 @@ export default function Products() {
       Title: p.title,
       SKU: p.sku ?? "",
       Category: p.category ?? "",
-      Price: Number(p.price).toFixed(2),
+      Price: formatPrice(p.price, p.currency ?? "USD"),
       Status: p.status,
     }));
     const csv = Papa.unparse(rows);
@@ -502,7 +513,9 @@ export default function Products() {
         </Button>
         <AddProductDialog
           storeId={selectedShopId ?? undefined}
-          onSuccess={() => refetch()}
+          onSuccess={() => {
+            void Promise.all([utils.products.list.invalidate(), refetch()]);
+          }}
         />
         {standFilter !== "all" && (
           <button
@@ -605,7 +618,7 @@ export default function Products() {
                               startEditing(product.id, product.price)
                             }
                           >
-                            ${Number(product.price).toFixed(2)}
+                            {formatPrice(product.price, product.currency ?? "USD")}
                           </button>
                         )}
                       </TableCell>

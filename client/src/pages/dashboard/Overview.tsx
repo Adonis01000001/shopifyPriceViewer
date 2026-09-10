@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Badge } from "@/components/ui/badge";
-import { trpc } from "@/lib/trpc";
+import { trpc, type RouterOutputs } from "@/lib/trpc";
 import { usePipelineRun } from "@/hooks/usePipelineRun";
 import { recommendationFacts } from "@/lib/recommendation-facts";
 import {
@@ -25,6 +25,7 @@ import { PricingDashboardSummary } from "@/components/dashboard/PricingRecommend
 import { UpgradePrompt } from "@/components/dashboard/UpgradePrompt";
 import { useProductAnalytics } from "@/lib/analytics";
 import { getStoreDashboardPath, useShopContext } from "@/contexts/ShopContext";
+import { formatPrice } from "@/lib/price";
 import { toast } from "sonner";
 import {
   AlertDialog,
@@ -68,6 +69,26 @@ export default function Overview() {
     to: string;
   } | null>(null);
   const { data: products } = trpc.products.list.useQuery(selectedShopId ? { storeId: selectedShopId } : undefined);
+  // A persisted recommendation is the source for actions, but the pricing
+  // engine can still calculate a current suggestion from the store's live
+  // competitor prices. This matters for products added before a recommendation
+  // snapshot was generated (and keeps the table from incorrectly saying
+  // "Keep as is").
+  const { data: liveAnalyses, isLoading: liveAnalysesLoading } =
+    trpc.pricingEngine.analyzeAll.useQuery(
+      selectedShopId ? { storeId: selectedShopId } : undefined,
+      {
+        staleTime: 1000 * 60 * 2,
+        enabled: !!selectedShopId,
+      }
+    );
+  const liveAnalysisByProduct = useMemo(
+    () =>
+      new Map<string, RouterOutputs["pricingEngine"]["analyzeAll"][number]>(
+        (liveAnalyses ?? []).map(analysis => [analysis.productId, analysis])
+      ),
+    [liveAnalyses]
+  );
   const { data: productStats } = trpc.products.stats.useQuery(selectedShopId ? { storeId: selectedShopId } : undefined);
   const { data: competitorStats } = trpc.competitors.stats.useQuery(selectedShopId ? { storeId: selectedShopId } : undefined);
   const { data: alertStats } = trpc.alerts.stats.useQuery(selectedShopId ? { storeId: selectedShopId } : undefined);
@@ -115,6 +136,16 @@ export default function Overview() {
     },
     onError: err => toast.error(err.message),
   });
+  const generateRecommendation =
+    trpc.pricingEngine.generateRecommendation.useMutation({
+      onSuccess: result => {
+        if (result.success) {
+          void utils.recommendations.list.invalidate(
+            selectedShopId ? { storeId: selectedShopId } : undefined
+          );
+        }
+      },
+    });
   const dismissRecommendation = trpc.recommendations.dismiss.useMutation({
     onSuccess: () => {
       utils.recommendations.list.invalidate();
@@ -165,19 +196,37 @@ export default function Overview() {
   const pricingRows = useMemo(() => {
     const rows = allProducts.map(product => {
       const recommendation = recommendationByProduct.get(product.id) ?? null;
-      const facts = recommendation
+      const liveAnalysis = liveAnalysisByProduct.get(product.id);
+      const liveRecommendation = liveAnalysis?.recommendation;
+      const suggestion = recommendation ??
+        (liveAnalysis && liveRecommendation
+          ? {
+              currentPrice: liveAnalysis.marketSnapshot.merchantPrice,
+              recommendedPrice: liveRecommendation.recommendedPrice,
+              marginProtectionApplied:
+                liveRecommendation.marginProtectionApplied,
+              factors: {
+                competitorCount: liveAnalysis.marketSnapshot.competitorCount,
+                avgCompetitorPrice:
+                  liveAnalysis.marketSnapshot.avgCompetitorPrice,
+                minimumAllowedPrice: liveRecommendation.minimumAllowedPrice,
+              },
+            }
+          : null);
+      const facts = suggestion
         ? recommendationFacts({
-            currentPrice: recommendation.currentPrice,
-            recommendedPrice: recommendation.recommendedPrice,
+            currentPrice: suggestion.currentPrice,
+            recommendedPrice: suggestion.recommendedPrice,
             costPrice: product.costPrice,
-            marginProtectionApplied: recommendation.marginProtectionApplied,
-            factors: recommendation.factors,
+            marginProtectionApplied: suggestion.marginProtectionApplied,
+            factors: suggestion.factors,
           })
         : null;
       const actionable = !!facts && !facts.needsACloserLook;
       return {
         product,
         recommendation,
+        suggestion,
         facts,
         actionable,
         outcome: outcomes?.[product.id],
@@ -191,8 +240,57 @@ export default function Overview() {
       if (leftMoney !== rightMoney) return rightMoney - leftMoney;
       return left.product.title.localeCompare(right.product.title);
     });
-  }, [allProducts, recommendationByProduct, outcomes]);
+  }, [allProducts, liveAnalysisByProduct, recommendationByProduct, outcomes]);
   const notificationItems = notifications ?? [];
+
+  const openPriceChangeConfirmation = async (input: {
+    productId: string;
+    title: string;
+    recommendationId?: string;
+    currentPrice: number;
+    recommendedPrice: number;
+  }) => {
+    if (generateRecommendation.isPending || implementRecommendation.isPending) {
+      return;
+    }
+
+    try {
+      let recommendationId = input.recommendationId;
+      let currentPrice = input.currentPrice;
+      let recommendedPrice = input.recommendedPrice;
+
+      // Live analysis is intentionally read-only. Persist the canonical
+      // recommendation only after the merchant asks to change the price, so
+      // the existing Shopify confirmation/authorization path can be reused.
+      if (!recommendationId) {
+        const result = await generateRecommendation.mutateAsync({
+          productId: input.productId,
+          storeId: selectedShopId ?? undefined,
+        });
+        if (!result.success || !result.recommendation) {
+          throw new Error(
+            result.message ?? "Could not prepare this price recommendation."
+          );
+        }
+        recommendationId = result.recommendation.id;
+        currentPrice = Number(result.recommendation.currentPrice);
+        recommendedPrice = Number(result.recommendation.recommendedPrice);
+      }
+
+      setPushTarget({
+        id: recommendationId,
+        title: input.title,
+        from: currentPrice.toFixed(2),
+        to: recommendedPrice.toFixed(2),
+      });
+    } catch (error) {
+      toast.error(
+        error instanceof Error
+          ? error.message
+          : "Could not prepare this price recommendation."
+      );
+    }
+  };
 
   const totalProducts = productStats?.total ?? 0;
   const avgPrice = productStats?.avgPrice
@@ -419,12 +517,11 @@ export default function Overview() {
                 <tbody className="divide-y divide-white/[0.03]">
                   {pricingRows.length > 0 ? (
                     pricingRows.map(row => {
-                      const { product, facts, outcome } = row;
+                      const { product, facts, outcome, suggestion } = row;
                       const insight = row.recommendation;
-                      const currentPrice = Number(product.price);
-                      const recommendedPrice = insight
-                        ? Number(insight.recommendedPrice)
-                        : 0;
+                      const recommendedPrice = suggestion
+                        ? Number(suggestion.recommendedPrice)
+                        : null;
                       return (
                         <tr
                           key={product.id}
@@ -514,12 +611,12 @@ export default function Overview() {
                             </div>
                           </td>
                           <td className="px-5 py-3 font-mono text-[14px] font-medium">
-                            ${currentPrice.toFixed(2)}
+                            {formatPrice(product.price, product.currency ?? "USD")}
                           </td>
                           <td className="px-5 py-3">
                             {!facts ? (
                               <span className="text-[13px] text-muted-foreground">
-                                {run.running && !outcome
+                                {(run.running || liveAnalysesLoading) && !outcome
                                   ? "Checking\u2026"
                                   : "Keep as is"}
                               </span>
@@ -537,7 +634,7 @@ export default function Overview() {
                                       : "text-primary"
                                   )}
                                 >
-                                  ${recommendedPrice.toFixed(2)}
+                                  ${recommendedPrice?.toFixed(2) ?? "—"}
                                 </span>
                                 <span className="ml-1.5 text-[12px] text-muted-foreground">
                                   {facts.direction === "rise"
@@ -550,65 +647,75 @@ export default function Overview() {
                             )}
                           </td>
                           <td className="px-5 py-3">
-                            {insight && facts ? (
+                            {suggestion && facts ? (
                               <div className="flex flex-col items-end gap-1.5">
                                 <button
                                   type="button"
                                   className="w-full max-w-[10.5rem] whitespace-nowrap rounded bg-primary px-3 py-2 text-[13px] font-semibold text-primary-foreground hover:brightness-110 disabled:opacity-50"
                                   title="Writes this price to your live Shopify store"
                                   onClick={() =>
-                                    setPushTarget({
-                                      id: insight.id,
+                                    void openPriceChangeConfirmation({
+                                      productId: product.id,
                                       title: product?.title ?? "this product",
-                                      from: Number(insight.currentPrice).toFixed(2),
-                                      to: Number(insight.recommendedPrice).toFixed(2),
+                                      recommendationId: insight?.id,
+                                      currentPrice: Number(suggestion.currentPrice),
+                                      recommendedPrice: Number(suggestion.recommendedPrice),
                                     })
                                   }
                                   disabled={
                                     facts.needsACloserLook ||
+                                    generateRecommendation.isPending ||
                                     dismissRecommendation.isPending ||
                                     implementRecommendation.isPending
                                   }
                                 >
-                                  Change the price
+                                  {generateRecommendation.isPending && !insight
+                                    ? "Preparing…"
+                                    : "Change the price"}
                                 </button>
-                                <div className="flex items-center gap-2 text-[12px] text-muted-foreground">
-                                  <button
-                                    type="button"
-                                    className="underline-offset-4 hover:text-foreground hover:underline disabled:opacity-50"
-                                    title="Takes it off this list. Your store is not touched."
-                                    onClick={() =>
-                                      implementRecommendation.mutate({
-                                        id: insight.id,
-                                        storeId: selectedShopId ?? undefined,
-                                      })
-                                    }
-                                    disabled={
-                                      dismissRecommendation.isPending ||
-                                      implementRecommendation.isPending
-                                    }
-                                  >
-                                    I&apos;ll do it myself
-                                  </button>
-                                  <span aria-hidden="true">&middot;</span>
-                                  <button
-                                    type="button"
-                                    className="underline-offset-4 hover:text-foreground hover:underline disabled:opacity-50"
-                                    title="Hides this suggestion. Your store is not touched, and it may come back tomorrow if the market moves."
-                                    onClick={() =>
-                                      dismissRecommendation.mutate({
-                                        id: insight.id,
-                                        storeId: selectedShopId ?? undefined,
-                                      })
-                                    }
-                                    disabled={
-                                      dismissRecommendation.isPending ||
-                                      implementRecommendation.isPending
-                                    }
-                                  >
-                                    Ignore
-                                  </button>
-                                </div>
+                                {insight ? (
+                                  <div className="flex items-center gap-2 text-[12px] text-muted-foreground">
+                                    <button
+                                      type="button"
+                                      className="underline-offset-4 hover:text-foreground hover:underline disabled:opacity-50"
+                                      title="Takes it off this list. Your store is not touched."
+                                      onClick={() =>
+                                        implementRecommendation.mutate({
+                                          id: insight.id,
+                                          storeId: selectedShopId ?? undefined,
+                                        })
+                                      }
+                                      disabled={
+                                        dismissRecommendation.isPending ||
+                                        implementRecommendation.isPending
+                                      }
+                                    >
+                                      I&apos;ll do it myself
+                                    </button>
+                                    <span aria-hidden="true">&middot;</span>
+                                    <button
+                                      type="button"
+                                      className="underline-offset-4 hover:text-foreground hover:underline disabled:opacity-50"
+                                      title="Hides this suggestion. Your store is not touched, and it may come back tomorrow if the market moves."
+                                      onClick={() =>
+                                        dismissRecommendation.mutate({
+                                          id: insight.id,
+                                          storeId: selectedShopId ?? undefined,
+                                        })
+                                      }
+                                      disabled={
+                                        dismissRecommendation.isPending ||
+                                        implementRecommendation.isPending
+                                      }
+                                    >
+                                      Ignore
+                                    </button>
+                                  </div>
+                                ) : (
+                                  <span className="text-[12px] text-muted-foreground">
+                                    Calculated from current competitor prices
+                                  </span>
+                                )}
                               </div>
                             ) : (
                               <div className="text-right text-[13px] text-muted-foreground">

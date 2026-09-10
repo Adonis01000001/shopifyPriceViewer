@@ -30,6 +30,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { trpc } from "@/lib/trpc";
+import { formatPrice } from "@/lib/price";
 import { usePipelineRun } from "@/hooks/usePipelineRun";
 import { useShopContext } from "@/contexts/ShopContext";
 import {
@@ -329,7 +330,7 @@ function ProductResultRow({
       </div>
       <div className="flex items-center gap-3 shrink-0">
         <span className="font-mono text-[13px] font-medium">
-          ${Number(product.price).toFixed(2)}
+          {formatPrice(product.price, product.currency ?? "USD")}
         </span>
         <Button
           size="sm"

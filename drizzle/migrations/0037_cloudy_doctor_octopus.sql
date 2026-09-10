@@ -1,0 +1,3 @@
+DROP INDEX "competitor_products_unique_idx";--> statement-breakpoint
+CREATE UNIQUE INDEX "competitor_products_unique_listing_idx" ON "competitor_products" USING btree ("competitor_id","product_id","competitor_product_url") WHERE "competitor_products"."competitor_product_url" is not null;--> statement-breakpoint
+CREATE UNIQUE INDEX "competitor_products_unique_unidentified_idx" ON "competitor_products" USING btree ("competitor_id","product_id") WHERE "competitor_products"."competitor_product_url" is null;

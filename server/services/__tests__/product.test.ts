@@ -64,6 +64,25 @@ describe("ProductService SKU workflow", () => {
   // ── Create ──────────────────────────────────────────────────────────────
 
   describe("create", () => {
+    it("round-trips a manually entered decimal price after a fresh read", async () => {
+      const product = await productService.create({
+        userId,
+        storeId,
+        title: "Manual Decimal Product",
+        price: "99.99",
+      });
+
+      const listed = await productService.getById(userId, product.id, storeId);
+      expect(listed?.price).toBe("99.99");
+
+      const updated = await productService.update(userId, product.id, {
+        price: "150.50",
+      }, storeId);
+      const reread = await productService.getById(userId, product.id, storeId);
+      expect(updated?.price).toBe("150.50");
+      expect(reread?.price).toBe("150.50");
+    });
+
     it("creates a product with SKU", async () => {
       const product = await productService.create({
         userId,

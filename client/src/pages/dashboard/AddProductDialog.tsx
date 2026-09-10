@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -141,6 +141,13 @@ export default function AddProductDialog({ onSuccess, storeId: initialStoreId }:
   const [singleError, setSingleError] = useState<string | null>(null);
   const [singleSuccess, setSingleSuccess] = useState(false);
 
+  // The dashboard resolves its selected store asynchronously. Keep the
+  // quick-add destination aligned with that context so a product is not
+  // accidentally created in the fallback Manual store.
+  useEffect(() => {
+    if (initialStoreId) setStoreId(initialStoreId);
+  }, [initialStoreId]);
+
   const { data: stores, isLoading: storesLoading } =
     trpc.products.stores.useQuery(undefined, { enabled: open });
 
@@ -199,7 +206,11 @@ export default function AddProductDialog({ onSuccess, storeId: initialStoreId }:
       setSingleError("Product name must be at least 2 characters");
       return;
     }
-    if (!trimmedPrice || !/^\d+(\.\d{1,2})?$/.test(trimmedPrice)) {
+    if (
+      !trimmedPrice ||
+      !/^\d+(\.\d{1,2})?$/.test(trimmedPrice) ||
+      Number(trimmedPrice) <= 0
+    ) {
       setSingleError(
         "Price must be a positive number with up to 2 decimal places"
       );

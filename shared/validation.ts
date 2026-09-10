@@ -43,7 +43,10 @@ export const priceSchema = z
   .regex(
     /^\d+(\.\d{1,2})?$/,
     "Price must be a positive number with up to 2 decimal places (e.g. 19.99)"
-  );
+  )
+  .refine(value => Number(value) > 0, {
+    message: "Price must be greater than zero",
+  });
 
 /**
  * Normalize a product name for duplicate comparison.

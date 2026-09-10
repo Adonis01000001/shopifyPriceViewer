@@ -28,6 +28,8 @@ import {
   type InsertCompetitorProduct,
 } from "../../drizzle/schema";
 import { getOrCreateShop, normalizeShopDomain } from "./shop.service";
+import { recommendationService } from "./recommendation.service";
+import { logger } from "../_core/logger";
 
 type CompetitorDatabase = AppDatabase | AppDatabaseTransaction;
 
@@ -132,12 +134,96 @@ async function recalcTrackedCountWithDatabase(
     .where(eq(competitors.id, competitorId));
 }
 
+const TRACKING_QUERY_PARAMETERS = new Set([
+  "fbclid",
+  "gclid",
+  "ref",
+  "ref_",
+]);
+
+function isTrackingQueryParameter(name: string): boolean {
+  const normalizedName = name.toLowerCase();
+  return (
+    normalizedName.startsWith("utm_") ||
+    TRACKING_QUERY_PARAMETERS.has(normalizedName)
+  );
+}
+
+/**
+ * Canonicalize a competitor listing without collapsing distinct products on
+ * the same domain. The hostname follows the shop-domain rules; the pathname
+ * and non-tracking query parameters remain part of the listing identity.
+ */
+export function normalizeCompetitorProductUrl(input: string): string {
+  const raw = input.trim();
+  let parsed: URL;
+  try {
+    parsed = new URL(raw);
+  } catch {
+    throw new TRPCError({
+      code: "BAD_REQUEST",
+      message: "Enter a valid competitor product URL",
+    });
+  }
+
+  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+    throw new TRPCError({
+      code: "BAD_REQUEST",
+      message: "Competitor product URL must use http or https",
+    });
+  }
+  if (parsed.username || parsed.password || !parsed.hostname) {
+    throw new TRPCError({
+      code: "BAD_REQUEST",
+      message: "Competitor product URL must contain a public domain",
+    });
+  }
+
+  parsed.hostname = normalizeShopDomain(parsed.hostname);
+  parsed.hash = "";
+  parsed.pathname = parsed.pathname.replace(/\/+$/, "") || "/";
+
+  const retainedParameters = Array.from(parsed.searchParams.entries())
+    .filter(([name]) => !isTrackingQueryParameter(name))
+    .sort(([leftName, leftValue], [rightName, rightValue]) =>
+      leftName === rightName
+        ? leftValue.localeCompare(rightValue)
+        : leftName.localeCompare(rightName)
+    );
+  parsed.search = "";
+  for (const [name, value] of retainedParameters) {
+    parsed.searchParams.append(name, value);
+  }
+
+  return parsed.toString();
+}
+
+function isCompetitorProductUniqueViolation(error: unknown): boolean {
+  if (!error || typeof error !== "object") return false;
+  const databaseError = error as { code?: string; constraint?: string };
+  return (
+    databaseError.code === "23505" &&
+    [
+      "competitor_products_unique_listing_idx",
+      "competitor_products_unique_unidentified_idx",
+      "competitor_products_unique_idx",
+    ].includes(databaseError.constraint ?? "")
+  );
+}
+
 async function addProductWithDatabase(
   database: CompetitorDatabase,
   userId: string,
   data: InsertCompetitorProduct & { storeId?: string }
 ): Promise<CompetitorProduct> {
-  const { storeId, ...linkData } = data;
+  const { storeId, ...linkDataWithoutUrl } = data;
+  const normalizedListingUrl = data.competitorProductUrl
+    ? normalizeCompetitorProductUrl(data.competitorProductUrl)
+    : null;
+  const linkData = {
+    ...linkDataWithoutUrl,
+    competitorProductUrl: normalizedListingUrl,
+  };
   await assertOwnedStore(userId, storeId, database);
   const [ownedCompetitor] = await database
     .select({ id: competitors.id })
@@ -185,26 +271,52 @@ async function addProductWithDatabase(
       });
     }
   }
-  const [existingLink] = await database
-    .select({ id: competitorProducts.id })
+  const existingLinks = await database
+    .select({
+      id: competitorProducts.id,
+      competitorProductUrl: competitorProducts.competitorProductUrl,
+    })
     .from(competitorProducts)
     .where(
       and(
         eq(competitorProducts.competitorId, data.competitorId),
         eq(competitorProducts.productId, data.productId)
       )
-    )
-    .limit(1);
+    );
+  const existingLink = existingLinks.find(link => {
+    if (!normalizedListingUrl) return !link.competitorProductUrl;
+    if (!link.competitorProductUrl) return false;
+    try {
+      return normalizeCompetitorProductUrl(link.competitorProductUrl) === normalizedListingUrl;
+    } catch {
+      return link.competitorProductUrl.trim() === data.competitorProductUrl?.trim();
+    }
+  });
   if (existingLink) {
     throw new TRPCError({
       code: "CONFLICT",
-      message: "This product is already linked to that competitor",
+      message: normalizedListingUrl
+        ? "This competitor listing is already linked to this product"
+        : "This product is already linked to that competitor",
     });
   }
-  const result = await database
-    .insert(competitorProducts)
-    .values(linkData)
-    .returning();
+  let result: CompetitorProduct[];
+  try {
+    result = await database
+      .insert(competitorProducts)
+      .values(linkData)
+      .returning();
+  } catch (error) {
+    if (isCompetitorProductUniqueViolation(error)) {
+      throw new TRPCError({
+        code: "CONFLICT",
+        message: normalizedListingUrl
+          ? "This competitor listing is already linked to this product"
+          : "This product is already linked to that competitor",
+      });
+    }
+    throw error;
+  }
   if (!result[0]) throw new Error("Failed to add competitor product");
 
   if (data.productId) {
@@ -233,7 +345,7 @@ export async function addManualCompetitorProduct(
   input: ManualCompetitorProductInput
 ): Promise<CompetitorProduct> {
   const database = await requireDb();
-  return database.transaction(async transaction => {
+  const result = await database.transaction(async transaction => {
     const competitor = await resolveCompetitorWithDatabase(
       transaction,
       userId,
@@ -255,6 +367,25 @@ export async function addManualCompetitorProduct(
       storeId: input.storeId,
     });
   });
+
+  // Keep the Overview recommendation snapshot in sync with the newly supplied
+  // price. The competitor transaction has already committed, and a failure to
+  // recalculate must not turn a successful manual price submission into a
+  // misleading error or roll back the saved listing.
+  try {
+    await recommendationService.generateForProduct(
+      userId,
+      input.productId,
+      input.storeId
+    );
+  } catch (error) {
+    logger.warn(
+      { userId, productId: input.productId, error },
+      "Manual competitor price saved but recommendation refresh failed"
+    );
+  }
+
+  return result;
 }
 
 /**

@@ -54,7 +54,15 @@ export function recommendationFacts(input: {
   const prices = Array.isArray(factors.competitorPrices)
     ? (factors.competitorPrices as unknown[])
     : [];
-  const sources = prices.length;
+  // Pipeline-generated recommendations keep the price list. Older/manual
+  // recommendation records only kept the count, so use that persisted count
+  // rather than incorrectly showing "no shops confirmed" for them.
+  const persistedCount = toNumber(factors.competitorCount);
+  const sources = Array.isArray(factors.competitorPrices)
+    ? prices.length
+    : persistedCount != null && persistedCount >= 0
+      ? Math.floor(persistedCount)
+      : 0;
   const avg = toNumber(factors.avgCompetitorPrice);
 
   const delta = recommended - current;

@@ -1,3 +1,4 @@
+import { sql } from "drizzle-orm";
 import {
   boolean,
   decimal,
@@ -731,10 +732,16 @@ export const competitorProducts = pgTable(
     matchScoreIdx: index("competitor_products_match_score_idx").on(
       t.matchScore
     ),
-    uniqueMatchIdx: uniqueIndex("competitor_products_unique_idx").on(
-      t.competitorId,
-      t.productId
-    ),
+    uniqueListingIdx: uniqueIndex(
+      "competitor_products_unique_listing_idx"
+    )
+      .on(t.competitorId, t.productId, t.competitorProductUrl)
+      .where(sql`${t.competitorProductUrl} is not null`),
+    uniqueUnidentifiedIdx: uniqueIndex(
+      "competitor_products_unique_unidentified_idx"
+    )
+      .on(t.competitorId, t.productId)
+      .where(sql`${t.competitorProductUrl} is null`),
   })
 );
 

@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { competitorService } from "../competitor.service";
 import { productService } from "../product.service";
 import {
@@ -9,7 +9,9 @@ import {
   accountShopConnections,
   accountCompetitorConnections,
   competitors,
+  competitorProducts,
   priceHistory,
+  recommendations,
 } from "../../../drizzle/schema";
 import { requireDb } from "../../_core/db-assert";
 import {
@@ -158,6 +160,117 @@ describe("competitor product mappings", () => {
     });
   });
 
+  it("allows multiple distinct listing URLs for one competitor", async () => {
+    const product = await productService.create({
+      userId,
+      storeId,
+      title: "Multiple Listing Product",
+      price: "39.99",
+    });
+    const competitor = await createCompetitor(userId, "Multiple Listing Market");
+
+    const urls = [
+      `https://www.${competitor.domain}/dp/AAA`,
+      `https://${competitor.domain}/dp/BBB`,
+      `https://${competitor.domain}/dp/CCC`,
+    ];
+    for (const [index, competitorUrl] of urls.entries()) {
+      await addManualCompetitorProduct(userId, {
+        productId: product.id,
+        competitorUrl,
+        price: `${20 + index}.00`,
+        storeId,
+      });
+    }
+
+    const db = await requireDb();
+    const listings = await db
+      .select({
+        competitorId: competitorProducts.competitorId,
+        productId: competitorProducts.productId,
+        competitorProductUrl: competitorProducts.competitorProductUrl,
+        matchMethod: competitorProducts.matchMethod,
+      })
+      .from(competitorProducts)
+      .where(eq(competitorProducts.productId, product.id));
+
+    expect(listings).toHaveLength(3);
+    expect(new Set(listings.map(listing => listing.competitorId))).toEqual(
+      new Set([competitor.id])
+    );
+    expect(new Set(listings.map(listing => listing.competitorProductUrl))).toEqual(
+      new Set([
+        `https://${competitor.domain}/dp/AAA`,
+        `https://${competitor.domain}/dp/BBB`,
+        `https://${competitor.domain}/dp/CCC`,
+      ])
+    );
+    expect(listings.every(listing => listing.matchMethod === "manual")).toBe(true);
+  });
+
+  it("rejects the same listing URL after safe normalization", async () => {
+    const product = await productService.create({
+      userId,
+      storeId,
+      title: "Normalized Listing Product",
+      price: "59.99",
+    });
+    const competitor = await createCompetitor(userId, "Normalized Listing Market");
+
+    await addManualCompetitorProduct(userId, {
+      productId: product.id,
+      competitorUrl: `https://www.${competitor.domain}/dp/AAA?ref=tracking`,
+      price: "54.99",
+      storeId,
+    });
+
+    await expect(
+      addManualCompetitorProduct(userId, {
+        productId: product.id,
+        competitorUrl: `https://${competitor.domain}/dp/AAA/`,
+        price: "53.99",
+        storeId,
+      })
+    ).rejects.toMatchObject({
+      code: "CONFLICT",
+    });
+  });
+
+  it("allows listings from different competitors for the same product", async () => {
+    const product = await productService.create({
+      userId,
+      storeId,
+      title: "Different Competitor Product",
+      price: "79.99",
+    });
+    const amazon = await createCompetitor(userId, "Amazon Market");
+    const walmart = await createCompetitor(userId, "Walmart Market");
+
+    await addManualCompetitorProduct(userId, {
+      productId: product.id,
+      competitorUrl: `https://${amazon.domain}/dp/AAA`,
+      price: "74.99",
+      storeId,
+    });
+    await addManualCompetitorProduct(userId, {
+      productId: product.id,
+      competitorUrl: `https://${walmart.domain}/ip/BBB`,
+      price: "76.99",
+      storeId,
+    });
+
+    const db = await requireDb();
+    const listings = await db
+      .select({ competitorId: competitorProducts.competitorId })
+      .from(competitorProducts)
+      .where(eq(competitorProducts.productId, product.id));
+
+    expect(listings).toHaveLength(2);
+    expect(new Set(listings.map(listing => listing.competitorId))).toEqual(
+      new Set([amazon.id, walmart.id])
+    );
+  });
+
   it("reuses an existing competitor and records a manual price", async () => {
     const product = await productService.create({
       userId,
@@ -182,9 +295,26 @@ describe("competitor product mappings", () => {
       isVerified: false,
     });
 
+    const db = await requireDb();
     const history = await dbRowsForManualPrice(result.id);
     expect(history).toHaveLength(1);
     expect(history[0].source).toBe("manual");
+
+    const pendingRecommendations = await db
+      .select({ factors: recommendations.factors })
+      .from(recommendations)
+      .where(
+        and(
+          eq(recommendations.userId, userId),
+          eq(recommendations.productId, product.id),
+          eq(recommendations.status, "pending")
+        )
+      );
+    expect(pendingRecommendations).toHaveLength(1);
+    expect(pendingRecommendations[0]?.factors).toMatchObject({
+      competitorCount: 1,
+      competitorPrices: [27.49],
+    });
   });
 
   it("rolls back a newly created competitor when adding its product fails", async () => {
